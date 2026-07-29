@@ -1,0 +1,27 @@
+kind = "web"
+previewPath = "/"
+title = "LinkCloud"
+version = "1.0.0"
+id = "artifacts/linkcloud"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 18858
+
+[services.development]
+run = "pnpm --filter @workspace/linkcloud run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/linkcloud", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/linkcloud/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "18858"
+BASE_PATH = "/"
