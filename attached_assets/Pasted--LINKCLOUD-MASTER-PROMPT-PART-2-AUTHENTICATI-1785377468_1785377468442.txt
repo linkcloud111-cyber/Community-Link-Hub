@@ -1,0 +1,396 @@
+====================================================
+LINKCLOUD MASTER PROMPT
+PART 2 - AUTHENTICATION SYSTEM
+====================================================
+
+Continue the existing LinkCloud project.
+
+Do NOT create a new project.
+
+Continue using the existing codebase.
+
+Refactor and improve the existing authentication system.
+
+Everything must use Firebase Authentication.
+
+No mock authentication.
+
+====================================================
+AUTHENTICATION METHODS
+====================================================
+
+Support only these login methods.
+
+1. Email Address + Password
+
+OR
+
+2. Mobile Number + OTP
+
+OR
+
+3. Google Sign-In
+
+Do NOT ask for Password and OTP together.
+
+Automatically detect whether the user entered an Email Address or Mobile Number.
+
+====================================================
+SIGN UP
+====================================================
+
+Required Fields
+
+• Full Name *
+
+• Date of Birth *
+
+• Email Address *
+
+• Mobile Number *
+
+• Password *
+
+• Confirm Password *
+
+Checkbox (Required)
+
+☑ I agree to the Privacy Policy and Terms & Conditions.
+
+Buttons
+
+Create Account
+
+Continue with Google
+
+====================================================
+SIGN IN
+====================================================
+
+Use ONE modern login page.
+
+Single Input
+
+Email Address or Mobile Number
+
+Behavior
+
+If Email Address entered
+
+↓
+
+Show Password Field
+
+↓
+
+Login using Email + Password
+
+If Mobile Number entered
+
+↓
+
+Show Send OTP Button
+
+↓
+
+Verify OTP
+
+↓
+
+Login
+
+OR
+
+Continue with Google
+
+Options
+
+Remember Me
+
+Forgot Password
+
+Create Account
+
+====================================================
+FORGOT PASSWORD
+====================================================
+
+Available only for Email + Password users.
+
+Workflow
+
+Forgot Password
+
+↓
+
+Enter Registered Email
+
+↓
+
+Firebase sends Password Reset Email
+
+↓
+
+User creates New Password
+
+↓
+
+Login Again
+
+Show proper success and error messages.
+
+====================================================
+REMEMBER ME
+====================================================
+
+If enabled
+
+Keep user logged in securely.
+
+Restore session automatically.
+
+====================================================
+EMAIL VERIFICATION
+====================================================
+
+After registration
+
+Send Firebase Verification Email.
+
+Show verification status inside Profile.
+
+Allow Resend Verification Email.
+
+====================================================
+MOBILE VERIFICATION
+====================================================
+
+Verify Mobile Number using Firebase OTP.
+
+Show verification badge.
+
+Allow Resend OTP.
+
+====================================================
+PROFILE
+====================================================
+
+Mandatory Fields
+
+• Full Name
+
+• Date of Birth
+
+• Verified Email
+
+• Verified Mobile Number
+
+Optional
+
+• Profile Photo
+
+• State
+
+• District
+
+• City
+
+• Address
+
+====================================================
+PROFILE MANAGEMENT
+====================================================
+
+Registered Users can
+
+View Profile
+
+Edit Profile
+
+Upload Profile Photo
+
+Change Email
+
+Change Mobile Number
+
+Logout
+
+====================================================
+PASSWORD MANAGEMENT
+====================================================
+
+Email + Password Users
+
+Can
+
+Change Password
+
+Forgot Password
+
+Google Users
+
+Password managed by Google.
+
+Hide Password options.
+
+Mobile OTP Users
+
+Hide Password options.
+
+====================================================
+ACCOUNT DELETION REQUEST
+====================================================
+
+Users cannot permanently delete their account.
+
+Instead
+
+User
+
+↓
+
+Submit Account Deletion Request
+
+↓
+
+Web Administrator Reviews
+
+↓
+
+Approve or Reject
+
+If Approved
+
+Delete Firebase Authentication Account
+
+Delete Firestore User Document
+
+Delete Favorites
+
+Delete Notifications
+
+Delete Related User Data
+
+====================================================
+ACCOUNT STATUS
+====================================================
+
+Possible Status
+
+Active
+
+Suspended
+
+Deleted
+
+Suspended Users
+
+Cannot Login.
+
+Display
+
+Your account has been suspended.
+
+Please contact the Web Administrator.
+
+====================================================
+SESSION MANAGEMENT
+====================================================
+
+Maintain secure login sessions.
+
+Automatically restore session.
+
+Protect authenticated routes.
+
+Automatically redirect unauthenticated users to Login.
+
+====================================================
+LOGIN SECURITY
+====================================================
+
+Implement
+
+Firebase Authentication
+
+Protected Routes
+
+Input Validation
+
+Rate Limiting
+
+Spam Protection
+
+Session Validation
+
+Secure Logout
+
+====================================================
+LOGIN UI
+====================================================
+
+Material Design 3
+
+Responsive
+
+Dark Mode
+
+Light Mode
+
+Floating Labels
+
+Password Show/Hide
+
+Loading Spinner
+
+Toast Notifications
+
+Smooth Animations
+
+Accessible Forms
+
+====================================================
+VALIDATION
+====================================================
+
+Validate
+
+Email Format
+
+Indian Mobile Number
+
+Password Length
+
+Password Strength
+
+OTP Length
+
+Required Fields
+
+Duplicate Email
+
+Duplicate Mobile Number
+
+====================================================
+FINAL REQUIREMENTS
+====================================================
+
+Authentication must be fully integrated with Firebase Authentication.
+
+No local authentication.
+
+No mock data.
+
+No placeholder data.
+
+Fix all TypeScript errors.
+
+Fix all React errors.
+
+Fix all Firebase errors.
+
+Fix all Console errors.
+
+Fix all Runtime errors.
+
+After completing this module successfully, stop and wait for the next module.

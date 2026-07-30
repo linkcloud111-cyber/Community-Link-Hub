@@ -1,0 +1,510 @@
+====================================================
+LINKCLOUD - MASTER PROMPT
+PART 1 - PROJECT FOUNDATION & CORE ARCHITECTURE
+====================================================
+
+Continue the existing LinkCloud project.
+
+DO NOT create a new project.
+
+DO NOT replace the existing codebase.
+
+DO NOT remove working features unless they are unnecessary or replaced with a better implementation.
+
+Refactor, improve and complete the existing application.
+
+The final project must be fully production-ready.
+
+====================================================
+PROJECT INFORMATION
+====================================================
+
+Website Name
+
+LinkCloud
+
+Purpose
+
+LinkCloud is a premium public directory where Indian users can discover and submit community invite links.
+
+Supported Platforms
+
+• WhatsApp
+• Telegram
+• Discord
+• Facebook Groups
+• Instagram Broadcast Channels
+• X Communities
+• LinkedIn Groups
+• YouTube Channels
+• Reddit Communities
+
+Only Indian communities should be listed.
+
+Remove Country selection completely.
+
+Only use
+
+State
+
+District
+
+City
+
+====================================================
+TECH STACK
+====================================================
+
+Frontend
+
+React
+
+TypeScript
+
+Vite
+
+Tailwind CSS
+
+Material UI (Material Design 3)
+
+Backend
+
+Firebase Authentication
+
+Firestore Database
+
+Cloudinary
+
+Hosting
+
+Firebase Hosting
+
+or
+
+Vercel
+
+====================================================
+GENERAL DEVELOPMENT RULES
+====================================================
+
+Continue the existing project only.
+
+Do NOT create duplicate pages.
+
+Do NOT create duplicate components.
+
+Reuse existing components whenever possible.
+
+Refactor old code instead of rewriting everything.
+
+Remove unused files.
+
+Remove unused components.
+
+Remove unused imports.
+
+Remove unused variables.
+
+Remove dead code.
+
+Optimize project structure.
+
+Maintain clean architecture.
+
+====================================================
+APPLICATION STRUCTURE
+====================================================
+
+Public Pages
+
+Home
+
+Search
+
+Group Details
+
+About
+
+FAQ
+
+Help Center
+
+Privacy Policy
+
+Terms & Conditions
+
+DMCA
+
+Contact
+
+404
+
+500
+
+Authenticated Pages
+
+Dashboard
+
+Profile
+
+Favorites
+
+My Groups
+
+Submit Group
+
+Notifications
+
+Webmaster Pages
+
+Dashboard
+
+Users
+
+Groups
+
+Categories
+
+Content Types
+
+Platforms
+
+Languages
+
+States
+
+Districts
+
+Cities
+
+Reports
+
+Complaints
+
+Contact Messages
+
+Website Settings
+
+SEO
+
+Analytics
+
+====================================================
+USER ROLES
+====================================================
+
+There are only three roles.
+
+Visitor
+
+Registered User
+
+Single Web Administrator
+
+There must never be
+
+Multiple Administrators
+
+Moderator
+
+Editor
+
+Staff
+
+Sub Admin
+
+Only ONE Web Administrator has complete control.
+
+====================================================
+FIREBASE
+====================================================
+
+Use Firebase for everything.
+
+Firebase Authentication
+
+Firestore Database
+
+Firebase Hosting
+
+Firebase Storage (Optional)
+
+Cloudinary
+
+Use Cloudinary for uploaded images.
+
+Do NOT use local storage for images.
+
+====================================================
+FIRESTORE COLLECTIONS
+====================================================
+
+users
+
+groups
+
+categories
+
+contentTypes
+
+platforms
+
+languages
+
+states
+
+districts
+
+cities
+
+favorites
+
+reports
+
+complaints
+
+contacts
+
+notifications
+
+settings
+
+analytics
+
+====================================================
+APPLICATION SETTINGS
+====================================================
+
+India Only
+
+No Country selection.
+
+Language Selection Required.
+
+State Required.
+
+District Required.
+
+City Required.
+
+====================================================
+DESIGN
+====================================================
+
+Modern
+
+Premium
+
+Minimal
+
+Fast
+
+Responsive
+
+Material Design 3
+
+Rounded Corners
+
+Smooth Animations
+
+Soft Shadows
+
+Professional Typography
+
+Light Mode
+
+Dark Mode
+
+====================================================
+GLOBAL FEATURES
+====================================================
+
+Realtime Search
+
+Realtime Validation
+
+Toast Notifications
+
+Loading Indicators
+
+Skeleton Loading
+
+Pagination
+
+Lazy Loading
+
+Image Optimization
+
+Responsive Layout
+
+Dark Mode
+
+Light Mode
+
+====================================================
+COMMON UI COMPONENTS
+====================================================
+
+Navbar
+
+Footer
+
+Search Bar
+
+Search Filters
+
+Cards
+
+Dialogs
+
+Modals
+
+Confirmation Dialog
+
+Loading Spinner
+
+Empty State
+
+Error State
+
+No Result Screen
+
+====================================================
+COMMON VALIDATION
+====================================================
+
+Validate every form.
+
+Required Fields
+
+Input Length
+
+Email Format
+
+Mobile Number
+
+Invite Link
+
+Duplicate Data
+
+Invalid Characters
+
+Spam Detection
+
+====================================================
+COMMON SECURITY
+====================================================
+
+Firebase Authentication
+
+Firestore Security Rules
+
+Protected Routes
+
+Role Based Access
+
+Input Sanitization
+
+XSS Protection
+
+CSRF Protection
+
+Spam Protection
+
+Duplicate Detection
+
+Rate Limiting
+
+====================================================
+PERFORMANCE
+====================================================
+
+Fast Firestore Queries
+
+Code Splitting
+
+Caching
+
+Image Compression
+
+Lazy Loading
+
+Minimal Bundle Size
+
+====================================================
+CODE QUALITY
+====================================================
+
+Maintain
+
+Clean React Components
+
+Reusable Components
+
+Reusable Hooks
+
+Reusable Utilities
+
+Reusable Services
+
+Strong TypeScript Types
+
+Consistent Folder Structure
+
+No Duplicate Logic
+
+====================================================
+ERROR POLICY
+====================================================
+
+Before completing any module
+
+Fix all
+
+TypeScript Errors
+
+React Errors
+
+Firebase Errors
+
+Firestore Errors
+
+Build Errors
+
+Runtime Errors
+
+Console Errors
+
+Warnings (where possible)
+
+====================================================
+FINAL GOAL
+====================================================
+
+The final LinkCloud application must be
+
+Fully Functional
+
+Production Ready
+
+Responsive
+
+Secure
+
+Fast
+
+SEO Friendly
+
+Accessible
+
+Deployable
+
+No Mock APIs
+
+No Placeholder Data
+
+Everything must work using Firebase and Cloudinary.
+
+Complete this foundation module first.
+
+After successfully completing this module and fixing all errors, stop and wait for the next module.
