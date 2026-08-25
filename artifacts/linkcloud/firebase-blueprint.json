@@ -1,0 +1,259 @@
+{
+  "entities": {
+    "Group": {
+      "title": "Group",
+      "description": "Public social messaging group or channel submission",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "minLength": 2, "maxLength": 100 },
+        "platform": { "type": "string" },
+        "categoryId": { "type": "string" },
+        "categoryName": { "type": "string" },
+        "state": { "type": "string" },
+        "district": { "type": "string" },
+        "city": { "type": "string" },
+        "language": { "type": "string" },
+        "contentType": { "type": "string" },
+        "linkStatus": { "type": "string", "enum": ["active", "inactive"] },
+        "minimumAge": { "type": "string" },
+        "description": { "type": "string", "maxLength": 500 },
+        "rules": { "type": "string", "maxLength": 500 },
+        "tags": { "type": "array" },
+        "joinUrl": { "type": "string" },
+        "logoUrl": { "type": "string" },
+        "submittedBy": { "type": "string" },
+        "submittedByName": { "type": "string" },
+        "submittedByEmail": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected"] },
+        "featured": { "type": "boolean" },
+        "pinned": { "type": "boolean" },
+        "hidden": { "type": "boolean" },
+        "trending": { "type": "boolean" },
+        "memberCount": { "type": "number" },
+        "joinCount": { "type": "number" },
+        "viewsCount": { "type": "number" },
+        "reportCount": { "type": "number" },
+        "rejectionReason": { "type": "string" },
+        "changesRequested": { "type": "boolean" },
+        "changesRequestedMessage": { "type": "string" },
+        "allowResubmit": { "type": "boolean" }
+      },
+      "required": ["name", "platform", "joinUrl", "description", "submittedBy", "status"]
+    },
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "User profile and account information",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "accountUid": { "type": "string" },
+        "displayName": { "type": "string", "maxLength": 100 },
+        "email": { "type": "string" },
+        "phone": { "type": "string" },
+        "dob": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "state": { "type": "string" },
+        "district": { "type": "string" },
+        "city": { "type": "string" },
+        "address": { "type": "string" },
+        "emailVerified": { "type": "boolean" },
+        "phoneVerified": { "type": "boolean" },
+        "role": { "type": "string", "enum": ["visitor", "user", "webmaster"] },
+        "status": { "type": "string", "enum": ["active", "suspended", "banned", "deleted"] },
+        "groupCount": { "type": "number" },
+        "bio": { "type": "string", "maxLength": 500 },
+        "deletionRequested": { "type": "boolean" },
+        "deletionReason": { "type": "string" }
+      },
+      "required": ["displayName", "email", "role", "status"]
+    },
+    "Favorite": {
+      "title": "Favorite",
+      "description": "User favorite group bookmark",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "groupId": { "type": "string" }
+      },
+      "required": ["userId", "groupId"]
+    },
+    "Notification": {
+      "title": "Notification",
+      "description": "User notification alert",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "title": { "type": "string", "maxLength": 150 },
+        "message": { "type": "string", "maxLength": 500 },
+        "type": { "type": "string", "enum": ["approval", "rejection", "report", "system"] },
+        "groupId": { "type": "string" },
+        "read": { "type": "boolean" }
+      },
+      "required": ["userId", "title", "message", "read"]
+    },
+    "Report": {
+      "title": "Report",
+      "description": "Report submitted for a group",
+      "type": "object",
+      "properties": {
+        "groupId": { "type": "string" },
+        "groupName": { "type": "string" },
+        "reportedBy": { "type": "string" },
+        "reportedByName": { "type": "string" },
+        "reason": { "type": "string" },
+        "details": { "type": "string", "maxLength": 500 },
+        "status": { "type": "string", "enum": ["pending", "reviewed", "dismissed"] }
+      },
+      "required": ["groupId", "reportedBy", "reason", "details", "status"]
+    },
+    "Complaint": {
+      "title": "Complaint",
+      "description": "General complaint submitted by user or visitor",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "maxLength": 100 },
+        "email": { "type": "string" },
+        "phone": { "type": "string" },
+        "subject": { "type": "string", "maxLength": 150 },
+        "message": { "type": "string", "maxLength": 1000 },
+        "status": { "type": "string", "enum": ["pending", "reviewed", "resolved"] }
+      },
+      "required": ["name", "email", "subject", "message", "status"]
+    },
+    "ContactMessage": {
+      "title": "ContactMessage",
+      "description": "Contact form submission",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "maxLength": 100 },
+        "email": { "type": "string" },
+        "phone": { "type": "string" },
+        "subject": { "type": "string", "maxLength": 150 },
+        "message": { "type": "string", "maxLength": 1000 },
+        "status": { "type": "string", "enum": ["unread", "read", "replied"] }
+      },
+      "required": ["name", "email", "subject", "message", "status"]
+    },
+    "Category": {
+      "title": "Category",
+      "description": "Group category",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "maxLength": 100 },
+        "icon": { "type": "string" },
+        "groupCount": { "type": "number" }
+      },
+      "required": ["name"]
+    },
+    "DeletionRequest": {
+      "title": "DeletionRequest",
+      "description": "User account deletion request",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "displayName": { "type": "string" },
+        "email": { "type": "string" },
+        "phone": { "type": "string" },
+        "reason": { "type": "string", "maxLength": 500 },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected"] }
+      },
+      "required": ["uid", "email", "reason", "status"]
+    },
+    "AuditLog": {
+      "title": "AuditLog",
+      "description": "System event audit log",
+      "type": "object",
+      "properties": {
+        "action": { "type": "string" },
+        "details": { "type": "string" },
+        "adminEmail": { "type": "string" },
+        "adminUid": { "type": "string" }
+      },
+      "required": ["action", "details"]
+    },
+    "SiteSettings": {
+      "title": "SiteSettings",
+      "description": "Global website configuration and settings",
+      "type": "object",
+      "properties": {
+        "siteName": { "type": "string" },
+        "siteTagline": { "type": "string" },
+        "maintenanceMode": { "type": "boolean" }
+      }
+    }
+  },
+  "firestore": {
+    "/groups/{groupId}": {
+      "schema": { "$ref": "#/entities/Group" },
+      "description": "Public and user submitted group directory"
+    },
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "User profile document"
+    },
+    "/favorites/{favoriteId}": {
+      "schema": { "$ref": "#/entities/Favorite" },
+      "description": "User saved favorite groups"
+    },
+    "/notifications/{notificationId}": {
+      "schema": { "$ref": "#/entities/Notification" },
+      "description": "User notifications"
+    },
+    "/reports/{reportId}": {
+      "schema": { "$ref": "#/entities/Report" },
+      "description": "Submitted reports for groups"
+    },
+    "/complaints/{complaintId}": {
+      "schema": { "$ref": "#/entities/Complaint" },
+      "description": "Submitted user complaints"
+    },
+    "/contacts/{contactId}": {
+      "schema": { "$ref": "#/entities/ContactMessage" },
+      "description": "Submitted contact messages"
+    },
+    "/categories/{categoryId}": {
+      "schema": { "$ref": "#/entities/Category" },
+      "description": "Group categories"
+    },
+    "/deletionRequests/{requestId}": {
+      "schema": { "$ref": "#/entities/DeletionRequest" },
+      "description": "Account deletion requests"
+    },
+    "/audit_logs/{logId}": {
+      "schema": { "$ref": "#/entities/AuditLog" },
+      "description": "Webmaster administrative audit logs"
+    },
+    "/settings/{settingId}": {
+      "schema": { "$ref": "#/entities/SiteSettings" },
+      "description": "Webmaster site settings documents"
+    },
+    "/faqs/{faqId}": {
+      "schema": "object",
+      "description": "Frequently asked questions"
+    },
+    "/help_articles/{articleId}": {
+      "schema": "object",
+      "description": "Help center articles"
+    },
+    "/search_logs/{searchId}": {
+      "schema": "object",
+      "description": "Search analytics logs"
+    },
+    "/visitor_stats/{dateId}": {
+      "schema": "object",
+      "description": "Daily visitor traffic statistics"
+    },
+    "/platforms/{platformId}": {
+      "schema": "object",
+      "description": "Custom platforms"
+    },
+    "/contentTypes/{typeId}": {
+      "schema": "object",
+      "description": "Custom content types"
+    },
+    "/languages/{langId}": {
+      "schema": "object",
+      "description": "Custom languages"
+    }
+  }
+}

@@ -1,5 +1,5 @@
 import { Cloud, Mail, ExternalLink } from "lucide-react";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import {
   SiWhatsapp,
   SiTelegram,
@@ -25,7 +25,12 @@ const PLATFORMS = [
 ];
 
 export default function Footer() {
+  const [location] = useLocation();
   const year = new Date().getFullYear();
+
+  if (location === "/webmaster/login") {
+    return null;
+  }
 
   return (
     <footer className="border-t border-border bg-card/20 backdrop-blur-sm mt-auto">
@@ -102,6 +107,11 @@ export default function Footer() {
                 </Link>
               </li>
               <li>
+                <Link href="/complaint" className="hover:text-primary transition-colors text-destructive/80 font-semibold">
+                  Submit Complaint
+                </Link>
+              </li>
+              <li>
                 <Link href="/help" className="hover:text-primary transition-colors">
                   Help Center
                 </Link>
@@ -148,9 +158,15 @@ export default function Footer() {
         {/* Bottom bar */}
         <div className="border-t border-border mt-12 pt-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-muted-foreground">
           <p>© {year} LinkCloud. All rights reserved. Made with ♥ in India.</p>
-          <div className="flex items-center gap-1 text-xs">
-            <span>For Indian communities only</span>
-            <span className="ml-1">🇮🇳</span>
+          <div className="flex items-center gap-3 text-xs">
+            <Link href="/webmaster/login" className="hover:text-amber-500 font-mono transition-colors flex items-center gap-1">
+              Webmaster Login
+            </Link>
+            <span>•</span>
+            <span className="flex items-center gap-1">
+              <span>For Indian communities only</span>
+              <span>🇮🇳</span>
+            </span>
           </div>
         </div>
       </div>

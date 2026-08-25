@@ -1,0 +1,8 @@
+{
+  "name": "LinkCloud - WhatsApp, Telegram & Social Messaging Groups Directory",
+  "description": "India's premier social group links directory for WhatsApp, Telegram, Discord, Facebook, Instagram, X, LinkedIn, YouTube, and Reddit communities.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

@@ -16,6 +16,27 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script>
+      (function() {
+        function isDatabaseClosingError(e) {
+          if (!e) return false;
+          var msg = (e.message || e.reason || e.error || e.toString() || '').toLowerCase();
+          return msg.indexOf('database is closing') !== -1 || msg.indexOf('closing/hidden') !== -1 || msg.indexOf('idbdatabase') !== -1;
+        }
+        window.addEventListener('unhandledrejection', function(event) {
+          if (isDatabaseClosingError(event) || isDatabaseClosingError(event.reason)) {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+          }
+        }, true);
+        window.addEventListener('error', function(event) {
+          if (isDatabaseClosingError(event) || isDatabaseClosingError(event.error)) {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+          }
+        }, true);
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

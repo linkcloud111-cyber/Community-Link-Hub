@@ -1,0 +1,290 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ─── Global Helpers ───
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isUser(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isWebmaster() {
+      return isSignedIn() && (
+        exists(/databases/$(database)/documents/webmaster/$(request.auth.uid)) ||
+        (
+          exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'webmaster'
+        )
+      );
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // ─── Default Deny Catch-All ───
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // ─── Webmaster Collection ───
+    match /webmaster/{webmasterId} {
+      allow read, write: if isSignedIn();
+    }
+
+    // ─── Users Collection ───
+    match /users/{userId} {
+      allow get: if isUser(userId) || isWebmaster();
+      allow list: if isWebmaster();
+      allow create: if isUser(userId) && (
+        !('role' in incoming()) || incoming().role == 'user' || isWebmaster()
+      );
+      allow update: if isWebmaster() || (
+        isUser(userId) &&
+        (!('uid' in incoming()) || incoming().uid == existing().uid) &&
+        (!('role' in incoming()) || incoming().role == existing().role) &&
+        (!('email' in incoming()) || incoming().email == existing().email || incoming().email == request.auth.token.email)
+      );
+      allow delete: if isWebmaster() || isUser(userId);
+
+      // Subcollection: Email Change History
+      match /email_history/{historyId} {
+        allow read, create, update: if isUser(userId) || isWebmaster();
+        allow delete: if isWebmaster();
+      }
+    }
+
+    // ─── Groups Collection ───
+    match /groups/{groupId} {
+      allow get: if existing().status == 'approved' && existing().hidden != true
+        || (isSignedIn() && existing().submittedBy == request.auth.uid)
+        || isWebmaster();
+
+      allow list: if true; // Directory queries filtered by status == 'approved' or submittedBy
+
+      allow create: if (
+        (isSignedIn() && incoming().submittedBy == request.auth.uid) ||
+        (!isSignedIn() && incoming().submittedByName is string)
+      )
+        && incoming().name is string
+        && incoming().name.size() >= 2
+        && incoming().joinUrl is string
+        && incoming().description is string;
+
+      allow update: if isWebmaster() || (
+        isSignedIn()
+        && existing().submittedBy == request.auth.uid
+        && (existing().status == 'pending' || existing().allowResubmit == true)
+        && incoming().submittedBy == request.auth.uid
+      );
+
+      allow delete: if isWebmaster() || (
+        isSignedIn()
+        && existing().submittedBy == request.auth.uid
+        && existing().status == 'pending'
+      );
+    }
+
+    // ─── Favorites Collection ───
+    match /favorites/{favoriteId} {
+      allow read: if isSignedIn() && (existing().userId == request.auth.uid || isWebmaster());
+      allow create: if isSignedIn() && incoming().userId == request.auth.uid;
+      allow delete: if isSignedIn() && (existing().userId == request.auth.uid || isWebmaster());
+    }
+
+    // ─── Notifications Collection ───
+    match /notifications/{notificationId} {
+      allow read: if isSignedIn() && (existing().userId == request.auth.uid || isWebmaster());
+      allow update, delete: if isSignedIn() && (existing().userId == request.auth.uid || isWebmaster());
+      allow create: if isWebmaster() || (isSignedIn() && incoming().userId == request.auth.uid);
+    }
+
+    // ─── Reports Collection ───
+    match /reports/{reportId} {
+      allow read: if isWebmaster();
+      allow create: if true; // Visitors and users can submit reports
+      allow update, delete: if isWebmaster();
+    }
+
+    // ─── Complaints Collection ───
+    match /complaints/{complaintId} {
+      allow read: if isWebmaster() || (isSignedIn() && existing().email == request.auth.token.email);
+      allow create: if true; // Visitors & users can submit complaints
+      allow update, delete: if isWebmaster();
+    }
+
+    // ─── Contact Messages Collection ───
+    match /contacts/{contactId} {
+      allow read: if isWebmaster() || (isSignedIn() && existing().email == request.auth.token.email);
+      allow create: if true; // Visitors & users can send contact messages
+      allow update, delete: if isWebmaster();
+    }
+
+    // ─── Categories Collection ───
+    match /categories/{categoryId} {
+      allow read: if true;
+      allow write: if isWebmaster();
+    }
+
+    // ─── Account Deletion Requests ───
+    match /deletionRequests/{requestId} {
+      allow read: if isWebmaster() || (isSignedIn() && existing().uid == request.auth.uid);
+      allow create: if isSignedIn() && incoming().uid == request.auth.uid;
+      allow update: if isWebmaster() || (isSignedIn() && existing().uid == request.auth.uid && incoming().status == 'cancelled');
+      allow delete: if isWebmaster();
+    }
+
+    // ─── Email Change Requests ───
+    match /emailChangeRequests/{requestId} {
+      // Allow get by document ID for verification link processing & terminal validation
+      allow get: if true;
+      // Restrict collection listing to Webmaster or owner querying their own requests
+      allow list: if isWebmaster() || (isSignedIn() && resource.data.userId == request.auth.uid);
+
+      // Authenticated user creating their own request
+      allow create: if isWebmaster() || (
+        isSignedIn() &&
+        incoming().userId == request.auth.uid &&
+        incoming().requestId == requestId &&
+        incoming().status == 'pending'
+      );
+
+      // Update: Webmaster full access OR owner managing own request OR terminal verification status transition
+      allow update: if isWebmaster() || (
+        // Authenticated owner managing own request (cancelling/superseding) with sensitive fields preserved
+        (
+          isSignedIn() &&
+          existing().userId == request.auth.uid &&
+          incoming().userId == existing().userId &&
+          incoming().requestId == existing().requestId &&
+          incoming().oldEmail == existing().oldEmail &&
+          incoming().newEmail == existing().newEmail &&
+          incoming().createdAt == existing().createdAt &&
+          incoming().expiresAt == existing().expiresAt
+        ) ||
+        // Terminal verification flow transitioning pending -> verified / expired while locking sensitive fields
+        (
+          existing().status == 'pending' &&
+          (incoming().status == 'verified' || incoming().status == 'expired') &&
+          incoming().userId == existing().userId &&
+          incoming().requestId == existing().requestId &&
+          incoming().oldEmail == existing().oldEmail &&
+          incoming().newEmail == existing().newEmail &&
+          incoming().createdAt == existing().createdAt &&
+          incoming().expiresAt == existing().expiresAt
+        )
+      );
+
+      // Delete: only Webmaster or authenticated owner
+      allow delete: if isWebmaster() || (isSignedIn() && existing().userId == request.auth.uid);
+    }
+
+    // ─── Account UID Registry ───
+    match /accountUidRegistry/{accountUid} {
+      allow read: if true;
+      allow write: if isSignedIn() || isWebmaster();
+    }
+
+    // ─── Email Index ───
+    match /emailIndex/{email} {
+      allow read: if true;
+      allow create, update: if isWebmaster() || (isSignedIn() && incoming().uid == request.auth.uid);
+      allow delete: if isWebmaster() || (isSignedIn() && existing().uid == request.auth.uid);
+    }
+
+    // ─── Mobile Index ───
+    match /mobileIndex/{phone} {
+      allow read: if true;
+      allow write: if isSignedIn() || isWebmaster();
+    }
+
+    // ─── Deleted Accounts Tombstone ───
+    match /deletedAccounts/{docId} {
+      allow read: if true;
+      allow write: if isSignedIn() || isWebmaster();
+    }
+
+    // ─── Audit Logs ───
+    match /audit_logs/{logId} {
+      allow create: if isSignedIn();
+      allow read, update, delete: if isWebmaster();
+    }
+    match /auditLogs/{logId} {
+      allow create: if isSignedIn();
+      allow read, update, delete: if isWebmaster();
+    }
+
+    // ─── Site Settings ───
+    match /settings/{settingId} {
+      allow read: if true;
+      allow write: if isWebmaster();
+    }
+
+    // ─── FAQs ───
+    match /faqs/{faqId} {
+      allow read: if true;
+      allow write: if isWebmaster();
+    }
+
+    // ─── Help Articles ───
+    match /help_articles/{articleId} {
+      allow read: if true;
+      allow write: if isWebmaster();
+    }
+
+    // ─── Search Logs ───
+    match /search_logs/{searchId} {
+      allow read: if isWebmaster();
+      allow create, update: if true;
+    }
+
+    // ─── Visitor Stats ───
+    match /visitor_stats/{dateId} {
+      allow read: if isWebmaster();
+      allow create, update: if true;
+    }
+
+    // ─── Platforms, Content Types & Languages ───
+    match /platforms/{id} {
+      allow read: if true;
+      allow write: if isWebmaster();
+    }
+
+    match /contentTypes/{id} {
+      allow read: if true;
+      allow write: if isWebmaster();
+    }
+
+    match /languages/{id} {
+      allow read: if true;
+      allow write: if isWebmaster();
+    }
+
+    // ─── States, Districts & Cities Collections ───
+    match /states/{id} {
+      allow read: if true;
+      allow write: if isWebmaster() || !exists(/databases/$(database)/documents/states/andhra-pradesh);
+    }
+
+    match /districts/{id} {
+      allow read: if true;
+      allow write: if isWebmaster() || !exists(/databases/$(database)/documents/states/andhra-pradesh);
+    }
+
+    match /cities/{id} {
+      allow read: if true;
+      allow write: if isWebmaster();
+    }
+  }
+}

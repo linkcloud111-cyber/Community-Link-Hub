@@ -1,0 +1,6 @@
+{
+  "name": "LinkCloud",
+  "description": "India's Premium Community & Group Directory",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

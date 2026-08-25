@@ -1,179 +1,528 @@
-import { useState, useEffect } from "react";
-import { Link } from "wouter";
+import { useState, useEffect, useMemo } from "react";
+import { Link, useLocation } from "wouter";
+import { useDashboardTabs, type DashboardTab } from "@/hooks/useDashboardTabs";
 import { useAuth } from "@/contexts/AuthContext";
-import { getUserGroups, deleteGroup } from "@/lib/firestore";
-import type { Group } from "@/lib/types";
-import { Plus, LayoutGrid, CheckCircle2, Clock, XCircle, Trash2, Edit, ExternalLink, AlertTriangle } from "lucide-react";
-import { motion } from "framer-motion";
+import {
+  getUserGroups,
+  deleteGroup,
+  updateUserProfile,
+  requestAccountDeletion,
+  cancelDeletionRequest,
+  getFavoriteGroups,
+  removeFavorite,
+  getUserNotifications,
+  markNotificationRead,
+  markAllNotificationsRead,
+  deleteNotification,
+  createContactMessage,
+  getUserContactMessages,
+  createComplaint,
+  getUserComplaints,
+  checkDuplicateUser,
+} from "@/lib/firestore";
+import {
+  resendVerificationEmail,
+  updateUserPassword,
+  updateUserEmailAddress,
+  cancelPendingEmailChange,
+  signInWithMobileOTP,
+  verifyOTP,
+  signOut,
+  type ConfirmationResult,
+} from "@/lib/auth";
+import type { Group, Notification, ContactMessage, Complaint } from "@/lib/types";
+import { validateGmailAddress, validateIndianMobile } from "@/lib/utils";
 import { toast } from "sonner";
+import { Loader2, Mail, Phone, Lock, Eye, EyeOff, ShieldCheck, X, RefreshCw } from "lucide-react";
+
+// Dashboard modular components
+import { DashboardSidebar } from "@/components/dashboard/DashboardSidebar";
+import { DashboardHeader } from "@/components/dashboard/DashboardHeader";
+import { StatCards } from "@/components/dashboard/StatCards";
+import { AccountSecuritySection } from "@/components/dashboard/AccountSecuritySection";
+import { QuickActionsAndAlerts } from "@/components/dashboard/QuickActionsAndAlerts";
+import { RecentGroups } from "@/components/dashboard/RecentGroups";
+import { EditProfileModal } from "@/components/dashboard/EditProfileModal";
+import { ChangeEmailModal } from "@/components/dashboard/ChangeEmailModal";
+import { VerifyPhoneModal } from "@/components/dashboard/VerifyPhoneModal";
+import { MobileTopNav, MobileBottomNav } from "@/components/dashboard/MobileNav";
+
+// Tab Views
+import { MyGroupsTab } from "@/components/dashboard/tabs/MyGroupsTab";
+import { FavoritesTab } from "@/components/dashboard/tabs/FavoritesTab";
+import { NotificationsTab } from "@/components/dashboard/tabs/NotificationsTab";
+import { MessagesTab } from "@/components/dashboard/tabs/MessagesTab";
+import { ActivityTab } from "@/components/dashboard/tabs/ActivityTab";
+import { ProfileTab } from "@/components/dashboard/tabs/ProfileTab";
+import { SecurityTab } from "@/components/dashboard/tabs/SecurityTab";
+import { SettingsTab } from "@/components/dashboard/tabs/SettingsTab";
+import { ConnectedAccountsTab } from "@/components/dashboard/tabs/ConnectedAccountsTab";
+import { HelpTab } from "@/components/dashboard/tabs/HelpTab";
+import { ComplaintTab } from "@/components/dashboard/tabs/ComplaintTab";
+import { MoreTab } from "@/components/dashboard/tabs/MoreTab";
 
 export default function Dashboard() {
-  const { user, profile } = useAuth();
+  const { user, profile, isWebmaster, pendingEmail, refreshProfile, checkAndSyncEmailChangeStatus } = useAuth();
+  const [, setLocation] = useLocation();
+
+  // Tab State
+  const [activeTab, handleTabChange] = useDashboardTabs("overview");
+  const [groupFilter, setGroupFilter] = useState<"all" | "pending" | "approved" | "rejected">("all");
+
+  // Mobile Drawer State
+  const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+
+  // Modals State
+  const [editProfileOpen, setEditProfileOpen] = useState(false);
+  const [emailModalOpen, setEmailModalOpen] = useState(false);
+  const [phoneModalOpen, setPhoneModalOpen] = useState(false);
+
+  // Firestore Data Collections
   const [groups, setGroups] = useState<Group[]>([]);
+  const [favorites, setFavorites] = useState<Group[]>([]);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [messages, setMessages] = useState<ContactMessage[]>([]);
+  const [complaints, setComplaints] = useState<Complaint[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // Load Data
   useEffect(() => {
-    async function loadGroups() {
-      if (!user) return;
+    async function loadData() {
+      if (!user?.uid) return;
+      setLoading(true);
       try {
-        const data = await getUserGroups(user.uid);
-        setGroups(data);
+        const [grps, favs, notifs, msgs, comps] = await Promise.all([
+          getUserGroups(user.uid),
+          getFavoriteGroups(user.uid),
+          getUserNotifications(user.uid),
+          user.email ? getUserContactMessages(user.email) : Promise.resolve([]),
+          user.email ? getUserComplaints(user.email) : Promise.resolve([]),
+        ]);
+        setGroups(grps);
+        setFavorites(favs);
+        setNotifications(notifs);
+        setMessages(msgs);
+        setComplaints(comps);
       } catch (err) {
-        toast.error("Failed to load your communities");
+        console.error("Dashboard data load error:", err);
       } finally {
         setLoading(false);
       }
     }
-    loadGroups();
-  }, [user]);
+    loadData();
+  }, [user?.uid, user?.email]);
 
-  const handleDelete = async (id: string, name: string) => {
-    if (!confirm(`Are you sure you want to delete ${name}?`)) return;
-    
+  const unreadNotifsCount = useMemo(
+    () => notifications.filter((n) => !n.read).length,
+    [notifications]
+  );
+
+  const stats = useMemo(
+    () => ({
+      total: groups.length,
+      approved: groups.filter((g) => g.status === "approved").length,
+      pending: groups.filter((g) => g.status === "pending").length,
+      rejected: groups.filter((g) => g.status === "rejected").length,
+      favorites: favorites.length,
+      notifications: notifications.length,
+      unreadNotifs: unreadNotifsCount,
+    }),
+    [groups, favorites, notifications, unreadNotifsCount]
+  );
+
+  // Logout
+  const handleLogout = async () => {
     try {
-      await deleteGroup(id);
-      setGroups(groups.filter(g => g.id !== id));
-      toast.success("Community deleted successfully");
-    } catch (err) {
-      toast.error("Failed to delete community");
+      await signOut();
+      toast.success("Signed out successfully.");
+      setLocation("/login");
+    } catch {
+      toast.error("Failed to sign out.");
     }
   };
 
-  const stats = {
-    total: groups.length,
-    approved: groups.filter(g => g.status === "approved").length,
-    pending: groups.filter(g => g.status === "pending").length,
-    rejected: groups.filter(g => g.status === "rejected").length,
+  // Group Delete
+  const handleDeleteGroup = async (id: string, name: string) => {
+    if (!confirm(`Are you sure you want to delete "${name}"?`)) return;
+    try {
+      await deleteGroup(id);
+      setGroups((prev) => prev.filter((g) => g.id !== id));
+      toast.success("Group deleted successfully.");
+    } catch {
+      toast.error("Failed to delete group.");
+    }
   };
 
+  // Remove Favorite
+  const handleRemoveFavorite = async (id: string) => {
+    if (!user) return;
+    try {
+      await removeFavorite(user.uid, id);
+      setFavorites((prev) => prev.filter((g) => g.id !== id));
+      toast.success("Removed from favorites.");
+    } catch {
+      toast.error("Failed to remove favorite.");
+    }
+  };
+
+  // Notification actions
+  const handleMarkNotifRead = async (id: string) => {
+    try {
+      await markNotificationRead(id);
+      setNotifications((prev) =>
+        prev.map((n) => (n.id === id ? { ...n, read: true } : n))
+      );
+    } catch {
+      toast.error("Failed to update notification.");
+    }
+  };
+
+  const handleMarkAllNotifsRead = async () => {
+    if (!user) return;
+    try {
+      await markAllNotificationsRead(user.uid);
+      setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+      toast.success("All notifications marked as read.");
+    } catch {
+      toast.error("Failed to update notifications.");
+    }
+  };
+
+  const handleDeleteNotif = async (id: string) => {
+    try {
+      await deleteNotification(id);
+      setNotifications((prev) => prev.filter((n) => n.id !== id));
+      toast.success("Notification removed.");
+    } catch {
+      toast.error("Failed to delete notification.");
+    }
+  };
+
+  // Account Deletion Request
+  const handleRequestDeletion = async (reason: string) => {
+    if (!user) return;
+    await requestAccountDeletion(
+      user.uid,
+      profile?.displayName || "User",
+      profile?.email || user.email || "",
+      profile?.phone || "",
+      reason
+    );
+    await refreshProfile();
+    toast.success("Account deletion request submitted to Webmaster.");
+  };
+
+  // Cancel Account Deletion
+  const handleCancelDeletion = async () => {
+    if (!user) return;
+    await cancelDeletionRequest(user.uid);
+    await refreshProfile();
+    toast.success("Account deletion request has been withdrawn.");
+  };
+
+  // Save Profile Details
+  const handleSaveProfile = async (data: Partial<UserProfile>) => {
+    if (!user) return;
+    await updateUserProfile(user.uid, data);
+    await refreshProfile();
+  };
+
+  // Password Change
+  const handleChangePassword = async (currentPass: string, newPass: string) => {
+    if (!user) return;
+    await updateUserPassword(user, currentPass, newPass);
+  };
+
+  // Send Message
+  const handleSendMessage = async (subject: string, message: string) => {
+    if (!user) return;
+    await createContactMessage({
+      name: profile?.displayName || user?.displayName || "User",
+      email: profile?.email || user?.email || "",
+      phone: profile?.phone || "",
+      subject,
+      message,
+    });
+    toast.success("Your message has been sent to Webmaster!");
+    if (user?.email) {
+      const msgs = await getUserContactMessages(user.email);
+      setMessages(msgs);
+    }
+  };
+
+  // Submit Grievance
+  const handleSubmitComplaint = async (type: string, subject: string, description: string) => {
+    if (!user) return;
+    await createComplaint({
+      name: profile?.displayName || user?.displayName || "User",
+      email: profile?.email || user?.email || "",
+      phone: profile?.phone || "",
+      subject: `[${type}] ${subject}`,
+      message: description,
+    });
+    toast.success("Grievance report submitted successfully!");
+    if (user?.email) {
+      const comps = await getUserComplaints(user.email);
+      setComplaints(comps);
+    }
+  };
+
+  // Check Email Status
+  const handleCheckEmailStatus = async () => {
+    if (!user) return;
+    try {
+      const result = await checkAndSyncEmailChangeStatus({
+        manual: true,
+        targetPendingEmail: pendingEmail,
+        caller: "DashboardBanner.handleCheckEmailStatus",
+      });
+      if (result.status === "success") {
+        await refreshProfile();
+        setActiveTab("profile");
+      }
+    } catch {
+      toast.error("Unable to check verification status. Please try again.");
+    }
+  };
+
+  const isEmailVerified = Boolean(user?.emailVerified || profile?.emailVerified);
+
   return (
-    <div className="max-w-6xl mx-auto space-y-10">
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Welcome, {profile?.displayName || "User"}</h1>
-          <p className="text-muted-foreground mt-2">Manage your submitted communities here.</p>
-        </div>
-        <Link 
-          href="/dashboard/submit" 
-          className="inline-flex items-center gap-2 px-5 py-2.5 bg-primary text-primary-foreground font-semibold rounded-xl hover:bg-primary/90 transition-colors shadow-lg shadow-primary/20"
-        >
-          <Plus className="w-5 h-5" /> Submit Community
-        </Link>
+    <div className="min-h-screen bg-slate-50/70 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col">
+      <div id="dash-recaptcha"></div>
+
+      {/* MAIN LAYOUT WRAPPER */}
+      <div className="flex flex-col lg:flex-row flex-1 w-full max-w-[1440px] mx-auto px-2 sm:px-4 lg:px-8 py-2 sm:py-4 gap-0 lg:gap-6 min-w-0">
+        {/* DESKTOP SIDEBAR + MOBILE DRAWER */}
+        <DashboardSidebar
+          activeTab={activeTab}
+          onTabChange={handleTabChange}
+          onLogout={handleLogout}
+          unreadNotifsCount={unreadNotifsCount}
+          isCollapsed={sidebarCollapsed}
+          onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
+          isMobileOpen={mobileDrawerOpen}
+          onCloseMobile={() => setMobileDrawerOpen(false)}
+        />
+
+        {/* MAIN DASHBOARD CONTENT AREA */}
+        <main className="flex-1 min-w-0 space-y-4 sm:space-y-6 pb-28 lg:pb-8 w-full max-w-full">
+          {/* MOBILE TOP NAVIGATION BAR */}
+          <MobileTopNav
+            onOpenDrawer={() => setMobileDrawerOpen(true)}
+            unreadCount={unreadNotifsCount}
+            profile={profile}
+            onNavigateNotifications={() => handleTabChange("notifications")}
+            onNavigateProfile={() => handleTabChange("profile")}
+          />
+
+          {/* DASHBOARD HEADER */}
+          <DashboardHeader
+            profile={profile}
+            email={user?.email || null}
+            isEmailVerified={isEmailVerified}
+            isWebmaster={isWebmaster}
+            onEditProfile={() => setEditProfileOpen(true)}
+            onLogout={handleLogout}
+          />
+
+          {/* TAB ROUTING */}
+          {activeTab === "overview" && (
+            <div className="space-y-6">
+              {/* 1. STATISTICS CARDS */}
+              <StatCards
+                stats={stats}
+                onNavigate={(tab, filter) => {
+                  if (filter) setGroupFilter(filter);
+                  handleTabChange(tab);
+                }}
+              />
+
+              {/* 2. QUICK ACTIONS & IMPORTANT ALERTS */}
+              <QuickActionsAndAlerts
+                onNavigate={handleTabChange}
+                onEditProfile={() => setEditProfileOpen(true)}
+                unreadNotifications={notifications.filter((n) => !n.read)}
+                isEmailVerified={isEmailVerified}
+                hasPhone={Boolean(profile?.phone)}
+              />
+
+              {/* 3. ACCOUNT SECURITY & DELETION CARD */}
+              <AccountSecuritySection
+                profile={profile}
+                email={user?.email || null}
+                isEmailVerified={isEmailVerified}
+                onRequestDeletion={handleRequestDeletion}
+                onCancelDeletion={handleCancelDeletion}
+                onOpenChangePassword={() => handleTabChange("security")}
+              />
+
+              {/* 4. RECENT GROUPS */}
+              <RecentGroups
+                groups={groups}
+                onViewAll={() => handleTabChange("my-groups")}
+              />
+            </div>
+          )}
+
+          {/* MY GROUPS TAB */}
+          {(activeTab === "my-groups" || activeTab === "groups" || activeTab === "submitted") && (
+            <MyGroupsTab
+              groups={groups}
+              filter={groupFilter}
+              onFilterChange={setGroupFilter}
+              onDeleteGroup={handleDeleteGroup}
+            />
+          )}
+
+          {/* FAVORITES TAB */}
+          {activeTab === "favorites" && (
+            <FavoritesTab
+              favorites={favorites}
+              onRemoveFavorite={handleRemoveFavorite}
+            />
+          )}
+
+          {/* NOTIFICATIONS TAB */}
+          {activeTab === "notifications" && (
+            <NotificationsTab
+              notifications={notifications}
+              onMarkRead={handleMarkNotifRead}
+              onMarkAllRead={handleMarkAllNotifsRead}
+              onDeleteNotification={handleDeleteNotif}
+            />
+          )}
+
+          {/* MESSAGES TAB */}
+          {activeTab === "messages" && (
+            <MessagesTab
+              messages={messages}
+              onSendMessage={handleSendMessage}
+            />
+          )}
+
+          {/* ACTIVITY TAB */}
+          {activeTab === "activity" && (
+            <ActivityTab
+              profile={profile}
+              groups={groups}
+              notifications={notifications}
+            />
+          )}
+
+          {/* PROFILE TAB */}
+          {(activeTab === "profile" || activeTab === "my-profile") && (
+            <ProfileTab
+              profile={profile}
+              email={user?.email || null}
+              isEmailVerified={isEmailVerified}
+              pendingEmail={pendingEmail}
+              onEditProfile={() => setEditProfileOpen(true)}
+              onOpenEmailModal={() => setEmailModalOpen(true)}
+              onOpenPhoneModal={() => setPhoneModalOpen(true)}
+              onCheckEmailStatus={handleCheckEmailStatus}
+            />
+          )}
+
+          {/* SECURITY TAB */}
+          {activeTab === "security" && (
+            <SecurityTab
+              profile={profile}
+              email={user?.email || null}
+              isEmailVerified={isEmailVerified}
+              onChangePassword={handleChangePassword}
+              onRequestDeletion={handleRequestDeletion}
+              onCancelDeletion={handleCancelDeletion}
+              onOpenPhoneModal={() => setPhoneModalOpen(true)}
+            />
+          )}
+
+          {/* SETTINGS TAB */}
+          {activeTab === "settings" && (
+            <SettingsTab
+              profile={profile}
+              onSavePreferences={async (prefs) => {
+                if (!user) return;
+                await updateUserProfile(user.uid, prefs);
+                await refreshProfile();
+              }}
+            />
+          )}
+
+          {/* CONNECTED ACCOUNTS TAB */}
+          {activeTab === "connected-accounts" && (
+            <ConnectedAccountsTab
+              profile={profile}
+              email={user?.email || null}
+              isEmailVerified={isEmailVerified}
+            />
+          )}
+
+          {/* HELP TAB */}
+          {activeTab === "help" && (
+            <HelpTab onNavigate={handleTabChange} />
+          )}
+
+          {/* COMPLAINT / GRIEVANCE TAB */}
+          {activeTab === "complaint" && (
+            <ComplaintTab
+              complaints={complaints}
+              onSubmitComplaint={handleSubmitComplaint}
+            />
+          )}
+
+          {/* MORE TAB */}
+          {activeTab === "more" && (
+            <MoreTab
+              profile={profile}
+              email={user?.email || null}
+              isEmailVerified={isEmailVerified}
+              unreadNotifsCount={unreadNotifsCount}
+              onNavigate={handleTabChange}
+              onEditProfile={() => setEditProfileOpen(true)}
+              onLogout={handleLogout}
+            />
+          )}
+        </main>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="bg-card border border-border p-6 rounded-2xl shadow-sm">
-          <div className="flex items-center gap-3 text-muted-foreground mb-2">
-            <LayoutGrid className="w-5 h-5" /> <span className="font-medium text-sm">Total</span>
-          </div>
-          <p className="text-3xl font-bold text-foreground">{stats.total}</p>
-        </div>
-        <div className="bg-emerald-500/10 border border-emerald-500/20 p-6 rounded-2xl shadow-sm">
-          <div className="flex items-center gap-3 text-emerald-600 mb-2">
-            <CheckCircle2 className="w-5 h-5" /> <span className="font-medium text-sm">Approved</span>
-          </div>
-          <p className="text-3xl font-bold text-emerald-600">{stats.approved}</p>
-        </div>
-        <div className="bg-amber-500/10 border border-amber-500/20 p-6 rounded-2xl shadow-sm">
-          <div className="flex items-center gap-3 text-amber-600 mb-2">
-            <Clock className="w-5 h-5" /> <span className="font-medium text-sm">Pending</span>
-          </div>
-          <p className="text-3xl font-bold text-amber-600">{stats.pending}</p>
-        </div>
-        <div className="bg-destructive/10 border border-destructive/20 p-6 rounded-2xl shadow-sm">
-          <div className="flex items-center gap-3 text-destructive mb-2">
-            <XCircle className="w-5 h-5" /> <span className="font-medium text-sm">Rejected</span>
-          </div>
-          <p className="text-3xl font-bold text-destructive">{stats.rejected}</p>
-        </div>
-      </div>
+      {/* EDIT PROFILE MODAL */}
+      <EditProfileModal
+        isOpen={editProfileOpen}
+        onClose={() => setEditProfileOpen(false)}
+        profile={profile}
+        onSave={handleSaveProfile}
+      />
 
-      <div className="bg-card border border-border rounded-3xl shadow-sm overflow-hidden">
-        <div className="p-6 border-b border-border">
-          <h2 className="text-xl font-bold">My Communities</h2>
-        </div>
-        
-        {loading ? (
-          <div className="p-12 flex justify-center">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-          </div>
-        ) : groups.length === 0 ? (
-          <div className="p-16 text-center text-muted-foreground flex flex-col items-center">
-            <LayoutGrid className="w-12 h-12 mb-4 opacity-20" />
-            <p className="text-lg font-medium">No communities submitted yet.</p>
-            <p className="text-sm mt-1 mb-6">Share your first community to get started.</p>
-            <Link href="/dashboard/submit" className="text-primary font-medium hover:underline">Submit now</Link>
-          </div>
-        ) : (
-          <div className="divide-y divide-border">
-            {groups.map((group) => (
-              <motion.div 
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                key={group.id} 
-                className="p-6 flex flex-col md:flex-row items-center gap-6 hover:bg-muted/30 transition-colors"
-              >
-                <div className="w-16 h-16 rounded-xl bg-muted overflow-hidden flex-shrink-0 border border-border">
-                  {group.logoUrl ? (
-                    <img src={group.logoUrl} alt={group.name} className="w-full h-full object-cover" />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center font-bold text-xl uppercase text-muted-foreground">
-                      {group.name.substring(0, 2)}
-                    </div>
-                  )}
-                </div>
-                
-                <div className="flex-1 text-center md:text-left space-y-1">
-                  <h3 className="text-lg font-bold">
-                    <Link href={`/groups/${group.id}`} className="hover:text-primary transition-colors">
-                      {group.name}
-                    </Link>
-                  </h3>
-                  <div className="flex flex-wrap items-center justify-center md:justify-start gap-2 text-sm text-muted-foreground">
-                    <span className="bg-secondary text-secondary-foreground px-2 py-0.5 rounded-md text-xs font-medium">
-                      {group.platform}
-                    </span>
-                    <span>•</span>
-                    <span>{group.categoryName}</span>
-                    <span>•</span>
-                    <span>{group.joinCount} joins</span>
-                  </div>
-                </div>
+      {/* CHANGE EMAIL MODAL */}
+      <ChangeEmailModal
+        isOpen={emailModalOpen}
+        onClose={() => setEmailModalOpen(false)}
+        user={user}
+        profile={profile}
+        pendingEmail={pendingEmail}
+        onSuccess={async () => {
+          await refreshProfile();
+          handleTabChange("profile");
+        }}
+      />
 
-                <div className="flex items-center gap-3">
-                  {group.status === "approved" && (
-                    <span className="flex items-center gap-1.5 px-3 py-1 bg-emerald-500/10 text-emerald-600 rounded-full text-xs font-bold uppercase tracking-wider">
-                      <CheckCircle2 className="w-3.5 h-3.5" /> Approved
-                    </span>
-                  )}
-                  {group.status === "pending" && (
-                    <span className="flex items-center gap-1.5 px-3 py-1 bg-amber-500/10 text-amber-600 rounded-full text-xs font-bold uppercase tracking-wider">
-                      <Clock className="w-3.5 h-3.5" /> Pending
-                    </span>
-                  )}
-                  {group.status === "rejected" && (
-                    <span className="flex items-center gap-1.5 px-3 py-1 bg-destructive/10 text-destructive rounded-full text-xs font-bold uppercase tracking-wider">
-                      <AlertTriangle className="w-3.5 h-3.5" /> Rejected
-                    </span>
-                  )}
-                </div>
-
-                <div className="flex items-center gap-2 mt-4 md:mt-0">
-                  <Link href={`/dashboard/edit/${group.id}`} className="p-2 text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-colors" title="Edit">
-                    <Edit className="w-5 h-5" />
-                  </Link>
-                  <a href={group.joinUrl} target="_blank" rel="noreferrer" className="p-2 text-muted-foreground hover:text-primary hover:bg-primary/10 rounded-lg transition-colors" title="Visit">
-                    <ExternalLink className="w-5 h-5" />
-                  </a>
-                  <button onClick={() => handleDelete(group.id, group.name)} className="p-2 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-lg transition-colors" title="Delete">
-                    <Trash2 className="w-5 h-5" />
-                  </button>
-                </div>
-              </motion.div>
-            ))}
-          </div>
-        )}
-      </div>
+      {/* VERIFY / CHANGE MOBILE MODAL */}
+      <VerifyPhoneModal
+        isOpen={phoneModalOpen}
+        onClose={() => setPhoneModalOpen(false)}
+        user={user}
+        profile={profile}
+        onSuccess={refreshProfile}
+      />
+      {/* MOBILE BOTTOM NAVIGATION BAR */}
+      <MobileBottomNav
+        activeTab={activeTab}
+        onTabChange={handleTabChange}
+        onOpenMenu={() => setMobileDrawerOpen(true)}
+        unreadCount={unreadNotifsCount}
+      />
     </div>
   );
 }

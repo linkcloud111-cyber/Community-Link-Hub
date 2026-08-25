@@ -12,13 +12,13 @@ interface ReportModalProps {
 }
 
 const REPORT_REASONS = [
-  "Broken / Invalid Link",
-  "Spam or Advertisement",
-  "Inappropriate Content",
-  "Scam or Fraud",
-  "Hate Speech or Harassment",
-  "Duplicate Listing",
-  "Inactive Group",
+  "Invalid Link",
+  "Spam",
+  "Scam",
+  "Fake Group",
+  "Adult Content",
+  "Duplicate",
+  "Copyright",
   "Other",
 ];
 

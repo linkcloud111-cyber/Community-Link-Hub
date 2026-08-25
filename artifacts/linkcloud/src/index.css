@@ -1,5 +1,5 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
-@import 'tailwindcss';
+@import "tailwindcss";
 @import 'tw-animate-css';
 @plugin "@tailwindcss/typography";
 
@@ -143,3 +143,40 @@
     @apply font-sans antialiased bg-background text-foreground;
   }
 }
+
+/* Custom Sonner Toast Theme Overrides */
+[data-sonner-toast][data-type="error"] {
+  background: #fff1f2 !important;
+  border-color: #fecdd3 !important;
+  color: #881337 !important;
+}
+.dark [data-sonner-toast][data-type="error"] {
+  background: #4c0519 !important;
+  border-color: #9f1239 !important;
+  color: #ffe4e6 !important;
+}
+
+[data-sonner-toast][data-type="success"] {
+  background: #ecfdf5 !important;
+  border-color: #a7f3d0 !important;
+  color: #064e3b !important;
+}
+.dark [data-sonner-toast][data-type="success"] {
+  background: #022c22 !important;
+  border-color: #065f46 !important;
+  color: #d1fae5 !important;
+}
+
+[data-sonner-toast][data-type="info"],
+[data-sonner-toast][data-type="warning"] {
+  background: #fffbeb !important;
+  border-color: #fde68a !important;
+  color: #78350f !important;
+}
+.dark [data-sonner-toast][data-type="info"],
+.dark [data-sonner-toast][data-type="warning"] {
+  background: #451a03 !important;
+  border-color: #92400e !important;
+  color: #fef3c7 !important;
+}
+

@@ -22,7 +22,14 @@ export const INDIA_STATES: IndiaState[] = [
   },
   {
     name: "Chhattisgarh",
-    districts: ["Balod", "Baloda Bazar", "Balrampur", "Bastar", "Bemetara", "Bijapur", "Bilaspur", "Dantewada", "Dhamtari", "Durg", "Gariaband", "Janjgir-Champa", "Jashpur", "Kabirdham", "Kanker", "Kondagaon", "Korba", "Korea", "Mahasamund", "Mungeli", "Narayanpur", "Raigarh", "Raipur", "Rajnandgaon", "Sukma", "Surajpur", "Surguja"],
+    districts: [
+      "Balod", "Baloda Bazar", "Balrampur", "Bastar", "Bemetara", "Bijapur", "Bilaspur", 
+      "Dantewada", "Dhamtari", "Durg", "Gariaband", "Gaurela Pendra Marwahi", "Janjgir Champa", 
+      "Jashpur", "Kabirdham", "Kanker", "Khairagarh Chhuikhadan Gandai", "Kondagaon", "Korba", 
+      "Korea", "Mahasamund", "Manendragarh Chirmiri Bharatpur", "Mohla Manpur Ambagarh Chowki", 
+      "Mungeli", "Narayanpur", "Raigarh", "Raipur", "Rajnandgaon", "Sakti", "Sarangarh Bilaigarh", 
+      "Sukma", "Surajpur", "Surguja"
+    ],
   },
   {
     name: "Goa",

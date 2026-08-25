@@ -1,16 +1,23 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { Link, useLocation } from "wouter";
+import { useTaxonomy } from "@/contexts/TaxonomyContext";
 import {
   getApprovedGroups,
   getTrendingGroups,
   getFeaturedGroups,
   getLatestGroups,
-  getCategories,
+  getSiteSettings,
+  getFAQs,
+  logVisitorHit,
+  logSearchQuery,
 } from "@/lib/firestore";
-import type { Group, Category, Platform } from "@/lib/types";
-import { INDIA_STATE_NAMES, getDistrictsForState } from "@/lib/india-data";
+import type { Group, SiteSettings, FAQItem } from "@/lib/types";
+import { useAuth } from "@/contexts/AuthContext";
 import GroupCard from "@/components/group-card";
 import SkeletonCard from "@/components/skeleton-card";
+import { PlatformIcon } from "@/components/platform-icon";
+import { CategoryIcon } from "@/components/category-icon";
+import { getPlatformVisual, getCategoryVisual } from "@/lib/taxonomy-visuals";
 import {
   Search,
   Compass,
@@ -18,79 +25,70 @@ import {
   Sparkles,
   Clock,
   ChevronDown,
-  SlidersHorizontal,
+  ChevronRight,
   Plus,
   X,
+  TrendingUp,
+  Layers,
+  HelpCircle,
+  ExternalLink,
+  ShieldCheck,
+  Users,
+  MapPin,
+  MessageSquare,
+  Wrench,
+  ShieldAlert,
 } from "lucide-react";
-import {
-  SiWhatsapp,
-  SiTelegram,
-  SiDiscord,
-  SiFacebook,
-  SiInstagram,
-  SiX,
-  SiYoutube,
-  SiReddit,
-} from "react-icons/si";
-import { Linkedin } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
-const PLATFORMS: { name: Platform | "All"; icon: React.FC<{ className?: string }> }[] = [
-  { name: "All", icon: Compass },
-  { name: "WhatsApp", icon: SiWhatsapp },
-  { name: "Telegram", icon: SiTelegram },
-  { name: "Discord", icon: SiDiscord },
-  { name: "Facebook Groups", icon: SiFacebook },
-  { name: "Instagram Broadcast", icon: SiInstagram },
-  { name: "X Communities", icon: SiX },
-  { name: "LinkedIn Groups", icon: Linkedin },
-  { name: "YouTube Channels", icon: SiYoutube },
-  { name: "Reddit", icon: SiReddit },
-];
-
 export default function Home() {
+  const { isWebmaster } = useAuth();
   const [, setLocation] = useLocation();
-  const [platform, setPlatform] = useState<Platform | "All">("All");
+  const {
+    activeCategories: categories,
+    activePlatforms: platforms,
+  } = useTaxonomy();
+
   const [search, setSearch] = useState("");
-  const [selectedCategory, setSelectedCategory] = useState("");
-  const [selectedState, setSelectedState] = useState("");
-  const [selectedDistrict, setSelectedDistrict] = useState("");
-  const [showFilters, setShowFilters] = useState(false);
-
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [districts, setDistricts] = useState<string[]>([]);
-  const [searchResults, setSearchResults] = useState<Group[]>([]);
-  const [trending, setTrending] = useState<Group[]>([]);
   const [featured, setFeatured] = useState<Group[]>([]);
+  const [popular, setPopular] = useState<Group[]>([]);
   const [latest, setLatest] = useState<Group[]>([]);
-
+  const [allGroupsCount, setAllGroupsCount] = useState(0);
+  const [totalJoins, setTotalJoins] = useState(0);
   const [loadingInitial, setLoadingInitial] = useState(true);
-  const [loadingSearch, setLoadingSearch] = useState(false);
+  const [faqOpen, setFaqOpen] = useState<number | null>(0);
 
-  // Update districts when state changes
-  useEffect(() => {
-    setSelectedDistrict("");
-    if (selectedState) {
-      setDistricts(getDistrictsForState(selectedState));
-    } else {
-      setDistricts([]);
-    }
-  }, [selectedState]);
+  // Settings & FAQs from Firestore
+  const [settings, setSettings] = useState<SiteSettings | null>(null);
+  const [faqs, setFaqs] = useState<FAQItem[]>([]);
 
-  // Load initial data
+  // Suggestions for autocomplete search bar
+  const [suggestions, setSuggestions] = useState<Group[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+
   useEffect(() => {
+    // Log Visitor Traffic Hit
+    logVisitorHit();
+
     async function loadInitial() {
       try {
-        const [cats, trend, feat, late] = await Promise.all([
-          getCategories(),
-          getTrendingGroups(),
+        const [feat, trend, late, all, siteData, faqData] = await Promise.all([
           getFeaturedGroups(),
+          getTrendingGroups(),
           getLatestGroups(),
+          getApprovedGroups(),
+          getSiteSettings(),
+          getFAQs(),
         ]);
-        setCategories(cats);
-        setTrending(trend);
         setFeatured(feat);
+        setPopular(trend);
         setLatest(late);
+        setAllGroupsCount(all.length);
+        setSettings(siteData);
+        setFaqs(faqData);
+
+        const joins = all.reduce((sum, g) => sum + (g.joinCount ?? 0), 0);
+        setTotalJoins(joins);
       } catch (err) {
         console.error(err);
       } finally {
@@ -100,334 +98,376 @@ export default function Home() {
     loadInitial();
   }, []);
 
-  const isSearching =
-    platform !== "All" || !!search || !!selectedCategory || !!selectedState || !!selectedDistrict;
-
-  // Debounced search
+  // Handle instant autocomplete suggestions
   useEffect(() => {
-    if (!isSearching) {
-      setSearchResults([]);
+    if (!search.trim()) {
+      setSuggestions([]);
+      setShowSuggestions(false);
       return;
     }
 
     const timer = setTimeout(async () => {
-      setLoadingSearch(true);
       try {
-        const results = await getApprovedGroups({
-          platform: platform === "All" ? undefined : platform,
-          categoryId: selectedCategory || undefined,
-          state: selectedState || undefined,
-          district: selectedDistrict || undefined,
-          search: search || undefined,
-        });
-        setSearchResults(results);
-      } catch (err) {
-        console.error(err);
-      } finally {
-        setLoadingSearch(false);
+        const results = await getApprovedGroups({ search });
+        setSuggestions(results.slice(0, 5));
+        setShowSuggestions(true);
+      } catch {
+        // ignore
       }
-    }, 350);
+    }, 200);
 
     return () => clearTimeout(timer);
-  }, [platform, search, selectedCategory, selectedState, selectedDistrict, isSearching]);
+  }, [search]);
 
-  const clearFilters = () => {
-    setPlatform("All");
-    setSearch("");
-    setSelectedCategory("");
-    setSelectedState("");
-    setSelectedDistrict("");
+  const handleSearchSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (search.trim()) {
+      logSearchQuery(search.trim());
+      setLocation(`/groups?q=${encodeURIComponent(search.trim())}`);
+    } else {
+      setLocation("/groups");
+    }
   };
 
-  const activeFilterCount = [
-    platform !== "All",
-    !!selectedCategory,
-    !!selectedState,
-    !!selectedDistrict,
-  ].filter(Boolean).length;
+  // Maintenance Screen Bypass for Webmaster
+  if (settings?.maintenanceMode && !isWebmaster) {
+    return (
+      <div className="min-h-[70vh] flex flex-col items-center justify-center text-center p-6 space-y-6">
+        <div className="w-20 h-20 rounded-full bg-amber-500/10 text-amber-500 flex items-center justify-center border border-amber-500/20 shadow-xl">
+          <Wrench className="w-10 h-10 animate-bounce" />
+        </div>
+        <div className="max-w-md space-y-2">
+          <h1 className="text-3xl font-extrabold text-foreground">Under Maintenance</h1>
+          <p className="text-sm text-muted-foreground leading-relaxed">
+            LinkCloud is currently undergoings system upgrades and database optimization. We will be back online shortly!
+          </p>
+        </div>
+        <div className="pt-4 flex items-center gap-2 text-xs font-mono text-muted-foreground bg-muted/30 px-4 py-2 rounded-xl border border-border">
+          <ShieldAlert className="w-4 h-4 text-amber-500" /> Admin Bypass Enabled in Header
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="space-y-12 pb-20">
-      {/* Hero */}
-      <section className="relative pt-16 pb-8 flex flex-col items-center text-center overflow-hidden">
-        <motion.div
-          initial={{ opacity: 0, y: 24 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5 }}
-          className="max-w-3xl space-y-6 z-10 px-4"
-        >
-          <span className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-primary/10 text-primary text-sm font-semibold tracking-wide border border-primary/20 backdrop-blur-md">
-            🇮🇳 India's Community Directory
-          </span>
-          <h1 className="text-5xl md:text-6xl font-extrabold tracking-tight leading-[1.1]">
-            Discover Your{" "}
-            <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary to-blue-400">
-              Next Community
+    <div className="space-y-16 pb-20">
+      {/* Hero Section */}
+      {settings?.heroSectionEnabled !== false && (
+        <section className="relative pt-12 pb-6 flex flex-col items-center text-center overflow-hidden">
+          <motion.div
+            initial={{ opacity: 0, y: 24 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5 }}
+            className="max-w-3xl space-y-6 z-10 px-4"
+          >
+            <span className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-primary/10 text-primary text-xs sm:text-sm font-semibold tracking-wide border border-primary/20 backdrop-blur-md">
+              🇮🇳 {settings?.siteTagline || "India's #1 Public Community Directory"}
             </span>
-          </h1>
-          <p className="text-lg text-muted-foreground max-w-xl mx-auto leading-relaxed">
-            Find and join the best WhatsApp, Telegram, Discord groups across India.
-            Curated, verified, and growing every day.
-          </p>
+            <h1 className="text-4xl sm:text-6xl font-extrabold tracking-tight leading-[1.1]">
+              {settings?.heroTitle || "Discover & Join Verified Communities"}
+            </h1>
+            <p className="text-base sm:text-lg text-muted-foreground max-w-2xl mx-auto leading-relaxed">
+              {settings?.heroSubtitle || "Find active WhatsApp, Telegram, Discord, and social groups curated across India."}
+            </p>
 
-          {/* Search Box */}
-          <div className="max-w-2xl mx-auto w-full mt-6 relative">
-            <div className="relative group">
-              <div className="absolute -inset-0.5 bg-gradient-to-r from-primary to-blue-500 rounded-2xl blur opacity-20 group-hover:opacity-40 transition duration-500 pointer-events-none" />
-              <div className="relative flex items-center bg-card border border-border rounded-2xl overflow-hidden shadow-2xl backdrop-blur-xl">
-                <Search className="w-5 h-5 ml-4 text-muted-foreground flex-shrink-0" />
-                <input
-                  type="text"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Search groups, topics, cities, tags..."
-                  className="w-full p-4 bg-transparent border-none outline-none text-foreground placeholder:text-muted-foreground text-base"
-                />
-                {search && (
+            {/* Search Bar with Instant Autocomplete Suggestions */}
+            <div className="max-w-2xl mx-auto w-full mt-6 relative z-50">
+              <form onSubmit={handleSearchSubmit} className="relative group">
+                <div className="absolute -inset-0.5 bg-gradient-to-r from-primary to-blue-500 rounded-2xl blur opacity-25 group-hover:opacity-40 transition duration-500 pointer-events-none" />
+                <div className="relative flex items-center bg-card border border-border/80 rounded-2xl overflow-hidden shadow-2xl backdrop-blur-xl">
+                  <Search className="w-5 h-5 ml-4 text-muted-foreground flex-shrink-0" />
+                  <input
+                    type="text"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    onFocus={() => search.trim() && setShowSuggestions(true)}
+                    placeholder="Search WhatsApp groups, study circles, cities, tech..."
+                    className="w-full p-4 bg-transparent border-none outline-none text-foreground placeholder:text-muted-foreground text-sm sm:text-base"
+                  />
+                  {search && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSearch("");
+                        setShowSuggestions(false);
+                      }}
+                      className="p-2.5 text-muted-foreground hover:text-foreground"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  )}
                   <button
-                    onClick={() => setSearch("")}
-                    className="p-3 text-muted-foreground hover:text-foreground"
+                    type="submit"
+                    className="m-1.5 px-6 py-3 bg-primary text-primary-foreground font-bold rounded-xl text-xs sm:text-sm shadow-md hover:bg-primary/90 transition-all flex items-center gap-1.5 flex-shrink-0"
                   >
-                    <X className="w-4 h-4" />
+                    <span>{settings?.heroButtonText || "Search"}</span>
+                    <ChevronRight className="w-4 h-4" />
                   </button>
+                </div>
+              </form>
+
+              {/* Instant Suggestions Dropdown */}
+              <AnimatePresence>
+                {showSuggestions && suggestions.length > 0 && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -10 }}
+                    className="absolute top-full left-0 right-0 mt-2 bg-card border border-border rounded-2xl shadow-2xl overflow-hidden text-left z-50 divide-y divide-border/40"
+                  >
+                    <div className="p-2 text-[10px] font-bold text-muted-foreground uppercase tracking-wider px-4 bg-muted/40">
+                      Top Live Matches
+                    </div>
+                    {suggestions.map((g) => (
+                      <Link
+                        key={g.id}
+                        href={`/groups/${g.id}`}
+                        onClick={() => setShowSuggestions(false)}
+                        className="flex items-center gap-3 p-3.5 hover:bg-muted/60 transition-colors group"
+                      >
+                        <img
+                          src={g.logoUrl || "https://images.unsplash.com/photo-1522071820081-009f0129c71c?w=100"}
+                          alt={g.name}
+                          className="w-8 h-8 rounded-xl object-cover border border-border"
+                        />
+                        <div className="flex-1 min-w-0">
+                          <p className="font-bold text-xs text-foreground group-hover:text-primary truncate">{g.name}</p>
+                          <p className="text-[10px] text-muted-foreground truncate">{g.platform} • {g.categoryName}</p>
+                        </div>
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-muted text-muted-foreground group-hover:bg-primary/10 group-hover:text-primary">
+                          Join
+                        </span>
+                      </Link>
+                    ))}
+                  </motion.div>
                 )}
+              </AnimatePresence>
+            </div>
+          </motion.div>
+        </section>
+      )}
+
+      {/* Featured Groups Carousel Section */}
+      {settings?.featuredGroupsEnabled !== false && featured.length > 0 && (
+        <section className="space-y-4">
+          <div className="flex items-center justify-between border-b border-border/80 pb-3">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-xl bg-amber-500/10 text-amber-500 flex items-center justify-center border border-amber-500/20">
+                <Sparkles className="w-4 h-4" />
+              </div>
+              <div>
+                <h2 className="text-xl font-bold tracking-tight">Featured Communities</h2>
+                <p className="text-xs text-muted-foreground">Handpicked high-engagement verified groups</p>
               </div>
             </div>
-          </div>
-
-          {/* CTA */}
-          <div className="flex items-center justify-center gap-4 pt-2">
-            <Link
-              href="/submit"
-              className="inline-flex items-center gap-2 px-6 py-2.5 bg-primary text-primary-foreground font-semibold rounded-xl hover:bg-primary/90 transition-all shadow-lg shadow-primary/25 hover:scale-[1.02]"
-            >
-              <Plus className="w-4 h-4" /> Submit Your Community
+            <Link href="/groups?featured=true" className="text-xs font-bold text-primary hover:underline flex items-center gap-1">
+              View All Featured <ChevronRight className="w-3.5 h-3.5" />
             </Link>
           </div>
-        </motion.div>
-      </section>
 
-      {/* Filters Bar */}
-      <section className="sticky top-16 z-40 bg-background/80 backdrop-blur-xl border-y border-border py-3 -mx-4 sm:-mx-6 px-4 sm:px-6">
-        <div className="max-w-7xl mx-auto space-y-3">
-          {/* Platform pills */}
-          <div className="flex gap-2 overflow-x-auto pb-1 hide-scrollbar no-scrollbar">
-            {PLATFORMS.map((p) => (
-              <button
-                key={p.name}
-                onClick={() => setPlatform(p.name)}
-                className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition-all flex-shrink-0 ${
-                  platform === p.name
-                    ? "bg-primary text-primary-foreground shadow-lg shadow-primary/20"
-                    : "bg-muted/60 hover:bg-muted text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                <p.icon className="w-3.5 h-3.5" />
-                {p.name}
-              </button>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {loadingInitial
+              ? Array.from({ length: 4 }).map((_, i) => <SkeletonCard key={i} />)
+              : featured.map((g) => <GroupCard key={g.id} group={g} />)}
+          </div>
+        </section>
+      )}
+
+      {/* Popular Platforms Grid */}
+      {settings?.popularPlatformsEnabled !== false && platforms.length > 0 && (
+        <section className="space-y-4">
+          <div className="border-b border-border/80 pb-3">
+            <h2 className="text-xl font-bold tracking-tight flex items-center gap-2">
+              <Layers className="w-5 h-5 text-primary" /> Supported Platforms
+            </h2>
+            <p className="text-xs text-muted-foreground">Browse active communities across messaging networks</p>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-9 gap-3">
+            {platforms.map((p) => {
+              const pVisual = getPlatformVisual(p.name, p.themeColor, p.icon);
+              const isPlatformFilterEnabled = settings?.filterSettings?.platformFilterEnabled !== false;
+              const targetHref = isPlatformFilterEnabled
+                ? `/groups?platform=${encodeURIComponent(p.name)}`
+                : "/groups";
+
+              return (
+                <Link
+                  key={p.id || p.name}
+                  href={targetHref}
+                  className="p-3.5 bg-card border border-border/80 hover:border-primary hover:scale-105 rounded-2xl transition-all flex flex-col items-center justify-center text-center gap-2 shadow-sm group"
+                >
+                  <div
+                    className="w-10 h-10 rounded-xl flex items-center justify-center border transition-all group-hover:scale-110"
+                    style={{ backgroundColor: pVisual.bgColor, borderColor: pVisual.borderColor }}
+                  >
+                    <PlatformIcon platform={p.name} color={p.themeColor} icon={p.icon} className="w-5 h-5" style={pVisual.iconStyle} />
+                  </div>
+                  <span className="text-xs font-bold truncate max-w-full text-foreground">{p.name.split(" ")[0]}</span>
+                </Link>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
+      {/* Popular Categories Grid */}
+      {settings?.popularCategoriesEnabled !== false && categories.length > 0 && (
+        <section className="space-y-4">
+          <div className="flex items-center justify-between border-b border-border/80 pb-3">
+            <div>
+              <h2 className="text-xl font-bold tracking-tight flex items-center gap-2">
+                <Compass className="w-5 h-5 text-primary" /> Explore Top Categories
+              </h2>
+              <p className="text-xs text-muted-foreground">Discover groups by topic and interest</p>
+            </div>
+            <Link href="/groups" className="text-xs font-bold text-primary hover:underline flex items-center gap-1">
+              All Categories <ChevronRight className="w-3.5 h-3.5" />
+            </Link>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+            {categories.slice(0, 12).map((c) => {
+              const cVisual = getCategoryVisual(c.name, c.themeColor, c.icon);
+              const isCategoryFilterEnabled = settings?.filterSettings?.categoryFilterEnabled !== false;
+              const targetHref = isCategoryFilterEnabled
+                ? `/groups?category=${c.id}`
+                : "/groups";
+
+              return (
+                <Link
+                  key={c.id}
+                  href={targetHref}
+                  className="p-4 bg-card border border-border/80 hover:border-primary rounded-2xl transition-all hover:shadow-md flex items-center gap-3 group"
+                >
+                  <div
+                    className="w-9 h-9 rounded-xl flex items-center justify-center font-bold text-base transition-colors shrink-0 border"
+                    style={{ backgroundColor: cVisual.bgColor, borderColor: cVisual.borderColor, color: cVisual.color }}
+                  >
+                    <CategoryIcon icon={c.icon} name={c.name} color={c.themeColor} className="w-5 h-5" style={{ color: cVisual.color }} />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="font-bold text-xs truncate group-hover:text-primary transition-colors">{c.name}</p>
+                    <p className="text-[10px] text-muted-foreground">{c.groupCount || 0} groups</p>
+                  </div>
+                </Link>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
+      {/* Popular & Trending Section */}
+      {settings?.popularGroupsEnabled !== false && popular.length > 0 && (
+        <section className="space-y-4">
+          <div className="flex items-center justify-between border-b border-border/80 pb-3">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-xl bg-rose-500/10 text-rose-500 flex items-center justify-center border border-rose-500/20">
+                <Flame className="w-4 h-4" />
+              </div>
+              <div>
+                <h2 className="text-xl font-bold tracking-tight">Trending & Popular Groups</h2>
+                <p className="text-xs text-muted-foreground">Highest join activity in the last 24 hours</p>
+              </div>
+            </div>
+            <Link href="/groups?sort=popular" className="text-xs font-bold text-primary hover:underline flex items-center gap-1">
+              View All Trending <ChevronRight className="w-3.5 h-3.5" />
+            </Link>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {popular.slice(0, 8).map((g) => (
+              <GroupCard key={g.id} group={g} />
             ))}
           </div>
-
-          {/* Advanced filters toggle */}
-          <div className="flex items-center gap-3 flex-wrap">
-            <button
-              onClick={() => setShowFilters(!showFilters)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
-                activeFilterCount > 0
-                  ? "bg-primary/10 border-primary/30 text-primary"
-                  : "border-border text-muted-foreground hover:text-foreground hover:border-border/80"
-              }`}
-            >
-              <SlidersHorizontal className="w-3.5 h-3.5" />
-              Filters
-              {activeFilterCount > 0 && (
-                <span className="bg-primary text-primary-foreground text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center">
-                  {activeFilterCount}
-                </span>
-              )}
-              <ChevronDown
-                className={`w-3 h-3 transition-transform ${showFilters ? "rotate-180" : ""}`}
-              />
-            </button>
-
-            {/* Inline quick filters */}
-            <select
-              value={selectedCategory}
-              onChange={(e) => setSelectedCategory(e.target.value)}
-              className="px-3 py-1.5 rounded-lg bg-card border border-border text-xs font-medium focus:ring-2 focus:ring-primary outline-none cursor-pointer text-foreground"
-            >
-              <option value="">All Categories</option>
-              {categories.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.icon} {c.name}
-                </option>
-              ))}
-            </select>
-
-            {isSearching && (
-              <button
-                onClick={clearFilters}
-                className="flex items-center gap-1 text-xs text-muted-foreground hover:text-destructive transition-colors"
-              >
-                <X className="w-3 h-3" /> Clear all
-              </button>
-            )}
-          </div>
-
-          {/* Advanced filter panel */}
-          <AnimatePresence>
-            {showFilters && (
-              <motion.div
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: "auto" }}
-                exit={{ opacity: 0, height: 0 }}
-                className="overflow-hidden"
-              >
-                <div className="pt-3 grid grid-cols-2 sm:grid-cols-3 gap-3">
-                  <select
-                    value={selectedState}
-                    onChange={(e) => setSelectedState(e.target.value)}
-                    className="px-3 py-2 rounded-xl bg-card border border-border text-sm focus:ring-2 focus:ring-primary outline-none cursor-pointer text-foreground"
-                  >
-                    <option value="">All States</option>
-                    {INDIA_STATE_NAMES.map((s) => (
-                      <option key={s} value={s}>
-                        {s}
-                      </option>
-                    ))}
-                  </select>
-
-                  <select
-                    value={selectedDistrict}
-                    onChange={(e) => setSelectedDistrict(e.target.value)}
-                    disabled={!selectedState}
-                    className="px-3 py-2 rounded-xl bg-card border border-border text-sm focus:ring-2 focus:ring-primary outline-none cursor-pointer text-foreground disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    <option value="">All Districts</option>
-                    {districts.map((d) => (
-                      <option key={d} value={d}>
-                        {d}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
-      </section>
-
-      {/* Content */}
-      {isSearching ? (
-        <section className="space-y-6">
-          <div className="flex items-center justify-between flex-wrap gap-2">
-            <h2 className="text-xl font-bold flex items-center gap-2">
-              <Search className="w-5 h-5 text-primary" />
-              {loadingSearch ? "Searching..." : `${searchResults.length} result${searchResults.length !== 1 ? "s" : ""} found`}
-            </h2>
-          </div>
-
-          {loadingSearch ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
-              {Array.from({ length: 8 }).map((_, i) => (
-                <SkeletonCard key={i} />
-              ))}
-            </div>
-          ) : searchResults.length > 0 ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
-              {searchResults.map((group, i) => (
-                <GroupCard key={group.id} group={group} delay={i * 0.04} />
-              ))}
-            </div>
-          ) : (
-            <div className="text-center py-20 bg-muted/20 rounded-3xl border border-dashed border-border">
-              <Compass className="w-12 h-12 text-muted-foreground mx-auto mb-4 opacity-30" />
-              <h3 className="text-xl font-semibold mb-2">No communities found</h3>
-              <p className="text-muted-foreground mb-6">
-                Try different filters or be the first to add one!
-              </p>
-              <Link
-                href="/submit"
-                className="inline-flex items-center gap-2 px-5 py-2.5 bg-primary text-primary-foreground rounded-xl font-semibold hover:bg-primary/90 transition-colors"
-              >
-                <Plus className="w-4 h-4" /> Submit a Community
-              </Link>
-            </div>
-          )}
         </section>
-      ) : loadingInitial ? (
-        <div className="space-y-12">
-          {[0, 1].map((s) => (
-            <section key={s} className="space-y-5">
-              <div className="h-7 w-48 bg-muted rounded-xl animate-pulse" />
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-                {Array.from({ length: 4 }).map((_, i) => (
-                  <SkeletonCard key={i} />
-                ))}
-              </div>
-            </section>
-          ))}
-        </div>
-      ) : (
-        <>
-          {featured.length > 0 && (
-            <section className="space-y-5">
-              <div className="flex items-center gap-2">
-                <Sparkles className="w-5 h-5 text-amber-500" />
-                <h2 className="text-xl font-bold">Featured Communities</h2>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
-                {featured.map((group, i) => (
-                  <GroupCard key={group.id} group={group} delay={i * 0.08} />
-                ))}
-              </div>
-            </section>
-          )}
+      )}
 
-          {trending.length > 0 && (
-            <section className="space-y-5">
-              <div className="flex items-center gap-2">
-                <Flame className="w-5 h-5 text-orange-500" />
-                <h2 className="text-xl font-bold">Trending Right Now</h2>
+      {/* Latest Submissions */}
+      {settings?.latestGroupsEnabled !== false && latest.length > 0 && (
+        <section className="space-y-4">
+          <div className="flex items-center justify-between border-b border-border/80 pb-3">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-xl bg-blue-500/10 text-blue-500 flex items-center justify-center border border-blue-500/20">
+                <Clock className="w-4 h-4" />
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-                {trending.map((group, i) => (
-                  <GroupCard key={group.id} group={group} delay={i * 0.05} />
-                ))}
+              <div>
+                <h2 className="text-xl font-bold tracking-tight">Recently Added Communities</h2>
+                <p className="text-xs text-muted-foreground">Freshly verified links added today</p>
               </div>
-            </section>
-          )}
-
-          {latest.length > 0 && (
-            <section className="space-y-5">
-              <div className="flex items-center gap-2">
-                <Clock className="w-5 h-5 text-blue-500" />
-                <h2 className="text-xl font-bold">Freshly Added</h2>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-                {latest.map((group, i) => (
-                  <GroupCard key={group.id} group={group} delay={i * 0.05} />
-                ))}
-              </div>
-            </section>
-          )}
-
-          {!loadingInitial && featured.length === 0 && trending.length === 0 && latest.length === 0 && (
-            <div className="text-center py-24">
-              <Compass className="w-16 h-16 mx-auto mb-6 text-muted-foreground opacity-20" />
-              <h3 className="text-2xl font-bold mb-3">No communities yet</h3>
-              <p className="text-muted-foreground mb-8 max-w-md mx-auto">
-                Be the first to add your community to India's premium directory.
-              </p>
-              <Link
-                href="/submit"
-                className="inline-flex items-center gap-2 px-6 py-3 bg-primary text-primary-foreground font-bold rounded-xl hover:bg-primary/90 transition-colors shadow-lg shadow-primary/25"
-              >
-                <Plus className="w-5 h-5" /> Submit the First Community
-              </Link>
             </div>
-          )}
-        </>
+            <Link href="/groups?sort=latest" className="text-xs font-bold text-primary hover:underline flex items-center gap-1">
+              View All Latest <ChevronRight className="w-3.5 h-3.5" />
+            </Link>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {latest.slice(0, 8).map((g) => (
+              <GroupCard key={g.id} group={g} />
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* Live Directory Statistics Counter */}
+      {settings?.statisticsSectionEnabled !== false && (
+        <section className="bg-card border border-border/80 rounded-3xl p-8 relative overflow-hidden shadow-xl">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-6 text-center relative z-10">
+            <div className="space-y-1">
+              <p className="text-3xl sm:text-4xl font-extrabold text-primary">{allGroupsCount || 500}+</p>
+              <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Active Groups</p>
+            </div>
+            <div className="space-y-1">
+              <p className="text-3xl sm:text-4xl font-extrabold text-emerald-500">28</p>
+              <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Indian States</p>
+            </div>
+            <div className="space-y-1">
+              <p className="text-3xl sm:text-4xl font-extrabold text-blue-500">9</p>
+              <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Platforms</p>
+            </div>
+            <div className="space-y-1">
+              <p className="text-3xl sm:text-4xl font-extrabold text-purple-500">{totalJoins || 12000}+</p>
+              <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Join Clicks</p>
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* Dynamic FAQ Accordion */}
+      {settings?.faqSectionEnabled !== false && faqs.length > 0 && (
+        <section className="max-w-3xl mx-auto space-y-6">
+          <div className="text-center space-y-2">
+            <h2 className="text-2xl font-extrabold tracking-tight flex items-center justify-center gap-2">
+              <HelpCircle className="w-6 h-6 text-primary" /> Frequently Asked Questions
+            </h2>
+            <p className="text-xs text-muted-foreground">Everything you need to know about LinkCloud India</p>
+          </div>
+
+          <div className="space-y-3">
+            {faqs.filter((f) => f.enabled !== false).map((faq, idx) => {
+              const isOpen = faqOpen === idx;
+              return (
+                <div
+                  key={faq.id}
+                  className="bg-card border border-border/80 rounded-2xl overflow-hidden transition-all shadow-sm"
+                >
+                  <button
+                    onClick={() => setFaqOpen(isOpen ? null : idx)}
+                    className="w-full p-4 text-left font-bold text-sm flex items-center justify-between gap-4 text-foreground hover:text-primary transition-colors"
+                  >
+                    <span>{faq.question}</span>
+                    <ChevronDown className={`w-4 h-4 transition-transform duration-300 text-muted-foreground ${isOpen ? "rotate-180 text-primary" : ""}`} />
+                  </button>
+                  {isOpen && (
+                    <div className="px-4 pb-4 pt-1 text-xs text-muted-foreground leading-relaxed border-t border-border/40">
+                      {faq.answer}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </section>
       )}
     </div>
   );
