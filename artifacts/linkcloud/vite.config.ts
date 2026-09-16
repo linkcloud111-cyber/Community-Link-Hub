@@ -10,45 +10,14 @@ function adminApiPlugin(): Plugin {
     name: 'admin-api-plugin',
     apply: 'serve',
     async configureServer(server) {
-      const { handleAdminUserStatusRequest, handleAdminUserDeleteRequest } = await import('./src/server/admin-api');
+      const { handleAdminUserStatusRequest, handleAdminUserDeleteRequest } =
+        await server.ssrLoadModule('/src/server/admin-api.ts');
       const {
         handleDevEmailChangeRequest,
         handleDevEmailChangeResend,
         handleDevEmailChangeVerify,
         handleDevEmailChangeCancel,
-      } = await import('./src/server/dev-email-change');
-
-      server.middlewares.use((req, res, next) => {
-        const url = req.url?.split('?')[0];
-        if (url === '/api/admin/users/status') {
-          return handleAdminUserStatusRequest(req, res);
-        }
-        if (url === '/api/admin/users/delete') {
-          return handleAdminUserDeleteRequest(req, res);
-        }
-        if (url === '/api/email-change/request') {
-          return handleDevEmailChangeRequest(req, res);
-        }
-        if (url === '/api/email-change/resend') {
-          return handleDevEmailChangeResend(req, res);
-        }
-        if (url === '/api/email-change/verify') {
-          return handleDevEmailChangeVerify(req, res);
-        }
-        if (url === '/api/email-change/cancel') {
-          return handleDevEmailChangeCancel(req, res);
-        }
-        next();
-      });
-    },
-    async configurePreviewServer(server) {
-      const { handleAdminUserStatusRequest, handleAdminUserDeleteRequest } = await import('./src/server/admin-api');
-      const {
-        handleDevEmailChangeRequest,
-        handleDevEmailChangeResend,
-        handleDevEmailChangeVerify,
-        handleDevEmailChangeCancel,
-      } = await import('./src/server/dev-email-change');
+      } = await server.ssrLoadModule('/src/server/dev-email-change.ts');
 
       server.middlewares.use((req, res, next) => {
         const url = req.url?.split('?')[0];
@@ -79,12 +48,12 @@ function adminApiPlugin(): Plugin {
 const port = 3000;
 const basePath = process.env.BASE_PATH || '/';
 
-export default defineConfig({
+export default defineConfig(async ({ command }) => ({
   base: basePath,
   plugins: [
     react(),
     tailwindcss(),
-    adminApiPlugin(),
+    ...(command === 'build' ? [] : [adminApiPlugin()]),
     ...(process.env.NODE_ENV !== 'production'
       ? [runtimeErrorOverlay()]
       : []),
@@ -170,4 +139,4 @@ export default defineConfig({
     host: '0.0.0.0',
     allowedHosts: true,
   },
-});
+}));
