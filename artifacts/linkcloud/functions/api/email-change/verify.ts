@@ -60,7 +60,7 @@ async function processVerification({
   env: Env;
   isGet?: boolean;
 }): Promise<Response> {
-
+  try {
     if (!reqId || !token) {
       return errorResponse("Missing required parameters: reqId and token are required.", 400);
     }
