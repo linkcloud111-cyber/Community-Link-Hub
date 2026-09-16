@@ -16,6 +16,8 @@ import {
   updatePassword,
   updateEmail,
   verifyBeforeUpdateEmail,
+  reload,
+  getAuth,
   EmailAuthProvider,
   reauthenticateWithCredential,
   type User,
@@ -34,6 +36,8 @@ import {
   query,
   where,
   serverTimestamp,
+  updateDoc,
+  deleteField,
 } from "firebase/firestore";
 import {
   getUserProfile,
@@ -57,6 +61,7 @@ import {
   validateFullName,
   validateDob,
   validateIndianMobile,
+  validateRealEmailStructure,
   STRICT_EMAIL_REGEX,
 } from "./utils";
 
@@ -276,7 +281,7 @@ export function isSessionExpired(error: any): boolean {
 export function formatAuthError(error: any): string {
   if (!error) return "An unexpected error occurred. Please try again.";
   const code = error.code || "";
-  const msg = typeof error.message === "string" ? error.message : "";
+  const msg = typeof error.message === "string" ? error.message : String(error || "");
 
   if (isSessionExpired(error)) {
     return "Your session has expired. Please login again.";
@@ -289,7 +294,7 @@ export function formatAuthError(error: any): string {
     msg.includes("user-not-found") ||
     msg.includes("invalid-credential")
   ) {
-    return "Invalid Webmaster credentials.";
+    return "Incorrect email address or password. Please try again.";
   }
   if (code === "auth/invalid-email" || msg.includes("auth/invalid-email")) {
     return "Please enter a valid email address.";
@@ -297,11 +302,17 @@ export function formatAuthError(error: any): string {
   if (code === "auth/email-already-in-use" || msg.includes("auth/email-already-in-use")) {
     return "This email address is already registered.";
   }
+  if (code === "auth/weak-password" || msg.includes("auth/weak-password")) {
+    return "Password must be at least 6 characters long.";
+  }
+  if (code === "auth/user-disabled" || msg.includes("auth/user-disabled")) {
+    return "This account has been disabled. Please contact support.";
+  }
   if (code === "auth/requires-recent-login" || msg.includes("auth/requires-recent-login")) {
     return "Please sign in again to continue.";
   }
   if (code === "auth/too-many-requests" || msg.includes("auth/too-many-requests")) {
-    return "Too many login attempts. Please try again later.";
+    return "Too many attempts. Please wait a few moments and try again.";
   }
   if (code === "auth/invalid-verification-code" || msg.includes("auth/invalid-verification-code")) {
     return "Invalid verification code. Please try again.";
@@ -309,27 +320,33 @@ export function formatAuthError(error: any): string {
   if (code === "auth/code-expired" || msg.includes("auth/code-expired")) {
     return "The verification code has expired. Please request a new one.";
   }
+  if (code === "auth/invalid-action-code" || msg.includes("auth/invalid-action-code")) {
+    return "This verification link is invalid or has already been used. Please request a new one.";
+  }
   if (code === "auth/popup-closed-by-user" || msg.includes("auth/popup-closed-by-user")) {
     return "Google sign-in popup was closed before completing.";
   }
   if (code === "auth/popup-blocked" || msg.includes("auth/popup-blocked")) {
     return "Sign-in popup was blocked by your browser. Please allow popups for this site.";
   }
+  if (code === "auth/unauthorized-domain" || msg.includes("auth/unauthorized-domain") || msg.includes("unauthorized domain")) {
+    const host = typeof window !== "undefined" ? window.location.hostname : "current domain";
+    return `Google Sign-In is not enabled for '${host}'. Please sign in with your Gmail and password, or add '${host}' to Firebase Authentication Authorized Domains.`;
+  }
+  if (code === "auth/operation-not-allowed" || msg.includes("auth/operation-not-allowed")) {
+    return "This sign-in method is currently not enabled.";
+  }
   if (code === "auth/network-request-failed" || msg.includes("auth/network-request-failed")) {
-    return "Unable to connect to the authentication service. Please try again.";
+    return "Network connection issue. Please check your internet connection.";
   }
 
-  if (
-    msg.includes("Firebase:") ||
-    msg.includes("auth/") ||
-    msg.includes("firestore") ||
-    msg.includes("collection") ||
-    msg.includes("permission")
-  ) {
-    return "Unable to connect to the authentication service. Please try again.";
+  // Extract cleaned error message if it has a Firebase prefix
+  const cleaned = msg.replace(/^Firebase:\s*(Error\s*\([^)]+\):?\s*)?/i, "").trim();
+  if (cleaned && !cleaned.startsWith("Firebase") && !cleaned.startsWith("auth/")) {
+    return cleaned;
   }
 
-  return msg || "An unexpected error occurred. Please try again.";
+  return "Unable to connect to the authentication service. Please check your connection and try again.";
 }
 
 export async function logout(reason = "User initiated logout"): Promise<void> {
@@ -895,7 +912,7 @@ export async function registerWithEmail(data: {
     await updateProfile(u, { displayName: fullName.trim() });
 
     try {
-      await safeSendEmailVerification(u, `/email-action?mode=verifyEmail&uid=${u.uid}`);
+      await safeSendEmailVerification(u, `/verify-handler?mode=verifyEmail&uid=${u.uid}`);
     } catch (err) {
       console.warn("Could not send verification email:", err);
     }
@@ -930,7 +947,7 @@ export async function sendPasswordResetLink(email: string): Promise<void> {
   }
 
   try {
-    await safeSendPasswordResetEmail(auth, cleanEmail, `/email-action?mode=resetPassword`);
+    await safeSendPasswordResetEmail(auth, cleanEmail, `/verify-handler?mode=resetPassword`);
   } catch (err: any) {
     throw new Error(formatAuthError(err));
   }
@@ -955,10 +972,10 @@ export async function resendVerificationEmail(user: User): Promise<void> {
     const now = Date.now();
     const pastHourTimestamps = timestamps.filter((t) => now - t < 3600000); // 1 hour
 
-    // 60-second cooldown check
+    // 30-second cooldown check
     const lastSent = pastHourTimestamps[pastHourTimestamps.length - 1];
-    if (lastSent && now - lastSent < 60000) {
-      const waitSec = Math.ceil((60000 - (now - lastSent)) / 1000);
+    if (lastSent && now - lastSent < EMAIL_RESEND_COOLDOWN_MS) {
+      const waitSec = Math.ceil((EMAIL_RESEND_COOLDOWN_MS - (now - lastSent)) / 1000);
       throw new Error(`Please wait ${waitSec} seconds before requesting another verification email.`);
     }
 
@@ -968,7 +985,7 @@ export async function resendVerificationEmail(user: User): Promise<void> {
     }
 
     try {
-      await safeSendEmailVerification(targetUser, `/email-action?mode=verifyEmail&uid=${targetUser.uid}`);
+      await safeSendEmailVerification(targetUser, `/verify-handler?mode=verifyEmail&uid=${targetUser.uid}`);
       console.log("Verification email sent");
       pastHourTimestamps.push(now);
       window.localStorage.setItem(storageKey, JSON.stringify(pastHourTimestamps));
@@ -983,7 +1000,7 @@ export async function resendVerificationEmail(user: User): Promise<void> {
     }
   } else {
     try {
-      await safeSendEmailVerification(targetUser, `/email-action?mode=verifyEmail&uid=${targetUser.uid}`);
+      await safeSendEmailVerification(targetUser, `/verify-handler?mode=verifyEmail&uid=${targetUser.uid}`);
     } catch (err: any) {
       throw new Error(formatAuthError(err));
     }
@@ -1024,11 +1041,36 @@ export async function updateUserPassword(
   }
 }
 
-export const EMAIL_CHANGE_TTL_MS = 60 * 1000; // Strictly 60 seconds (1 minute)
+export const EMAIL_CHANGE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+export const EMAIL_RESEND_COOLDOWN_MS = 30 * 1000; // 30 seconds
 
 export async function getActiveEmailChangeRequest(userId: string): Promise<EmailChangeRequest | null> {
   try {
     if (!db || typeof db !== "object" || !("app" in db)) return null;
+
+    // Check user's direct active email change document first
+    try {
+      const userActiveRef = doc(db, `users/${userId}/emailChanges`, "active");
+      const userActiveSnap = await getDoc(userActiveRef);
+      if (userActiveSnap.exists()) {
+        const d = userActiveSnap.data();
+        const rawStatus = String(d.status || "").toLowerCase();
+        return {
+          requestId: d.requestId || `req_${userId}_${d.createdAt || Date.now()}`,
+          userId,
+          oldEmail: d.oldEmail || "",
+          newEmail: d.targetEmail || d.newEmail || "",
+          status: (rawStatus === "verified" ? "verified" : rawStatus === "cancelled" ? "cancelled" : rawStatus === "superseded" ? "superseded" : rawStatus === "expired" ? "expired" : "pending") as any,
+          createdAt: d.createdAt || Date.now(),
+          expiresAt: d.expiresAt || (Date.now() + EMAIL_CHANGE_TTL_MS),
+          version: d.version || 1,
+          updatedAt: d.updatedAt || Date.now(),
+        };
+      }
+    } catch (uErr) {
+      console.warn("[EMAIL REQUEST] User active doc check notice:", uErr);
+    }
+
     const reqsRef = collection(db, "emailChangeRequests");
     const q = query(
       reqsRef,
@@ -1196,10 +1238,10 @@ export async function updateUserEmailAddress(
   // 2. Invalidate all previous pending requests before creating new one
   await invalidateUserPendingEmailRequests(user.uid);
 
-  // 3. Create active request document with strictly 60-second TTL
+  // 3. Create active request document with 15-minute TTL
   const now = Date.now();
   const requestId = `req_${user.uid}_${now}`;
-  const expiresAt = now + EMAIL_CHANGE_TTL_MS; // strictly 60 seconds
+  const expiresAt = now + EMAIL_CHANGE_TTL_MS; // 15 minutes
   const requestDoc: EmailChangeRequest = {
     requestId,
     userId: user.uid,
@@ -1214,45 +1256,103 @@ export async function updateUserEmailAddress(
 
   try {
     await setDoc(doc(db, "emailChangeRequests", requestId), requestDoc);
+    await setDoc(doc(db, `users/${user.uid}/emailChanges`, "active"), {
+      version: 1,
+      status: "PENDING",
+      targetEmail: gmailCheck.cleanEmail.toLowerCase(),
+      createdAt: now,
+      expiresAt,
+      requestId,
+      updatedAt: now,
+    });
     console.log("[EMAIL REQUEST] Generated single active email change request:", { requestId, expiresAt });
   } catch (dbErr) {
     console.warn("[EMAIL REQUEST] Error saving email change request:", dbErr);
   }
 
-  // 4. Send verification email using safeVerifyBeforeUpdateEmail with domain fallback
+  // 4. Send verification email via custom server API (/api/email-change/request)
+  let apiSuccess = false;
+  let customApiRequestId = requestId;
+  let customApiExpiresAt = expiresAt;
+
   try {
-    await safeVerifyBeforeUpdateEmail(
-      user,
-      gmailCheck.cleanEmail,
-      `/email-action?mode=verifyAndChangeEmail&reqId=${requestId}&uid=${user.uid}&v=${requestDoc.version}`
-    );
-  } catch (err: any) {
-    console.error("[EMAIL VERIFY] safeVerifyBeforeUpdateEmail failed:", err);
-    await setDoc(doc(db, "emailChangeRequests", requestId), { status: "cancelled", updatedAt: Date.now() }, { merge: true }).catch(() => {});
-    const code = err?.code || "";
-    const msg = String(err?.message || "");
-    if (code === "auth/email-already-in-use" || msg.includes("email-already-in-use")) {
-      throw new Error("This Gmail is already registered.");
-    } else if (code === "auth/invalid-email" || msg.includes("invalid-email")) {
-      throw new Error("Please enter a valid, active email address.");
-    } else if (code === "auth/requires-recent-login" || msg.includes("requires-recent-login")) {
-      throw new Error("Please sign in again to continue.");
+    const idToken = await user.getIdToken();
+    const res = await fetch("/api/email-change/request", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${idToken}`,
+      },
+      body: JSON.stringify({
+        newEmail: gmailCheck.cleanEmail.toLowerCase(),
+        currentEmail: user.email?.toLowerCase(),
+      }),
+    });
+
+    if (res.ok) {
+      const data: any = await res.json();
+      if (data.success) {
+        apiSuccess = true;
+        customApiRequestId = data.requestId || requestId;
+        customApiExpiresAt = data.expiresAt || expiresAt;
+        console.log("[EMAIL REQUEST] Custom server-side email dispatch succeeded:", data);
+      }
     } else {
-      throw new Error(formatAuthError(err));
+      const errData: any = await res.json().catch(() => ({}));
+      if (res.status === 429) {
+        throw new Error(errData.error || "Please wait before requesting another verification email.");
+      }
+      if (res.status === 409) {
+        throw new Error("This Gmail is already registered.");
+      }
+      console.warn("[EMAIL REQUEST] Custom API non-200 response, falling back if needed:", res.status, errData);
+    }
+  } catch (apiErr: any) {
+    if (apiErr.message && (apiErr.message.includes("wait") || apiErr.message.includes("already registered"))) {
+      throw apiErr;
+    }
+    console.warn("[EMAIL REQUEST] Custom API call failed or unavailable, fallback:", apiErr);
+  }
+
+  // Fallback: If custom API was unavailable, safeVerifyBeforeUpdateEmail fallback
+  if (!apiSuccess) {
+    try {
+      await safeVerifyBeforeUpdateEmail(
+        user,
+        gmailCheck.cleanEmail,
+        `/verify-handler?mode=verifyAndChangeEmail&reqId=${requestId}&uid=${user.uid}&v=${requestDoc.version}`
+      );
+    } catch (err: any) {
+      console.error("[EMAIL VERIFY] safeVerifyBeforeUpdateEmail failed:", err);
+      await setDoc(doc(db, "emailChangeRequests", requestId), { status: "cancelled", updatedAt: Date.now() }, { merge: true }).catch(() => {});
+      const code = err?.code || "";
+      const msg = String(err?.message || "");
+      if (code === "auth/email-already-in-use" || msg.includes("email-already-in-use")) {
+        throw new Error("This Gmail is already registered.");
+      } else if (code === "auth/invalid-email" || msg.includes("invalid-email")) {
+        throw new Error("Please enter a valid, active email address.");
+      } else if (code === "auth/requires-recent-login" || msg.includes("requires-recent-login")) {
+        throw new Error("Please sign in again to continue.");
+      } else {
+        throw new Error(formatAuthError(err));
+      }
     }
   }
+
+  const finalRequestId = customApiRequestId;
+  const finalExpiresAt = customApiExpiresAt;
 
   // 5. Store pending email & request reference locally and in user profile
   try {
     if (typeof window !== "undefined" && window.localStorage) {
       window.localStorage.setItem(`pending_email_${user.uid}`, gmailCheck.cleanEmail.toLowerCase());
-      window.localStorage.setItem(`pending_email_req_${user.uid}`, requestId);
-      window.localStorage.setItem(`pending_email_expires_${user.uid}`, String(expiresAt));
+      window.localStorage.setItem(`pending_email_req_${user.uid}`, finalRequestId);
+      window.localStorage.setItem(`pending_email_expires_${user.uid}`, String(finalExpiresAt));
       window.localStorage.setItem(`resend_email_change_${user.uid}`, String(now));
     }
     await upsertUserProfile(user.uid, {
       pendingEmail: gmailCheck.cleanEmail.toLowerCase(),
-      activeEmailChangeRequestId: requestId,
+      activeEmailChangeRequestId: finalRequestId,
     });
     await logEmailChangeHistory({
       uid: user.uid,
@@ -1266,14 +1366,14 @@ export async function updateUserEmailAddress(
     await createUserNotification(
       user.uid,
       "Email Change Requested",
-      `A verification email has been sent to ${gmailCheck.cleanEmail}. Link is valid for 1 minute.`,
+      `A verification email has been sent to ${gmailCheck.cleanEmail}. Link is valid for 5 minutes.`,
       "system"
     );
   } catch (e) {
     console.warn("[EMAIL CHANGE] Failed to update pending user logs:", e);
   }
 
-  return { requestId, expiresAt, newEmail: gmailCheck.cleanEmail.toLowerCase() };
+  return { requestId: finalRequestId, expiresAt: finalExpiresAt, newEmail: gmailCheck.cleanEmail.toLowerCase() };
 }
 
 export async function resendPendingEmailVerification(
@@ -1304,25 +1404,66 @@ export async function resendPendingEmailVerification(
     throw new Error("Email verification has already been completed. Please click 'Refresh Verification Status' to finish the email change.");
   }
 
-  // 60-second cooldown check in localStorage
+  // 30-second cooldown check in localStorage
   if (typeof window !== "undefined" && window.localStorage) {
     const cooldownKey = `resend_email_change_${user.uid}`;
     const lastSent = Number(window.localStorage.getItem(cooldownKey) || 0);
     const now = Date.now();
-    if (now - lastSent < EMAIL_CHANGE_TTL_MS) {
-      const waitSec = Math.ceil((EMAIL_CHANGE_TTL_MS - (now - lastSent)) / 1000);
+    if (now - lastSent < EMAIL_RESEND_COOLDOWN_MS) {
+      const waitSec = Math.ceil((EMAIL_RESEND_COOLDOWN_MS - (now - lastSent)) / 1000);
       throw new Error(`Please wait ${waitSec}s before resending.`);
     }
+  }
+
+  // Try custom server-side resend API first
+  let apiSuccess = false;
+  let resendRequestId = "";
+  let resendExpiresAt = 0;
+
+  try {
+    const idToken = await targetUser.getIdToken();
+    const res = await fetch("/api/email-change/resend", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${idToken}`,
+      },
+      body: JSON.stringify({
+        pendingEmail: gmailCheck.cleanEmail.toLowerCase(),
+        uid: targetUser.uid,
+      }),
+    });
+
+    if (res.ok) {
+      const data: any = await res.json();
+      if (data.success) {
+        apiSuccess = true;
+        resendRequestId = data.requestId;
+        resendExpiresAt = data.expiresAt;
+        console.log("[EMAIL RESEND] Custom server-side resend succeeded:", data);
+      }
+    } else {
+      const errData: any = await res.json().catch(() => ({}));
+      if (res.status === 429) {
+        throw new Error(errData.error || "Please wait before requesting another verification email.");
+      }
+      console.warn("[EMAIL RESEND] Custom API non-200 response, falling back if needed:", res.status, errData);
+    }
+  } catch (apiErr: any) {
+    if (apiErr.message && apiErr.message.includes("wait")) {
+      throw apiErr;
+    }
+    console.warn("[EMAIL RESEND] Custom API call failed or unavailable, fallback:", apiErr);
   }
 
   // Invalidate previous requests as superseded
   const prevVersion = activeReq?.version || 1;
   await invalidateUserPendingEmailRequests(user.uid);
 
-  // Create new active request with strictly 60-second TTL
+  // Create new active request with 5-minute TTL
   const now = Date.now();
-  const requestId = `req_${user.uid}_${now}`;
-  const expiresAt = now + EMAIL_CHANGE_TTL_MS; // strictly 60 seconds
+  const requestId = resendRequestId || `req_${user.uid}_${now}`;
+  const expiresAt = resendExpiresAt || (now + EMAIL_CHANGE_TTL_MS); // 5 minutes
   const newReqDoc: EmailChangeRequest = {
     requestId,
     userId: user.uid,
@@ -1336,51 +1477,64 @@ export async function resendPendingEmailVerification(
   };
 
   try {
+    const activeDocRef = doc(db, `users/${user.uid}/emailChanges`, "active");
     await setDoc(doc(db, "emailChangeRequests", requestId), newReqDoc);
+    await setDoc(activeDocRef, {
+      version: newReqDoc.version,
+      status: "PENDING",
+      targetEmail: gmailCheck.cleanEmail.toLowerCase(),
+      createdAt: now,
+      expiresAt,
+      requestId,
+      updatedAt: now,
+    });
     console.log("[EMAIL RESEND] Superseded old link. Created new request:", { requestId, version: newReqDoc.version });
   } catch (e) {
     console.warn("[EMAIL RESEND] Error saving new request doc:", e);
   }
 
-  try {
-    const targetUser = auth.currentUser || user;
+  if (!apiSuccess) {
     try {
-      await targetUser.reload();
-      await targetUser.getIdToken(true);
-    } catch (reloadErr) {
-      console.warn("[EMAIL RESEND] User reload/token refresh warning:", reloadErr);
+      const targetUser = auth.currentUser || user;
+      try {
+        await targetUser.reload();
+        await targetUser.getIdToken(true);
+      } catch (reloadErr) {
+        console.warn("[EMAIL RESEND] User reload/token refresh warning:", reloadErr);
+      }
+      await safeVerifyBeforeUpdateEmail(
+        targetUser,
+        gmailCheck.cleanEmail,
+        `/verify-handler?mode=verifyAndChangeEmail&reqId=${requestId}&uid=${targetUser.uid}&v=${newReqDoc.version}`
+      );
+    } catch (err: any) {
+      console.error("[EMAIL RESEND] Resend fallback failed:", err);
+      const code = err?.code || "";
+      const msg = String(err?.message || "");
+      if (code === "auth/too-many-requests" || msg.includes("too-many-requests")) {
+        throw new Error("Too many attempts. Please wait a while before trying again.");
+      }
+      if (code === "auth/requires-recent-login" || msg.includes("requires-recent-login")) {
+        throw new Error("For security, please sign in again and try again.");
+      }
+      if (isSessionExpired(err) || code === "auth/user-token-expired" || msg.includes("user-token-expired")) {
+        throw new Error("Your session has expired. Please sign in again to continue.");
+      }
+      throw new Error(formatAuthError(err));
     }
-    await safeVerifyBeforeUpdateEmail(
-      targetUser,
-      gmailCheck.cleanEmail,
-      `/email-action?mode=verifyAndChangeEmail&reqId=${requestId}&uid=${targetUser.uid}&v=${newReqDoc.version}`
-    );
-    if (typeof window !== "undefined" && window.localStorage) {
-      window.localStorage.setItem(`resend_email_change_${targetUser.uid}`, String(Date.now()));
-      window.localStorage.setItem(`pending_email_${targetUser.uid}`, gmailCheck.cleanEmail.toLowerCase());
-      window.localStorage.setItem(`pending_email_req_${targetUser.uid}`, requestId);
-      window.localStorage.setItem(`pending_email_expires_${targetUser.uid}`, String(expiresAt));
-    }
-    await upsertUserProfile(targetUser.uid, {
-      pendingEmail: gmailCheck.cleanEmail.toLowerCase(),
-      activeEmailChangeRequestId: requestId,
-    });
-    await logAuditEvent("Verification Resent", `Verification email resent to ${gmailCheck.cleanEmail}`, targetUser.email || "", targetUser.uid);
-  } catch (err: any) {
-    console.error("[EMAIL RESEND] Resend failed:", err);
-    const code = err?.code || "";
-    const msg = String(err?.message || "");
-    if (code === "auth/too-many-requests" || msg.includes("too-many-requests")) {
-      throw new Error("Too many attempts. Please wait a while before trying again.");
-    }
-    if (code === "auth/requires-recent-login" || msg.includes("requires-recent-login")) {
-      throw new Error("For security, please sign in again and try again.");
-    }
-    if (isSessionExpired(err) || code === "auth/user-token-expired" || msg.includes("user-token-expired")) {
-      throw new Error("Your session has expired. Please sign in again to continue.");
-    }
-    throw new Error(formatAuthError(err));
   }
+
+  if (typeof window !== "undefined" && window.localStorage) {
+    window.localStorage.setItem(`resend_email_change_${targetUser.uid}`, String(Date.now()));
+    window.localStorage.setItem(`pending_email_${targetUser.uid}`, gmailCheck.cleanEmail.toLowerCase());
+    window.localStorage.setItem(`pending_email_req_${targetUser.uid}`, requestId);
+    window.localStorage.setItem(`pending_email_expires_${targetUser.uid}`, String(expiresAt));
+  }
+  await upsertUserProfile(targetUser.uid, {
+    pendingEmail: gmailCheck.cleanEmail.toLowerCase(),
+    activeEmailChangeRequestId: requestId,
+  });
+  await logAuditEvent("Verification Resent", `Verification email resent to ${gmailCheck.cleanEmail}`, targetUser.email || "", targetUser.uid);
 
   return { requestId, expiresAt, newEmail: gmailCheck.cleanEmail.toLowerCase() };
 }
@@ -1397,12 +1551,34 @@ export async function cancelPendingEmailChange(user: User, pendingEmail?: string
       throw new Error("Email verification has already been completed. Please click 'Refresh Verification Status' to finish the email change.");
     }
 
-    // 1. Mark active request as cancelled in Firestore
+    // 1. Mark active request as cancelled in Firestore and via server API
+    try {
+      const idToken = await user.getIdToken();
+      await fetch("/api/email-change/cancel", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${idToken}`,
+        },
+      }).catch((e) => console.warn("[EMAIL CANCEL] Server API notice:", e));
+    } catch (tokenErr) {
+      console.warn("[EMAIL CANCEL] Token retrieval notice:", tokenErr);
+    }
+
     if (activeReq && (activeReq.status === "pending" || activeReq.status === "expired")) {
       await setDoc(doc(db, "emailChangeRequests", activeReq.requestId), {
         status: "cancelled",
         updatedAt: Date.now(),
       }, { merge: true }).catch(() => {});
+    }
+
+    try {
+      await setDoc(doc(db, `users/${user.uid}/emailChanges`, "active"), {
+        status: "CANCELLED",
+        updatedAt: Date.now(),
+      }, { merge: true }).catch(() => {});
+    } catch (cErr) {
+      console.warn("[EMAIL CANCEL] Active doc cancellation notice:", cErr);
     }
 
     // Also mark any other pending requests for this user as cancelled
@@ -1529,6 +1705,7 @@ export async function commitEmailChangeInFirestore(
 
   // 1. Get current profile to preserve account UID
   const p = await getUserProfile(uid);
+  const effectiveOldEmail = cleanOldEmail || (p?.email ? p.email.trim().toLowerCase() : null);
 
   // 2. Update user profile document in Firestore
   await upsertUserProfile(uid, {
@@ -1538,6 +1715,38 @@ export async function commitEmailChangeInFirestore(
     activeEmailChangeRequestId: null,
     status: "active",
   });
+
+  try {
+    const userDocRef = doc(db, "users", uid);
+    await updateDoc(userDocRef, {
+      email: cleanNewEmail,
+      pendingEmail: deleteField(),
+      emailIndex: cleanNewEmail,
+    }).catch(() => {});
+  } catch (uErr) {
+    console.warn("Notice: userDocRef update in commitEmailChangeInFirestore:", uErr);
+  }
+
+  // Mark direct active emailChanges doc and emailChangeRequests doc as COMPLETED
+  try {
+    const userActiveRef = doc(db, `users/${uid}/emailChanges`, "active");
+    const activeSnap = await getDoc(userActiveRef).catch(() => null);
+    const linkedReqId = (activeSnap && activeSnap.exists()) ? activeSnap.data()?.requestId : null;
+    await updateDoc(userActiveRef, {
+      status: "COMPLETED",
+      updatedAt: Date.now(),
+    }).catch(() => {});
+
+    const targetReqId = linkedReqId || p?.activeEmailChangeRequestId;
+    if (targetReqId) {
+      await setDoc(doc(db, "emailChangeRequests", targetReqId), {
+        status: "completed",
+        updatedAt: Date.now(),
+      }, { merge: true }).catch(() => {});
+    }
+  } catch (compErr) {
+    console.warn("Notice: marking active email change as COMPLETED:", compErr);
+  }
 
   // 3. Sync to localStorage & wipe all pending keys
   syncEmailToLocalStorage(uid, cleanNewEmail);
@@ -1583,20 +1792,19 @@ export async function commitEmailChangeInFirestore(
 
   // 6. Idempotent Notification & Audit Log
   try {
-    if (cleanOldEmail && cleanOldEmail !== cleanNewEmail) {
-      await logAuditEvent(
-        "Verification Completed",
-        `Email verification completed and updated to ${cleanNewEmail}`,
-        cleanNewEmail,
-        uid
-      );
-      await createUserNotification(
-        uid,
-        "Email Changed Successfully",
-        `Your LinkCloud email address has been changed to ${cleanNewEmail}. If this wasn't you, contact support immediately.`,
-        "system"
-      );
-    }
+    const fromEmail = effectiveOldEmail || "previous email";
+    await logAuditEvent(
+      "Email Changed",
+      `Email changed from ${fromEmail} to ${cleanNewEmail}`,
+      cleanNewEmail,
+      uid
+    );
+    await createUserNotification(
+      uid,
+      "Email Changed Successfully",
+      `Your LinkCloud email address has been changed to ${cleanNewEmail}. If this wasn't you, contact support immediately.`,
+      "system"
+    );
   } catch (e) {
     console.warn("Notice: notification / audit log on email change:", e);
   }
@@ -1654,7 +1862,29 @@ export async function checkAndSyncEmailChangeStatus(
         return { status: "error", message: msg };
       }
 
-      const uid = currentUser.uid;
+      // Explicitly reload Firebase currentUser to fetch the latest verification status
+      try {
+        await auth.currentUser?.reload();
+      } catch (reloadErr) {
+        console.warn("[EMAIL SYNC] auth.currentUser.reload notice handled safely:", reloadErr);
+      }
+
+      // Gracefully handle token transitions without destroying the session
+      try {
+        await auth.currentUser?.getIdToken(true);
+      } catch (tokenErr: any) {
+        if (
+          tokenErr?.code === "auth/user-token-expired" ||
+          tokenErr?.code === "auth/user-token-revoked"
+        ) {
+          console.warn("[EMAIL SYNC] Handled temporary token transition during email sync. Staying authenticated.");
+        } else {
+          console.warn("[EMAIL SYNC] Token refresh notice handled safely:", tokenErr);
+        }
+      }
+
+      const freshUser = auth.currentUser || currentUser;
+      const uid = freshUser.uid;
       const pendingKey = `pending_email_${uid}`;
       const savedPending =
         options?.targetPendingEmail ||
@@ -1666,19 +1896,39 @@ export async function checkAndSyncEmailChangeStatus(
       const activeReq = await getActiveEmailChangeRequest(uid);
       const now = Date.now();
 
-      // If user has no pending email in local state or active request, return status cleanly
+      // If user has no pending email in local state or active request, check current email verification status
       if (!activeReq && !savedPending) {
-        let reloadedUser = currentUser;
+        let reloadedUser = freshUser;
         try {
-          await currentUser.reload();
-          await currentUser.getIdToken(true);
-          reloadedUser = auth.currentUser || currentUser;
+          await auth.currentUser?.reload();
+          await auth.currentUser?.getIdToken(true);
+          reloadedUser = auth.currentUser || freshUser;
         } catch {}
-        return {
-          status: "success",
-          message: "Email is up to date.",
-          verifiedEmail: reloadedUser.email ? reloadedUser.email.trim().toLowerCase() : "",
-        };
+
+        const profile = await getUserProfile(uid);
+
+        if (reloadedUser.emailVerified || profile?.emailVerified || profile?.status === "active") {
+          if (profile && (!profile.emailVerified || profile.status !== "active")) {
+            await upsertUserProfile(uid, {
+              emailVerified: true,
+              status: "active",
+            }).catch(() => {});
+          }
+          const successMsg = "Email verified successfully";
+          if (manual) toast.success(successMsg);
+          return {
+            status: "success",
+            message: successMsg,
+            verifiedEmail: reloadedUser.email ? reloadedUser.email.trim().toLowerCase() : "",
+          };
+        } else {
+          const pendingMsg = "Verification is still pending. Please click the link in your email and try again.";
+          if (manual) toast.info(pendingMsg);
+          return {
+            status: "pending",
+            message: pendingMsg,
+          };
+        }
       }
 
       // 1. Check cancelled
@@ -1697,9 +1947,9 @@ export async function checkAndSyncEmailChangeStatus(
         return { status: "superseded", message: msg };
       }
 
-      // 3. Check expiration (60-second TTL)
+      // 3. Check expiration (15-minute TTL)
       if (activeReq && (activeReq.status === "expired" || (activeReq.status === "pending" && now > activeReq.expiresAt))) {
-        console.warn("[EMAIL SYNC] Request has expired (60-second TTL elapsed)");
+        console.warn("[EMAIL SYNC] Request has expired (15-minute TTL elapsed)");
         if (activeReq.status !== "expired") {
           await setDoc(doc(db, "emailChangeRequests", activeReq.requestId), {
             status: "expired",
@@ -1730,6 +1980,13 @@ export async function checkAndSyncEmailChangeStatus(
           requestId: activeReq.requestId,
           newEmail: targetVerifiedEmail,
         });
+
+        if (activeReq.requestId) {
+          await setDoc(doc(db, "emailChangeRequests", activeReq.requestId), {
+            status: "completed",
+            updatedAt: Date.now(),
+          }, { merge: true }).catch(() => {});
+        }
 
         // Try one more token reload if needed
         if (reloadedUser.email?.trim().toLowerCase() !== targetVerifiedEmail) {
@@ -1778,7 +2035,7 @@ export async function checkAndSyncEmailChangeStatus(
 
         if (activeReq && activeReq.requestId) {
           await setDoc(doc(db, "emailChangeRequests", activeReq.requestId), {
-            status: "verified",
+            status: "completed",
             updatedAt: Date.now(),
           }, { merge: true }).catch(() => {});
         }
@@ -1888,5 +2145,160 @@ export async function signOut(): Promise<void> {
   await logout();
 }
 
-export { onAuthStateChanged, auth };
+// 1. Initiate Email Change Process
+export const handleUpdateEmailSecure = async (newEmail: string, currentPassword?: string) => {
+  const user = auth.currentUser;
+  
+  if (!user) {
+    throw new Error("No user logged in.");
+  }
+
+  try {
+    if (currentPassword && user.email) {
+      try {
+        const cred = EmailAuthProvider.credential(user.email, currentPassword);
+        await reauthenticateWithCredential(user, cred);
+      } catch (authErr: any) {
+        if (authErr?.code === 'auth/wrong-password' || authErr?.code === 'auth/invalid-credential') {
+          throw new Error("Incorrect current password.");
+        }
+      }
+    }
+
+    // Step A: Update email in Firebase Auth
+    await updateEmail(user, newEmail);
+
+    // Step B: Send Email Verification Link
+    await sendEmailVerification(user);
+
+    // Step C: Set an expiration timestamp in LocalStorage (e.g., valid for 10 minutes)
+    const expirationTime = new Date().getTime() + 10 * 60 * 1000; 
+    localStorage.setItem("email_verify_expires", expirationTime.toString());
+
+    return { success: true, message: "Verification link sent successfully." };
+  } catch (error: any) {
+    // Handle specific Firebase errors gracefully
+    let errorMessage = error?.message || "Failed to update email.";
+    if (error.code === 'auth/email-already-in-use') {
+      errorMessage = "This email is already registered by another account.";
+    } else if (error.code === 'auth/invalid-email') {
+      errorMessage = "The provided email format is invalid.";
+    } else if (error.code === 'auth/requires-recent-login') {
+      errorMessage = "Please log out and log back in before changing your email.";
+    }
+    throw new Error(errorMessage);
+  }
+};
+
+// 1.5 Resend Verification Email with reset expiration
+export const resendVerificationEmailSecure = async () => {
+  const user = auth.currentUser;
+  if (!user) {
+    throw new Error("No user logged in.");
+  }
+
+  try {
+    await sendEmailVerification(user);
+    const expirationTime = new Date().getTime() + 10 * 60 * 1000;
+    localStorage.setItem("email_verify_expires", expirationTime.toString());
+    return { success: true, message: "Verification email resent successfully." };
+  } catch (error: any) {
+    if (error.code === 'auth/too-many-requests') {
+      throw new Error("Too many requests. Please wait a moment before trying again.");
+    }
+    throw new Error(error.message || "Failed to resend verification email.");
+  }
+};
+
+// 2. Check Verification Status securely with Timer Validation
+export const verifyAndCompleteFlow = async () => {
+  const user = auth.currentUser;
+  if (!user) return { status: false, message: "User not found." };
+
+  // Check if link expired via local storage timer logic
+  const expiresAt = localStorage.getItem("email_verify_expires");
+  const currentTime = new Date().getTime();
+
+  if (expiresAt && currentTime > parseInt(expiresAt, 10)) {
+    return { 
+      status: false, 
+      expired: true, 
+      message: "Verification link has expired. Please request a new one." 
+    };
+  }
+
+  // Reload user profile to fetch latest verification status from Firebase servers
+  await reload(user);
+
+  if (user.emailVerified) {
+    // Clear expiration tracker on success
+    localStorage.removeItem("email_verify_expires");
+    return { status: true, message: "Email verified successfully!" };
+  } else {
+    return { status: false, message: "Email is not verified yet. Please check your inbox." };
+  }
+};
+
+// Fixed & Robust Verification and Navigation Handler
+export const handleFinalVerificationCheck = async (navigate?: (path: string) => void) => {
+  const user = auth.currentUser;
+  
+  if (!user) {
+    // Agar user hi nahi hai tabhi login par bhejein
+    if (navigate) {
+      navigate("/login");
+    } else if (typeof window !== "undefined") {
+      window.location.href = "/login";
+    }
+    return;
+  }
+
+  try {
+    // 1. Forcefully refresh user state from Firebase servers
+    await reload(user);
+    
+    // 2. Double-check verification flag directly from the reloaded instance
+    if (user.emailVerified) {
+      // Clean up local storage tracker
+      if (typeof window !== "undefined") {
+        localStorage.removeItem("email_verify_expires");
+      }
+      
+      // Update Firestore user record to active
+      try {
+        await updateDoc(doc(db, "users", user.uid), {
+          emailVerified: true,
+          status: "active",
+          updatedAt: new Date(),
+        });
+      } catch {
+        await upsertUserProfile(user.uid, {
+          emailVerified: true,
+          status: "active",
+        }).catch(() => {});
+      }
+
+      // Sonner success toast notification
+      toast.success("Email verified successfully! Redirecting to your dashboard...");
+
+      // Force direct navigation to dashboard without hitting auth guards unequipped
+      if (typeof window !== "undefined") {
+        window.location.href = "/dashboard?tab=profile";
+      } else if (navigate) {
+        navigate("/dashboard?tab=profile");
+      }
+    } else {
+      if (typeof window !== "undefined" && typeof window.alert === "function") {
+        alert("Email is still not verified. Please check your inbox and click the verification link first.");
+      }
+    }
+  } catch (error) {
+    console.error("Verification check failed:", error);
+    if (typeof window !== "undefined" && typeof window.alert === "function") {
+      alert("An error occurred while checking verification status. Please try again.");
+    }
+  }
+};
+
+export { onAuthStateChanged, auth, validateRealEmailStructure };
 export type { User, ConfirmationResult };

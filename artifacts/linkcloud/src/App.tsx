@@ -7,6 +7,7 @@ import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 import { TaxonomyProvider } from '@/contexts/TaxonomyContext';
 import { LocationProvider } from '@/contexts/LocationContext';
 import { logout } from '@/lib/auth';
+import { auth } from '@/lib/firebase';
 import { Loader2, AlertTriangle, RefreshCw } from 'lucide-react';
 import React, { lazy, Suspense, Component, type ReactNode } from 'react';
 
@@ -20,6 +21,7 @@ import Login from '@/pages/login';
 import Register from '@/pages/register';
 import VerifyEmail from '@/pages/verify-email';
 import EmailActionPage from '@/pages/email-action';
+import VerifyHandlerPage from '@/pages/verify-handler';
 import Dashboard from '@/pages/dashboard';
 import GroupsPage from '@/pages/groups';
 import GroupDetail from '@/pages/group-detail';
@@ -147,6 +149,7 @@ const ProtectedRoute = ({
 
   const isEmailVerified = Boolean(
     user?.emailVerified ||
+    auth.currentUser?.emailVerified ||
     profile?.emailVerified ||
     profile?.status === "active" ||
     profile?.pendingEmail ||
@@ -156,7 +159,7 @@ const ProtectedRoute = ({
 
   React.useEffect(() => {
     if (!loading) {
-      if (!user) {
+      if (!user && !auth.currentUser) {
         if (webmasterOnly) {
           setLocation('/webmaster/login');
         } else {
@@ -180,7 +183,7 @@ const ProtectedRoute = ({
     );
   }
 
-  if (!user || (!isEmailVerified && !isWebmaster)) return null;
+  if ((!user && !auth.currentUser) || (!isEmailVerified && !isWebmaster)) return null;
   if (webmasterOnly && !isWebmaster) return null;
   if (!webmasterOnly && !allowBoth && isWebmaster) return null;
 
@@ -214,6 +217,7 @@ function Router() {
               <Route path="/register" component={Register} />
               <Route path="/verify-email" component={VerifyEmail} />
               <Route path="/email-action" component={EmailActionPage} />
+              <Route path="/verify-handler" component={VerifyHandlerPage} />
               
               <Route path="/about" component={AboutPage} />
               <Route path="/faq" component={FAQPage} />

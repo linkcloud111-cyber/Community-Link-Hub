@@ -1463,9 +1463,11 @@ export async function requestAccountDeletion(
   if (userProfile?.deletionCooldownUntil || userProfile?.deletionRejectedAt) {
     let cooldownEndMs = 0;
     if (userProfile.deletionCooldownUntil) {
-      cooldownEndMs = userProfile.deletionCooldownUntil.toMillis?.() ?? (typeof userProfile.deletionCooldownUntil === "number" ? userProfile.deletionCooldownUntil : new Date(userProfile.deletionCooldownUntil).getTime());
+      const cu: any = userProfile.deletionCooldownUntil;
+      cooldownEndMs = typeof cu?.toMillis === "function" ? cu.toMillis() : (typeof cu === "number" ? cu : new Date(cu?.toDate ? cu.toDate() : cu).getTime());
     } else if (userProfile.deletionRejectedAt) {
-      const rejectedTime = userProfile.deletionRejectedAt.toMillis?.() ?? (typeof userProfile.deletionRejectedAt === "number" ? userProfile.deletionRejectedAt : new Date(userProfile.deletionRejectedAt).getTime());
+      const rj: any = userProfile.deletionRejectedAt;
+      const rejectedTime = typeof rj?.toMillis === "function" ? rj.toMillis() : (typeof rj === "number" ? rj : new Date(rj?.toDate ? rj.toDate() : rj).getTime());
       cooldownEndMs = rejectedTime + 7 * 24 * 60 * 60 * 1000;
     }
 

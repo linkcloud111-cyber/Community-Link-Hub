@@ -25,6 +25,8 @@ import {
   EyeOff,
   AlertCircle,
   CheckCircle2,
+  Globe,
+  Copy,
 } from "lucide-react";
 import { FcGoogle } from "react-icons/fc";
 
@@ -42,6 +44,7 @@ export default function Register() {
   // Custom error states for duplicate check errors
   const [customEmailError, setCustomEmailError] = useState<string | null>(null);
   const [customPhoneError, setCustomPhoneError] = useState<string | null>(null);
+  const [oauthModalOpen, setOauthModalOpen] = useState(false);
 
   // Field touched state for inline errors
   const [touched, setTouched] = useState({
@@ -213,7 +216,12 @@ export default function Register() {
       setLocation(isWebmaster ? "/webmaster/dashboard" : "/dashboard");
     } catch (error: any) {
       console.error(error);
-      toast.error(error.message || "Failed to sign up with Google.");
+      const msg = error?.message || "";
+      if (msg.includes("unauthorized") || msg.includes("Authorized Domains") || msg.includes("unauthorized-domain")) {
+        setOauthModalOpen(true);
+      } else {
+        toast.error(msg || "Failed to sign up with Google.");
+      }
     } finally {
       setLoading(false);
     }
@@ -574,6 +582,69 @@ export default function Register() {
           </form>
         </div>
       </div>
+
+      {/* OAUTH DOMAIN NOTICE MODAL */}
+      {oauthModalOpen && (
+        <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-card border border-border rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-2xl relative animate-in fade-in zoom-in-95">
+            <button
+              onClick={() => setOauthModalOpen(false)}
+              className="absolute top-4 right-4 p-2 text-muted-foreground hover:text-foreground rounded-full"
+            >
+              ✕
+            </button>
+
+            <div className="text-center mb-6">
+              <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-amber-500/10 text-amber-600 dark:text-amber-400 mb-3">
+                <Globe className="w-6 h-6" />
+              </div>
+              <h2 className="text-xl font-bold">Google Sign-Up Domain Notice</h2>
+              <p className="text-xs text-muted-foreground mt-1">
+                Google OAuth requires this preview domain to be registered in Firebase Console.
+              </p>
+            </div>
+
+            <div className="space-y-4">
+              <div className="bg-muted/50 border border-border rounded-xl p-3.5 space-y-2 text-xs">
+                <div className="text-muted-foreground font-medium">Current Domain:</div>
+                <div className="flex items-center justify-between gap-2 bg-background p-2.5 rounded-lg border border-border font-mono text-foreground break-all select-all">
+                  <span>{typeof window !== "undefined" ? window.location.hostname : "preview domain"}</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (typeof window !== "undefined") {
+                        navigator.clipboard.writeText(window.location.hostname);
+                        toast.success("Domain copied to clipboard!");
+                      }
+                    }}
+                    className="p-1.5 hover:bg-muted rounded-md text-primary shrink-0"
+                    title="Copy domain"
+                  >
+                    <Copy className="w-4 h-4" />
+                  </button>
+                </div>
+                <p className="text-[11px] text-muted-foreground leading-relaxed">
+                  To enable Google popup login here, add this domain in Firebase Console → <strong>Authentication</strong> → <strong>Settings</strong> → <strong>Authorized domains</strong>.
+                </p>
+              </div>
+
+              <div className="pt-2 flex flex-col gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOauthModalOpen(false);
+                    const nameInput = document.querySelector('input[type="text"]') as HTMLInputElement;
+                    if (nameInput) nameInput.focus();
+                  }}
+                  className="w-full py-3 bg-primary text-primary-foreground font-semibold text-sm rounded-xl hover:bg-primary/90 transition-all flex items-center justify-center gap-2"
+                >
+                  Create Account with Form Above
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

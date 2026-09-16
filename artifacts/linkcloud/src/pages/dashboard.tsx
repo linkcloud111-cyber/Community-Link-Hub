@@ -2,6 +2,8 @@ import { useState, useEffect, useMemo } from "react";
 import { Link, useLocation } from "wouter";
 import { useDashboardTabs, type DashboardTab } from "@/hooks/useDashboardTabs";
 import { useAuth } from "@/contexts/AuthContext";
+import { auth, db } from "@/lib/firebase";
+import { doc, updateDoc } from "firebase/firestore";
 import {
   getUserGroups,
   deleteGroup,
@@ -30,7 +32,7 @@ import {
   signOut,
   type ConfirmationResult,
 } from "@/lib/auth";
-import type { Group, Notification, ContactMessage, Complaint } from "@/lib/types";
+import type { Group, Notification, ContactMessage, Complaint, UserProfile } from "@/lib/types";
 import { validateGmailAddress, validateIndianMobile } from "@/lib/utils";
 import { toast } from "sonner";
 import { Loader2, Mail, Phone, Lock, Eye, EyeOff, ShieldCheck, X, RefreshCw } from "lucide-react";
@@ -268,18 +270,47 @@ export default function Dashboard() {
     }
   };
 
-  // Check Email Status
+  // Check Email Status / Refresh Verification Status
   const handleCheckEmailStatus = async () => {
-    if (!user) return;
     try {
+      const currentUser = auth.currentUser || user;
+      if (!currentUser) {
+        toast.error("Session not found. Please log in again.");
+        return;
+      }
+
+      if (auth.currentUser) {
+        await auth.currentUser.reload();
+      }
+
+      if (auth.currentUser?.emailVerified) {
+        try {
+          const userDocRef = doc(db, "users", currentUser.uid);
+          await updateDoc(userDocRef, {
+            emailVerified: true,
+            status: "active",
+            updatedAt: new Date(),
+          });
+        } catch (dbErr) {
+          console.warn("Notice: Firestore update in handleCheckEmailStatus:", dbErr);
+        }
+
+        await refreshProfile();
+        handleTabChange("profile");
+        toast.success("Email verified successfully!");
+        return;
+      }
+
       const result = await checkAndSyncEmailChangeStatus({
         manual: true,
         targetPendingEmail: pendingEmail,
-        caller: "DashboardBanner.handleCheckEmailStatus",
       });
       if (result.status === "success") {
         await refreshProfile();
-        setActiveTab("profile");
+        handleTabChange("profile");
+        toast.success("Email verified successfully!");
+      } else {
+        toast.info("Email not verified yet. Please check your inbox or spam folder.");
       }
     } catch {
       toast.error("Unable to check verification status. Please try again.");
@@ -442,6 +473,10 @@ export default function Dashboard() {
           {activeTab === "settings" && (
             <SettingsTab
               profile={profile}
+              email={user?.email || null}
+              isEmailVerified={isEmailVerified}
+              pendingEmail={pendingEmail}
+              onCheckEmailStatus={handleCheckEmailStatus}
               onSavePreferences={async (prefs) => {
                 if (!user) return;
                 await updateUserProfile(user.uid, prefs);

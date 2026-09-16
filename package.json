@@ -3,6 +3,7 @@
   "version": "0.0.0",
   "license": "MIT",
   "private": true,
+  "type": "module",
   "workspaces": [
     "artifacts/*",
     "lib/*",
@@ -10,7 +11,7 @@
   ],
   "scripts": {
     "dev": "npm run dev --workspace=@workspace/linkcloud",
-    "build": "npm run build --workspace=@workspace/linkcloud && mkdir -p dist && cp -r artifacts/linkcloud/dist/* dist/",
+    "build": "npm run build --workspace=@workspace/linkcloud && rm -rf dist && mkdir -p dist && cp -r artifacts/linkcloud/dist/. dist/",
     "typecheck": "tsc --build",
     "lint": "tsc --build"
   },

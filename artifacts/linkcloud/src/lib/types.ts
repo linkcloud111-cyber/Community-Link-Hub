@@ -105,7 +105,7 @@ export interface Group {
   language: string;
   contentType?: string;
   linkStatus?: "active" | "inactive";
-  minimumAge?: number;
+  minimumAge?: number | string;
   description: string;
   rules: string;
   tags: string[];
@@ -519,7 +519,7 @@ export interface EmailChangeRequest {
   userId: string;
   oldEmail: string;
   newEmail: string;
-  status: "pending" | "verified" | "expired" | "cancelled" | "superseded";
+  status: "pending" | "verified" | "completed" | "expired" | "cancelled" | "superseded";
   createdAt: number;
   expiresAt: number;
   version: number;

@@ -18,6 +18,7 @@ import {
   Loader2,
   Shield,
   KeyRound,
+  Copy,
 } from "lucide-react";
 import { SiGoogle } from "react-icons/si";
 
@@ -188,9 +189,23 @@ export default function WebmasterLogin() {
 
           {/* Error Message Alert */}
           {errorMsg && (
-            <div className="p-3.5 sm:p-4 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/70 rounded-xl text-rose-700 dark:text-rose-300 text-xs sm:text-sm font-medium flex items-start gap-3 animate-in fade-in slide-in-from-top-1 duration-200">
-              <AlertCircle className="w-4 h-4 sm:w-5 sm:h-5 shrink-0 mt-0.5 text-rose-600 dark:text-rose-400" />
-              <span className="leading-relaxed">{errorMsg}</span>
+            <div className="p-3.5 sm:p-4 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/70 rounded-xl text-rose-700 dark:text-rose-300 text-xs sm:text-sm font-medium flex flex-col gap-2 animate-in fade-in slide-in-from-top-1 duration-200">
+              <div className="flex items-start gap-3">
+                <AlertCircle className="w-4 h-4 sm:w-5 sm:h-5 shrink-0 mt-0.5 text-rose-600 dark:text-rose-400" />
+                <span className="leading-relaxed">{errorMsg}</span>
+              </div>
+              {errorMsg.includes("Authorized Domains") && typeof window !== "undefined" && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(window.location.hostname);
+                    toast.success("Domain copied to clipboard!");
+                  }}
+                  className="self-start inline-flex items-center gap-1.5 px-2.5 py-1 bg-rose-100 dark:bg-rose-900/40 text-rose-800 dark:text-rose-200 hover:bg-rose-200 dark:hover:bg-rose-900/60 rounded-md font-mono text-xs transition-colors"
+                >
+                  <Copy className="w-3.5 h-3.5" /> Copy '{window.location.hostname}'
+                </button>
+              )}
             </div>
           )}
 

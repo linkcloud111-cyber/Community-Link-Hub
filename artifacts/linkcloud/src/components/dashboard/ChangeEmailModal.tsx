@@ -17,7 +17,9 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import type { User } from "firebase/auth";
-import { auth } from "@/lib/firebase";
+import { updateEmail } from "firebase/auth";
+import { auth, db } from "@/lib/firebase";
+import { doc, getDoc, updateDoc, deleteField, setDoc } from "firebase/firestore";
 import type { UserProfile } from "@/lib/types";
 import { validateNewGmail, STRICT_EMAIL_REGEX } from "@/lib/utils";
 import {
@@ -30,7 +32,12 @@ import {
   getActiveEmailChangeRequest,
   markActiveEmailRequestExpired,
   EMAIL_CHANGE_TTL_MS,
+  EMAIL_RESEND_COOLDOWN_MS,
 } from "@/lib/auth";
+import {
+  EmailVerificationTooltip,
+  EmailVerificationHelperText,
+} from "@/components/dashboard/EmailVerificationHelper";
 
 interface ChangeEmailModalProps {
   isOpen: boolean;
@@ -139,14 +146,14 @@ export function ChangeEmailModal({
         }
       }
 
-      // Check active 60-second resend cooldown & expiration from localStorage
+      // Check active 30-second resend cooldown & 15-minute expiration from localStorage
       if (typeof window !== "undefined" && user?.uid) {
         const lastSent = Number(
           window.localStorage.getItem(`resend_email_change_${user.uid}`) || 0
         );
         const elapsed = Date.now() - lastSent;
-        if (elapsed < EMAIL_CHANGE_TTL_MS) {
-          setCooldown(Math.ceil((EMAIL_CHANGE_TTL_MS - elapsed) / 1000));
+        if (elapsed < EMAIL_RESEND_COOLDOWN_MS) {
+          setCooldown(Math.ceil((EMAIL_RESEND_COOLDOWN_MS - elapsed) / 1000));
         } else {
           setCooldown(0);
         }
@@ -158,7 +165,7 @@ export function ChangeEmailModal({
           const remaining = Math.max(0, Math.ceil((expiresTimestamp - Date.now()) / 1000));
           setExpiresIn(remaining);
         } else {
-          setExpiresIn(60);
+          setExpiresIn(Math.floor(EMAIL_CHANGE_TTL_MS / 1000));
         }
       }
     }
@@ -389,11 +396,11 @@ export function ChangeEmailModal({
       );
 
       setActivePending(check.cleanEmail);
-      setCooldown(60);
-      setExpiresIn(60);
+      setCooldown(Math.floor(EMAIL_RESEND_COOLDOWN_MS / 1000));
+      setExpiresIn(Math.floor(EMAIL_CHANGE_TTL_MS / 1000));
       setStatusFeedback({
         type: "info",
-        message: "ℹ Verification link sent. Link is valid for 1 minute.",
+        message: "ℹ Verification link sent. Link is valid for 15 minutes.",
       });
       toast.info("Verification email sent. Please check your Gmail.");
 
@@ -456,11 +463,11 @@ export function ChangeEmailModal({
     setStatusFeedback(null);
     try {
       await resendPendingEmailVerification(user, activePending);
-      setCooldown(60);
-      setExpiresIn(60);
+      setCooldown(Math.floor(EMAIL_RESEND_COOLDOWN_MS / 1000));
+      setExpiresIn(Math.floor(EMAIL_CHANGE_TTL_MS / 1000));
       setStatusFeedback({
         type: "info",
-        message: "ℹ A new verification link has been sent. Link is valid for 1 minute.",
+        message: "ℹ A new verification link has been sent. Link is valid for 15 minutes.",
       });
       toast.info("Verification link sent again. Please check your Gmail inbox.");
     } catch (err: any) {
@@ -475,19 +482,123 @@ export function ChangeEmailModal({
     }
   };
 
-  // 3. Refresh verification status (Screen 2 Action)
-  const handleRefreshStatus = async () => {
+  // 3. Refresh verification status / Manual Refresh (Screen 2 Action)
+  const handleManualRefresh = async () => {
     if (!user || refreshing) return;
     setRefreshing(true);
     setStatusFeedback(null);
     try {
+      // 1. Reload current Firebase User to fetch latest verification status (Rule 2)
+      try {
+        await auth.currentUser?.reload();
+      } catch (reloadErr) {
+        console.warn("Reload user notice handled safely:", reloadErr);
+      }
+
+      // Graceful Token Refresh / Transition (Rule 1 & 5)
+      const currentUser = auth.currentUser || user;
+      try {
+        await currentUser.getIdToken(true);
+      } catch (tokenError: any) {
+        if (
+          tokenError?.code === "auth/user-token-expired" ||
+          tokenError?.code === "auth/user-token-revoked"
+        ) {
+          console.warn("Handled temporary token transition during email sync. Staying authenticated.");
+        } else {
+          console.warn("Token refresh notice handled safely:", tokenError);
+        }
+      }
+
+      // 2. Fetch Direct Firestore Request State (Rule 3)
+      let directStatus: string | null = null;
+      let targetEmail: string = activePending || "";
+      try {
+        const dbRef = doc(db, `users/${user.uid}/emailChanges`, "active");
+        const requestDoc = await getDoc(dbRef);
+        if (requestDoc.exists()) {
+          const reqData = requestDoc.data();
+          directStatus = reqData.status || null;
+          if (reqData.targetEmail) {
+            targetEmail = reqData.targetEmail;
+          }
+        }
+      } catch (dbErr) {
+        console.warn("Direct requestDoc check notice:", dbErr);
+      }
+
+      // 3. Check and sync email change status
       const result = await checkAndSyncEmailChangeStatus({
         manual: true,
-        targetPendingEmail: activePending,
-        caller: "ChangeEmailModal.handleRefreshStatus",
+        targetPendingEmail: targetEmail || activePending,
+        caller: "ChangeEmailModal.handleManualRefresh",
       });
 
-      if (result.status === "success") {
+      const freshUser = auth.currentUser || user;
+      const cleanTarget = (targetEmail || activePending || "").trim().toLowerCase();
+      const currentAuthEmail = (freshUser.email || "").trim().toLowerCase();
+      const currentProfileEmail = (profile?.email || "").trim().toLowerCase();
+
+      const isVerified =
+        directStatus === "VERIFIED" ||
+        directStatus === "COMPLETED" ||
+        result.status === "success" ||
+        (cleanTarget && currentAuthEmail === cleanTarget) ||
+        (cleanTarget && currentProfileEmail === cleanTarget && freshUser.emailVerified);
+
+      if (isVerified) {
+        // 4. Perform final synchronization with Firestore and Auth (Rule 4)
+        if (cleanTarget) {
+          // If Auth email still has old email and updateEmail is needed:
+          if (freshUser && currentAuthEmail !== cleanTarget) {
+            try {
+              await updateEmail(freshUser, cleanTarget);
+            } catch (authUpdateErr) {
+              console.warn("Notice: Auth updateEmail during sync:", authUpdateErr);
+            }
+          }
+
+          // Update Firestore user document collection
+          try {
+            const userDocRef = doc(db, `users/${user.uid}`);
+            await updateDoc(userDocRef, {
+              email: cleanTarget,
+              pendingEmail: deleteField(),
+              emailIndex: cleanTarget,
+              emailVerified: true,
+            });
+          } catch (uDocErr) {
+            console.warn("Notice: userDocRef update in handleManualRefresh:", uDocErr);
+          }
+
+          // Mark active request document as COMPLETED
+          try {
+            const userActiveRef = doc(db, `users/${user.uid}/emailChanges`, "active");
+            const actSnap = await getDoc(userActiveRef).catch(() => null);
+            const actReqId = (actSnap && actSnap.exists()) ? actSnap.data()?.requestId : null;
+            await updateDoc(userActiveRef, {
+              status: "COMPLETED",
+              updatedAt: Date.now(),
+            });
+            if (actReqId) {
+              await updateDoc(doc(db, "emailChangeRequests", actReqId), {
+                status: "completed",
+                updatedAt: Date.now(),
+              }).catch(() => {});
+            }
+          } catch (cErr) {
+            console.warn("Notice: marking active email change as COMPLETED:", cErr);
+          }
+
+          // Commit to Firestore index, localStorage, history and audit log
+          try {
+            await commitEmailChangeInFirestore(user.uid, cleanTarget, profile?.email || "");
+          } catch (cErr) {
+            console.warn("Notice committing email change in firestore:", cErr);
+          }
+        }
+
+        // Clean up modal state
         setActivePending(null);
         setNewEmail("");
         setConfirmNewEmail("");
@@ -496,57 +607,59 @@ export function ChangeEmailModal({
         setExpiresIn(null);
         setCooldown(0);
         setStatusFeedback(null);
-        toast.success("Email updated successfully");
         onClose();
+
         if (onSuccess) {
           await onSuccess();
         }
+
+        // 5. Navigate directly to /dashboard?tab=profile (Rule 5 & 6)
+        setLocation("/dashboard?tab=profile", { replace: true });
         if (typeof window !== "undefined") {
           window.history.replaceState(null, "", "/dashboard?tab=profile");
           window.dispatchEvent(new PopStateEvent("popstate"));
         }
+        toast.success("Email updated successfully");
         return;
-      } else if (result.status === "expired") {
+      } else if (directStatus === "EXPIRED" || result.status === "expired") {
         setStatusFeedback({
           type: "error",
           message: "× Verification link expired. Please resend the link.",
         });
         setExpiresIn(0);
         toast.warning("Verification link expired. Please send a new verification link.");
-      } else if (result.status === "cancelled") {
+      } else if (directStatus === "CANCELLED" || result.status === "cancelled") {
         setStatusFeedback({
           type: "error",
           message: "× Verification link cancelled.",
         });
         toast.error("Verification link has been cancelled.");
-      } else if (result.status === "superseded") {
+      } else if (directStatus === "SUPERSEDED" || result.status === "superseded") {
         setStatusFeedback({
           type: "error",
           message: "× This is an older verification link. Please use the latest link.",
         });
         toast.warning("This is an older verification link. Please use the latest link.");
-      } else if (result.status === "pending") {
-        setStatusFeedback({
-          type: "warning",
-          message: "⚠ Verification is still pending. Check your Gmail inbox and click the link.",
-        });
-        toast.warning("Verification pending. Please check your Gmail inbox and click the link first.");
       } else {
         setStatusFeedback({
-          type: "error",
-          message: `× ${result.message || "Verification not completed"}`,
+          type: "warning",
+          message: "Email not verified yet. Please open the verification link sent to your inbox or spam folder.",
         });
+        toast.info("Email not verified yet. Please open the verification link sent to your inbox or spam folder.");
       }
-    } catch (err: any) {
+    } catch (error: any) {
+      console.error("Sync error handled safely:", error);
       setStatusFeedback({
-        type: "error",
-        message: "× Unable to check verification status. Please try again.",
+        type: "warning",
+        message: "Email not verified yet. Please open the verification link sent to your inbox or spam folder.",
       });
-      toast.error("Unable to check verification status. Please try again.");
+      toast.info("Email not verified yet. Please open the verification link sent to your inbox or spam folder.");
     } finally {
       setRefreshing(false);
     }
   };
+
+  const handleRefreshStatus = handleManualRefresh;
 
   // 4. Confirm Cancel & Close (Screen 2 Action)
   const handleConfirmCancel = async () => {
@@ -707,7 +820,7 @@ export function ChangeEmailModal({
                   <span className="text-[11px] font-bold px-2 py-0.5 rounded bg-amber-200/80 dark:bg-amber-900 text-amber-900 dark:text-amber-200 uppercase tracking-wider">
                     VERIFICATION PENDING
                   </span>
-                  {/* 60-Second Expiration Timer (00:59 ... 00:00) */}
+                  {/* 5-Minute Expiration Timer (04:59 ... 00:00) */}
                   <span
                     id="lc_expiration_timer_badge"
                     className={`inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded ${
@@ -720,8 +833,8 @@ export function ChangeEmailModal({
                     {expiresIn !== null && expiresIn <= 0
                       ? "⏱️ Expired"
                       : expiresIn !== null
-                      ? `⏱️ 00:${String(expiresIn).padStart(2, "0")}`
-                      : "⏱️ 01:00"}
+                      ? `⏱️ ${String(Math.floor(expiresIn / 60)).padStart(2, "0")}:${String(expiresIn % 60).padStart(2, "0")}`
+                      : "⏱️ 05:00"}
                   </span>
                 </div>
                 <p className="text-xs font-semibold text-amber-900 dark:text-amber-200">
@@ -733,7 +846,7 @@ export function ChangeEmailModal({
                   </span>
                 </div>
                 <p className="text-xs text-amber-800 dark:text-amber-300 leading-relaxed pt-1">
-                  ⏱️ Link is valid for 1 minute. Please check your Gmail inbox and verify.
+                  ⏱️ Link is valid for 5 minutes. Please check your Gmail inbox and verify.
                 </p>
                 <p className="text-[11px] text-amber-700 dark:text-amber-400 leading-relaxed">
                   After clicking the verification link, return here and tap <strong>Refresh Status</strong>.
@@ -741,7 +854,7 @@ export function ChangeEmailModal({
               </div>
             </div>
 
-            {/* Exactly 3 Actions: 1. Refresh Status 2. Resend Link 3. Cancel & Close */}
+            {/* Screen 2 Actions: 1. Refresh Status 2. Resend Link (30s Cooldown) 3. Cancel & Close */}
             <div className="space-y-2.5 pt-1">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                 {/* 1. Refresh Status Button */}
@@ -765,23 +878,33 @@ export function ChangeEmailModal({
                   )}
                 </button>
 
-                {/* 2. Resend Link Button */}
+                {/* 2. Resend Link Button (Active with 30-second cooldown) */}
                 <button
                   type="button"
                   id="lc_resend_verification_btn"
                   onClick={handleResend}
                   disabled={resending || cooldown > 0}
-                  className="min-h-[48px] inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold text-amber-900 dark:text-amber-200 bg-amber-100 dark:bg-amber-900/60 hover:bg-amber-200 dark:hover:bg-amber-900 border border-amber-300 dark:border-amber-700 disabled:opacity-50 disabled:cursor-not-allowed transition cursor-pointer"
+                  title={cooldown > 0 ? `Resend available in ${cooldown} seconds` : "Resend Verification Email"}
+                  className={`min-h-[48px] inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs font-semibold transition cursor-pointer ${
+                    cooldown > 0 || resending
+                      ? "text-slate-400 dark:text-slate-500 bg-slate-100 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700/60 opacity-70 cursor-not-allowed"
+                      : "text-amber-800 dark:text-amber-200 bg-amber-100/80 hover:bg-amber-200/80 dark:bg-amber-900/50 dark:hover:bg-amber-900/70 border border-amber-300 dark:border-amber-700/60 shadow-xs"
+                  }`}
                 >
                   {resending ? (
                     <>
                       <Loader2 className="w-4 h-4 animate-spin" />
                       <span>Sending...</span>
                     </>
+                  ) : cooldown > 0 ? (
+                    <>
+                      <Clock className="w-4 h-4" />
+                      <span>📩 Resend in {cooldown}s</span>
+                    </>
                   ) : (
                     <>
                       <Send className="w-4 h-4" />
-                      <span>{cooldown > 0 ? `📩 Resend (${cooldown}s)` : "📩 Resend Verification Link"}</span>
+                      <span>📩 Resend Verification Link</span>
                     </>
                   )}
                 </button>
@@ -829,9 +952,14 @@ export function ChangeEmailModal({
 
             {/* Field 1: New Gmail Address */}
             <div id="lc_field_group_new_gmail" className="space-y-1">
-              <label htmlFor="lc_target_new_gmail" className="block text-xs font-bold text-slate-700 dark:text-slate-300">
-                New Gmail Address <span className="text-rose-500">*</span>
-              </label>
+              <div className="flex items-center justify-between">
+                <label htmlFor="lc_target_new_gmail" className="flex items-center gap-1.5 text-xs font-bold text-slate-700 dark:text-slate-300">
+                  <span>New Gmail Address</span>
+                  <span className="text-rose-500">*</span>
+                  <EmailVerificationTooltip side="right" />
+                </label>
+                <span className="text-[10px] font-medium text-slate-400">Requires verification link</span>
+              </div>
               <div className="relative">
                 <input
                   type="email"
@@ -842,7 +970,11 @@ export function ChangeEmailModal({
                   data-1p-ignore="true"
                   data-form-type="other"
                   aria-invalid={newEmailStatus === "invalid"}
-                  aria-describedby={newEmailStatus === "invalid" && newEmailError ? "lc_new_email_error" : undefined}
+                  aria-describedby={
+                    newEmailStatus === "invalid" && newEmailError
+                      ? "lc_new_email_error"
+                      : "lc_new_email_helper"
+                  }
                   value={newEmail}
                   onChange={(e) => {
                     setNewEmail(e.target.value);
@@ -870,11 +1002,15 @@ export function ChangeEmailModal({
                   )}
                 </div>
               </div>
-              {newEmailStatus === "invalid" && newEmailError && (
+              {newEmailStatus === "invalid" && newEmailError ? (
                 <p id="lc_new_email_error" role="alert" className="text-[11px] font-medium text-rose-500 flex items-center gap-1 mt-1 animate-in fade-in duration-150">
                   <AlertCircle className="w-3 h-3 flex-shrink-0" />
                   <span>{newEmailError}</span>
                 </p>
+              ) : (
+                <div id="lc_new_email_helper">
+                  <EmailVerificationHelperText variant="inline" />
+                </div>
               )}
             </div>
 

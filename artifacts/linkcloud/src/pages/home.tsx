@@ -248,7 +248,7 @@ export default function Home() {
       )}
 
       {/* Featured Groups Carousel Section */}
-      {settings?.featuredGroupsEnabled !== false && featured.length > 0 && (
+      {settings?.featuredGroupsEnabled !== false && (loadingInitial || featured.length > 0) && (
         <section className="space-y-4">
           <div className="flex items-center justify-between border-b border-border/80 pb-3">
             <div className="flex items-center gap-2">
@@ -267,8 +267,8 @@ export default function Home() {
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {loadingInitial
-              ? Array.from({ length: 4 }).map((_, i) => <SkeletonCard key={i} />)
-              : featured.map((g) => <GroupCard key={g.id} group={g} />)}
+              ? Array.from({ length: 4 }).map((_, i) => <SkeletonCard key={`feat-skel-${i}`} />)
+              : featured.map((g, idx) => <GroupCard key={g.id} group={g} delay={idx * 0.04} />)}
           </div>
         </section>
       )}
@@ -358,7 +358,7 @@ export default function Home() {
       )}
 
       {/* Popular & Trending Section */}
-      {settings?.popularGroupsEnabled !== false && popular.length > 0 && (
+      {settings?.popularGroupsEnabled !== false && (loadingInitial || popular.length > 0) && (
         <section className="space-y-4">
           <div className="flex items-center justify-between border-b border-border/80 pb-3">
             <div className="flex items-center gap-2">
@@ -376,15 +376,17 @@ export default function Home() {
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            {popular.slice(0, 8).map((g) => (
-              <GroupCard key={g.id} group={g} />
-            ))}
+            {loadingInitial
+              ? Array.from({ length: 8 }).map((_, i) => <SkeletonCard key={`pop-skel-${i}`} />)
+              : popular.slice(0, 8).map((g, idx) => (
+                  <GroupCard key={g.id} group={g} delay={idx * 0.04} />
+                ))}
           </div>
         </section>
       )}
 
       {/* Latest Submissions */}
-      {settings?.latestGroupsEnabled !== false && latest.length > 0 && (
+      {settings?.latestGroupsEnabled !== false && (loadingInitial || latest.length > 0) && (
         <section className="space-y-4">
           <div className="flex items-center justify-between border-b border-border/80 pb-3">
             <div className="flex items-center gap-2">
@@ -402,9 +404,11 @@ export default function Home() {
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            {latest.slice(0, 8).map((g) => (
-              <GroupCard key={g.id} group={g} />
-            ))}
+            {loadingInitial
+              ? Array.from({ length: 8 }).map((_, i) => <SkeletonCard key={`lat-skel-${i}`} />)
+              : latest.slice(0, 8).map((g, idx) => (
+                  <GroupCard key={g.id} group={g} delay={idx * 0.04} />
+                ))}
           </div>
         </section>
       )}

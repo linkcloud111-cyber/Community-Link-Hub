@@ -13,7 +13,7 @@ import {
 } from "@/lib/auth";
 import { validateGmailAddress, validateNewGmail } from "@/lib/utils";
 
-export const EMAIL_RESEND_COOLDOWN_MS = 60 * 1000; // 60 seconds strict cooldown
+export const EMAIL_RESEND_COOLDOWN_MS = 30 * 1000; // 30 seconds strict cooldown
 
 export interface EmailChangeRequestState {
   requestId: string;
@@ -28,7 +28,7 @@ export interface EmailChangeRequestState {
 }
 
 /**
- * Initiates an email change request with re-authentication and 60s TTL
+ * Initiates an email change request with re-authentication and 15m TTL
  */
 export async function requestEmailChange(
   user: User,
@@ -40,7 +40,7 @@ export async function requestEmailChange(
 }
 
 /**
- * Resends verification link after 60s cooldown, invalidating prior requests as superseded
+ * Resends verification link after 30s cooldown, invalidating prior requests as superseded
  */
 export async function resendVerificationLink(
   user: User,

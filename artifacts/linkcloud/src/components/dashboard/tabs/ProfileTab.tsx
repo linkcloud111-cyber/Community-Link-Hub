@@ -12,6 +12,10 @@ import {
   Camera,
 } from "lucide-react";
 import type { UserProfile } from "@/lib/types";
+import {
+  EmailVerificationTooltip,
+  EmailVerificationHelperText,
+} from "@/components/dashboard/EmailVerificationHelper";
 
 interface ProfileTabProps {
   profile: UserProfile | null;
@@ -112,11 +116,14 @@ export function ProfileTab({
         {/* 2-Column Info Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
           {/* Email Verification Box */}
-          <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/80 dark:border-slate-700/60 space-y-2">
+          <div id="lc_profile_email_box" className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/80 dark:border-slate-700/60 space-y-2">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-                Email Address
-              </span>
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                  Email Address
+                </span>
+                <EmailVerificationTooltip side="right" />
+              </div>
               {activePendingEmail ? (
                 <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-md bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300">
                   <ShieldAlert className="w-3 h-3" /> Change Pending
@@ -154,10 +161,17 @@ export function ProfileTab({
               </div>
             </div>
 
-            {activePendingEmail && (
-              <p className="text-[11px] text-amber-700 dark:text-amber-300 font-medium">
-                Pending verification link sent to: <span className="font-semibold text-slate-900 dark:text-white">{activePendingEmail}</span>
-              </p>
+            {activePendingEmail ? (
+              <div className="p-2.5 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200/80 dark:border-amber-800/50 space-y-1">
+                <p className="text-[11px] text-amber-800 dark:text-amber-300 font-medium">
+                  Verification link sent to: <span className="font-semibold text-slate-900 dark:text-white">{activePendingEmail}</span>
+                </p>
+                <p className="text-[10px] text-amber-700 dark:text-amber-400">
+                  Click the link in Gmail and then click "Check Status" to complete the email change.
+                </p>
+              </div>
+            ) : (
+              <EmailVerificationHelperText variant="compact" />
             )}
           </div>
 

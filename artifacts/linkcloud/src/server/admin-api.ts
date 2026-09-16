@@ -1,12 +1,14 @@
 import type { IncomingMessage, ServerResponse } from "http";
-import * as admin from "firebase-admin";
+import { initializeApp, getApps, type App } from "firebase-admin/app";
+import { getAuth } from "firebase-admin/auth";
 
-let adminApp: admin.app.App | null = null;
+let adminApp: App | null = null;
 
-export function getFirebaseAdminApp(): admin.app.App | null {
+export function getFirebaseAdminApp(): App | null {
   if (adminApp) return adminApp;
-  if (admin.apps.length > 0 && admin.apps[0]) {
-    adminApp = admin.apps[0];
+  const existingApps = getApps();
+  if (existingApps.length > 0 && existingApps[0]) {
+    adminApp = existingApps[0];
     return adminApp;
   }
 
@@ -16,7 +18,7 @@ export function getFirebaseAdminApp(): admin.app.App | null {
       process.env.FIREBASE_PROJECT_ID ||
       "linkcloud-app";
 
-    adminApp = admin.initializeApp({
+    adminApp = initializeApp({
       projectId,
     });
     return adminApp;
@@ -76,7 +78,7 @@ export async function handleAdminUserStatusRequest(
       try {
         const app = getFirebaseAdminApp();
         if (app) {
-          const auth = admin.auth(app);
+          const auth = getAuth(app);
           await auth.updateUser(uid, { disabled: shouldDisable });
           if (shouldDisable) {
             try {
@@ -172,7 +174,7 @@ export async function handleAdminUserDeleteRequest(
       try {
         const app = getFirebaseAdminApp();
         if (app) {
-          const auth = admin.auth(app);
+          const auth = getAuth(app);
           await auth.deleteUser(uid);
           authDeleted = true;
           console.log("[WEBMASTER AUTH ADMIN]", {

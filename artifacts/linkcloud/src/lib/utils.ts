@@ -250,6 +250,28 @@ export function validateProfileDetails(
 
 export const STRICT_EMAIL_REGEX = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
 
+// Strict Email Format and Domain Validation
+export const validateRealEmailStructure = (email: string): { isValid: boolean; message: string } => {
+  if (!email || typeof email !== "string") {
+    return { isValid: false, message: "Please enter a valid email format." };
+  }
+
+  // Standard Regex for Email format
+  const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+  if (!emailRegex.test(email.trim())) {
+    return { isValid: false, message: "Please enter a valid email format." };
+  }
+
+  // Block temporary/fake disposable email domains (Optional security layer)
+  const disposableDomains = ["tempmail.com", "throwawaymail.com", "10minutemail.com"];
+  const domain = email.trim().toLowerCase().split("@")[1];
+  if (disposableDomains.includes(domain)) {
+    return { isValid: false, message: "Temporary or fake emails are not allowed." };
+  }
+
+  return { isValid: true, message: "Email format is valid." };
+};
+
 export interface GmailValidationResult {
   valid: boolean;
   cleanEmail: string;

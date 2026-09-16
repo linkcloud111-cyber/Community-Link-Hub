@@ -157,19 +157,19 @@ export default function AdminGroups() {
 
     const rows = filtered.map((g) => [
       `"${g.id}"`,
-      `"${g.title.replace(/"/g, '""')}"`,
+      `"${(g.name || "").replace(/"/g, '""')}"`,
       `"${g.platform}"`,
-      `"${g.categoryName || g.categoryId || ''}"`,
-      `"${g.state || ''}"`,
-      `"${g.district || ''}"`,
-      `"${g.city || ''}"`,
+      `"${g.categoryName || g.categoryId || ""}"`,
+      `"${g.state || ""}"`,
+      `"${g.district || ""}"`,
+      `"${g.city || ""}"`,
       `"${g.status}"`,
-      `"${g.featured ? 'Yes' : 'No'}"`,
-      `"${g.hidden ? 'Yes' : 'No'}"`,
-      `"${(g.submitterName || '').replace(/"/g, '""')}"`,
-      `"${g.submitterEmail || ''}"`,
+      `"${g.featured ? "Yes" : "No"}"`,
+      `"${g.hidden ? "Yes" : "No"}"`,
+      `"${((g as any).submittedByName || (g as any).submitterName || "").replace(/"/g, '""')}"`,
+      `"${(g as any).submittedByEmail || (g as any).submitterEmail || ""}"`,
       `"${g.joinUrl}"`,
-      `"${g.createdAt ? new Date(g.createdAt.seconds ? g.createdAt.seconds * 1000 : g.createdAt).toISOString() : ''}"`,
+      `"${g.createdAt ? new Date((g.createdAt as any)?.toDate ? (g.createdAt as any).toDate() : (g.createdAt as any)?.seconds ? (g.createdAt as any).seconds * 1000 : (g.createdAt as any)).toISOString() : ""}"`,
     ]);
 
     const csvContent = [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
@@ -1156,7 +1156,7 @@ export default function AdminGroups() {
                         <Mail className="w-3.5 h-3.5 text-primary flex-shrink-0" /> {submitterProfile?.email || "No email"}
                       </p>
                       <p className="flex items-center gap-1.5 truncate">
-                        <Phone className="w-3.5 h-3.5 text-blue-500 flex-shrink-0" /> {submitterProfile?.phoneNumber || submitterProfile?.phone || "No phone"}
+                        <Phone className="w-3.5 h-3.5 text-blue-500 flex-shrink-0" /> {(submitterProfile as any)?.phoneNumber || submitterProfile?.phone || "No phone"}
                       </p>
                       <p className="flex items-center gap-1.5 truncate">
                         <Shield className="w-3.5 h-3.5 text-purple-500 flex-shrink-0" /> UID: {inspectSubmitterUid}

@@ -401,7 +401,8 @@ export interface TaxonomyVisualResult {
  * Generates reusable CSS styles for a given color.
  * Uses 12% - 15% opacity for background and 25% opacity for border.
  */
-export function createTaxonomyStyles(hexColor: string): TaxonomyVisualResult["containerStyle"] & {
+export function createTaxonomyStyles(hexColor: string): {
+  containerStyle: React.CSSProperties;
   badgeStyle: React.CSSProperties;
   iconStyle: React.CSSProperties;
   bgColor: string;

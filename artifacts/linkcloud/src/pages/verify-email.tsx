@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useLocation } from "wouter";
 import { useAuth } from "@/contexts/AuthContext";
-import { auth } from "@/lib/firebase";
+import { auth, db } from "@/lib/firebase";
 import { applyActionCode, checkActionCode } from "firebase/auth";
-import { resendVerificationEmail, signOut, getActiveEmailChangeRequest } from "@/lib/auth";
+import { doc, updateDoc } from "firebase/firestore";
+import { resendVerificationEmail, signOut, getActiveEmailChangeRequest, handleFinalVerificationCheck } from "@/lib/auth";
 import { upsertUserProfile } from "@/lib/firestore";
 import { toast } from "sonner";
 import {
@@ -18,7 +19,7 @@ import {
 } from "lucide-react";
 
 export default function VerifyEmailPage() {
-  const { user, isWebmaster, refreshProfile, checkAndSyncEmailChangeStatus, loading: authLoading } = useAuth();
+  const { user, profile, isWebmaster, refreshProfile, checkAndSyncEmailChangeStatus, loading: authLoading } = useAuth();
   const [, setLocation] = useLocation();
 
   const [resending, setResending] = useState(false);
@@ -42,8 +43,8 @@ export default function VerifyEmailPage() {
     if (!oobCode || actionProcessedRef.current) return;
     actionProcessedRef.current = true;
 
-    if (mode === "verifyAndChangeEmail") {
-      setLocation(`/email-action${window.location.search}`);
+    if (mode === "verifyAndChangeEmail" || mode === "verifyEmail") {
+      setLocation(`/verify-handler${window.location.search}`);
       return;
     }
 
@@ -54,8 +55,8 @@ export default function VerifyEmailPage() {
         // Inspect action code info if possible
         try {
           const info = await checkActionCode(auth, oobCode);
-          if (info.operation === "VERIFY_AND_CHANGE_EMAIL") {
-            setLocation(`/email-action${window.location.search}`);
+          if (info.operation === "VERIFY_AND_CHANGE_EMAIL" || info.operation === "VERIFY_EMAIL") {
+            setLocation(`/verify-handler${window.location.search}`);
             return;
           }
           if (info.data?.email) {
@@ -113,25 +114,19 @@ export default function VerifyEmailPage() {
         setIsProcessingAction(false);
         toast.success("Email verified successfully.");
 
-        // If user is currently logged in, refresh session and redirect to dashboard
+        // If user is currently logged in, refresh session
         if (auth.currentUser) {
           try {
             await refreshProfile();
           } catch {
             // ignore reload transient notice
           }
-          setTimeout(() => {
-            setLocation(isWebmaster ? "/webmaster/dashboard" : "/dashboard?tab=profile");
-          }, 800);
         }
       } catch (err: any) {
         console.warn("Action code verification notice:", err);
         setIsProcessingAction(false);
         if (auth.currentUser?.emailVerified) {
           setActionSuccess(true);
-          setTimeout(() => {
-            setLocation(isWebmaster ? "/webmaster/dashboard" : "/dashboard?tab=profile");
-          }, 800);
           return;
         }
         const code = err?.code || "";
@@ -155,12 +150,20 @@ export default function VerifyEmailPage() {
       if (urlParams.get("oobCode")) return; // Don't redirect while oobCode is pending
     }
 
-    if (!user) {
+    const isVerified = Boolean(
+      user?.emailVerified ||
+      auth.currentUser?.emailVerified ||
+      profile?.emailVerified ||
+      profile?.status === "active" ||
+      isWebmaster
+    );
+
+    if (!user && !auth.currentUser) {
       setLocation("/login");
-    } else if (user.emailVerified || isWebmaster) {
-      setLocation(isWebmaster ? "/webmaster/dashboard" : "/dashboard");
+    } else if (isVerified) {
+      setLocation(isWebmaster ? "/webmaster/dashboard" : "/dashboard?tab=profile");
     }
-  }, [user, isWebmaster, authLoading, isProcessingAction, actionSuccess, actionError, setLocation]);
+  }, [user, profile, isWebmaster, authLoading, isProcessingAction, actionSuccess, actionError, setLocation]);
 
   // 3. Cooldown timer effect
   useEffect(() => {
@@ -213,15 +216,15 @@ export default function VerifyEmailPage() {
             <div className="space-y-3">
               <button
                 onClick={() => {
-                  if (user) {
-                    setLocation(isWebmaster ? "/webmaster/dashboard" : "/dashboard");
+                  if (user || auth.currentUser) {
+                    setLocation(isWebmaster ? "/webmaster/dashboard" : "/dashboard?tab=profile");
                   } else {
                     setLocation("/login");
                   }
                 }}
                 className="w-full py-3.5 px-6 rounded-xl bg-primary text-primary-foreground font-semibold text-sm hover:bg-primary/90 transition shadow-lg shadow-primary/20 flex items-center justify-center gap-2"
               >
-                <span>{user ? "Continue to Dashboard" : "Sign In to LinkCloud"}</span>
+                <span>{user || auth.currentUser ? "Continue to Profile" : "Sign In to LinkCloud"}</span>
                 <ArrowRight className="w-4 h-4" />
               </button>
             </div>
@@ -250,15 +253,15 @@ export default function VerifyEmailPage() {
             <div className="space-y-3">
               <button
                 onClick={() => {
-                  if (user) {
-                    setLocation(isWebmaster ? "/webmaster/dashboard" : "/dashboard");
+                  if (user || auth.currentUser) {
+                    setLocation(isWebmaster ? "/webmaster/dashboard" : "/dashboard?tab=profile");
                   } else {
                     setLocation("/login");
                   }
                 }}
                 className="w-full py-3.5 px-6 rounded-xl bg-primary text-primary-foreground font-semibold text-sm hover:bg-primary/90 transition shadow-lg shadow-primary/20 flex items-center justify-center gap-2"
               >
-                <span>{user ? "Return to Dashboard" : "Back to Login"}</span>
+                <span>{user || auth.currentUser ? "Return to Dashboard" : "Back to Login"}</span>
                 <ArrowRight className="w-4 h-4" />
               </button>
             </div>
@@ -268,7 +271,7 @@ export default function VerifyEmailPage() {
     );
   }
 
-  if (authLoading || !user) {
+  if (authLoading || (!user && !auth.currentUser)) {
     return (
       <div className="min-h-[60vh] flex items-center justify-center">
         <Loader2 className="w-8 h-8 animate-spin text-primary" />
@@ -278,12 +281,13 @@ export default function VerifyEmailPage() {
 
   // Handle Resend Verification Email
   const handleResend = async () => {
-    if (cooldown > 0 || resending) return;
+    const targetUser = user || auth.currentUser;
+    if (cooldown > 0 || resending || !targetUser) return;
     setResending(true);
     try {
-      await resendVerificationEmail(user);
+      await resendVerificationEmail(targetUser);
       setCooldown(60);
-      toast.success(`Verification email sent to ${user.email}! Please check your inbox and spam folder.`);
+      toast.success(`Verification email sent to ${targetUser.email}! Please check your inbox and spam folder.`);
     } catch (err: any) {
       console.error(err);
       toast.error(err.message || "Failed to send verification email. Please try again later.");
@@ -293,24 +297,54 @@ export default function VerifyEmailPage() {
   };
 
   // Handle Refresh Verification Status
-  const handleRefreshStatus = async () => {
+  const handleRefreshVerification = async () => {
     if (checking) return;
     setChecking(true);
     try {
-      const result = await checkAndSyncEmailChangeStatus({
-        manual: true,
-        caller: "VerifyEmailPage.handleRefreshStatus",
-      });
-      if (result.status === "success") {
-        setLocation(isWebmaster ? "/webmaster/dashboard" : "/dashboard?tab=profile");
+      const currentUser = auth.currentUser;
+      if (!currentUser) {
+        toast.error("Session not found. Please log in again.");
+        setLocation("/login");
+        return;
       }
-    } catch (err: any) {
-      console.error(err);
-      toast.error("Unable to check verification status. Please try again.");
+
+      // 1. Firebase se latest user state reload karein
+      await currentUser.reload();
+
+      // 2. Check karein ki email verified hai ya nahi
+      if (currentUser.emailVerified) {
+        // Firestore database ko update karein
+        try {
+          await updateDoc(doc(db, "users", currentUser.uid), {
+            emailVerified: true,
+            status: "active",
+            updatedAt: new Date(),
+          });
+        } catch (dbErr) {
+          console.warn("Notice: updateDoc in handleRefreshVerification:", dbErr);
+          await upsertUserProfile(currentUser.uid, {
+            emailVerified: true,
+            status: "active",
+          }).catch(() => {});
+        }
+
+        await refreshProfile();
+        toast.success("Email verified successfully!");
+
+        // 3. Seedha Dashboard Profile page par bhej dein (No Login Page)
+        setLocation(isWebmaster ? "/webmaster/dashboard" : "/dashboard?tab=profile");
+      } else {
+        toast.info("Email not verified yet. Please check your inbox or spam folder.");
+      }
+    } catch (error: any) {
+      console.error("Error refreshing verification status:", error);
+      toast.error("Something went wrong. Please try again.");
     } finally {
       setChecking(false);
     }
   };
+
+  const handleRefreshStatus = handleRefreshVerification;
 
   // Handle Logout
   const handleLogout = async () => {
@@ -353,7 +387,7 @@ export default function VerifyEmailPage() {
             <p className="text-xs text-muted-foreground leading-relaxed">
               A verification email was sent to{" "}
               <strong className="text-foreground font-semibold break-all">
-                {user.email}
+                {user?.email || profile?.email || "your email address"}
               </strong>
               . Open the email and click the verification link to unlock full access to LinkCloud.
             </p>

@@ -110,11 +110,11 @@ export default function AdminReports() {
     const rows = reports.map((r) => [
       `"${r.id}"`,
       `"${r.groupId}"`,
-      `"${(r.groupTitle || '').replace(/"/g, '""')}"`,
+      `"${((r as any).groupTitle || (r as any).groupName || '').replace(/"/g, '""')}"`,
       `"${(r.reason || '').replace(/"/g, '""')}"`,
-      `"${r.reporterEmail || ''}"`,
+      `"${(r as any).reporterEmail || (r as any).userEmail || ''}"`,
       `"${r.status}"`,
-      `"${r.createdAt ? new Date(r.createdAt.seconds ? r.createdAt.seconds * 1000 : r.createdAt).toISOString() : ''}"`,
+      `"${r.createdAt ? new Date((r.createdAt as any)?.toDate ? (r.createdAt as any).toDate() : (r.createdAt as any)?.seconds ? (r.createdAt as any).seconds * 1000 : (r.createdAt as any)).toISOString() : ''}"`,
     ]);
 
     const csvContent = [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");

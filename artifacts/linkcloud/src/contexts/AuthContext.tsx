@@ -13,7 +13,6 @@ import {
 import {
   checkWebmasterCollection,
   checkAndSyncEmailChangeStatus as checkAndSyncEmailAuth,
-  commitEmailChangeInFirestore,
   type EmailVerificationSyncResult,
 } from "../lib/auth";
 import type { UserProfile } from "../lib/types";
@@ -57,12 +56,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       let p = await getUserProfile(uid);
       if (p?.status === "suspended" || p?.status === "banned" || p?.status === "deleted") {
-        toast.error("Your account has been suspended or restricted. Please contact the Web Administrator.");
-        await firebaseSignOut(auth);
-        setUser(null);
-        setProfile(null);
-        setPendingEmail(null);
-        return null;
+        console.warn(`[AUTH PROFILE] User ${uid} account status is ${p?.status}`);
+        setProfile(p);
+        return p;
       }
 
       const pendingKey = `pending_email_${uid}`;
@@ -89,24 +85,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           emailVerified: Boolean(isEmailVerified),
         };
       }
-      // Case 2: Email in Firebase Auth has changed (e.g. after out-of-band email verification)
-      else if (p && authUserEmail && p.email.toLowerCase() !== authUserEmail.toLowerCase()) {
-        const cleanEmail = authUserEmail.toLowerCase();
-        await upsertUserProfile(uid, {
-          email: cleanEmail,
-          emailVerified: true,
-          pendingEmail: null,
-          status: "active",
-        });
-        p = {
-          ...p,
-          email: cleanEmail,
-          emailVerified: true,
-          pendingEmail: undefined,
-          status: "active",
-        };
-      }
-      // Case 3: Email is same, but emailVerified boolean updated
+      // Email verified boolean updated for existing matching email
       else if (p && isEmailVerified && !p.emailVerified) {
         await upsertUserProfile(uid, {
           emailVerified: true,
@@ -182,17 +161,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
       const updatedUser = auth.currentUser;
       if (updatedUser) {
-        setUser((prev) => {
-          if (
-            prev &&
-            prev.uid === updatedUser.uid &&
-            prev.email === updatedUser.email &&
-            prev.emailVerified === updatedUser.emailVerified
-          ) {
-            return prev;
-          }
-          return updatedUser;
-        });
+        // Clone user to ensure React reference update triggers routing guards immediately
+        const clonedUser = Object.assign(Object.create(Object.getPrototypeOf(updatedUser)), updatedUser);
+        setUser(clonedUser);
         await fetchAndCheckProfile(updatedUser.uid, updatedUser.email, updatedUser.emailVerified);
       }
     } else if (user?.uid) {
@@ -200,16 +171,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [user?.uid, user?.email, user?.emailVerified, fetchAndCheckProfile]);
 
-  // If user opens a verifyAndChangeEmail oobCode on a non-email-action route, redirect to /email-action
+  // If user opens an oobCode action link on another route, redirect to /verify-handler
   useEffect(() => {
     if (typeof window === "undefined") return;
-    if (window.location.pathname === "/email-action") return;
+    const currentPath = window.location.pathname;
+    if (currentPath === "/verify-handler" || currentPath === "/email-action") return;
     const urlParams = new URLSearchParams(window.location.search);
     const oobCode = urlParams.get("oobCode");
     const mode = urlParams.get("mode");
 
-    if (oobCode && mode === "verifyAndChangeEmail") {
-      window.location.href = `/email-action${window.location.search}`;
+    if (oobCode && (mode === "verifyAndChangeEmail" || mode === "verifyEmail" || mode === "resetPassword" || mode === "recoverEmail")) {
+      window.location.href = `/verify-handler${window.location.search}`;
     }
   }, []);
 
@@ -236,48 +208,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 console.warn("[AUTH TOKEN] Auth token reload notice:", tokenErr);
               }
 
-              // Check role in Firestore & webmaster collection before updating user state
-              const isWebmasterDoc = await checkWebmasterCollection(firebaseUser.uid);
-              const userProfile = await fetchAndCheckProfile(firebaseUser.uid, firebaseUser.email, firebaseUser.emailVerified);
-              const isWebmasterUser = Boolean(isWebmasterDoc || userProfile?.role === "webmaster");
-
-              const currentPath = typeof window !== "undefined" ? window.location.pathname : "";
-              const isWebmasterRoute = currentPath.startsWith("/webmaster");
-
-              if (isWebmasterUser) {
-                // If Webmaster is on standard user login/register route:
-                if (currentPath === "/login" || currentPath === "/register") {
-                  console.warn("[AUTH SIGNOUT] Webmaster account accessed User login route. Signing out immediately.");
-                  toast.error("This is a Webmaster account. Please sign in from the Webmaster Login page.");
-                  await firebaseSignOut(auth);
-                  setUser(null);
-                  setProfile(null);
-                  setPendingEmail(null);
-                  initialAuthResolvedRef.current = true;
-                  setLoading(false);
-                  if (typeof window !== "undefined") {
-                    window.location.href = "/webmaster/login";
-                  }
-                  return;
-                }
-              } else {
-                // Standard user (not a webmaster)
-                // If standard user is on any /webmaster/* route:
-                if (isWebmasterRoute) {
-                  console.warn("[AUTH SIGNOUT] User account accessed Webmaster portal route. Signing out immediately.");
-                  toast.error("Access denied. Only the Webmaster can sign in here.");
-                  await firebaseSignOut(auth);
-                  setUser(null);
-                  setProfile(null);
-                  setPendingEmail(null);
-                  initialAuthResolvedRef.current = true;
-                  setLoading(false);
-                  if (typeof window !== "undefined") {
-                    window.location.href = "/login";
-                  }
-                  return;
-                }
-              }
+              // Fetch Firestore profile and check webmaster collection
+              await checkWebmasterCollection(firebaseUser.uid);
+              await fetchAndCheckProfile(firebaseUser.uid, firebaseUser.email, firebaseUser.emailVerified);
 
               setUser((prev) => {
                 if (
@@ -290,6 +223,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 }
                 return firebaseUser;
               });
+            } else if (auth.currentUser) {
+              console.log("[AUTH STATE] Retaining existing in-memory auth user session:", auth.currentUser.uid);
+              setUser(auth.currentUser);
             } else {
               console.log("[AUTH STATE] No authenticated user detected");
               setUser(null);
@@ -333,7 +269,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
         const refreshed = auth.currentUser;
         if (refreshed) {
-          setUser(refreshed);
+          const clonedUser = Object.assign(Object.create(Object.getPrototypeOf(refreshed)), refreshed);
+          setUser(clonedUser);
           setPendingEmail(null);
           if (typeof window !== "undefined" && window.localStorage && refreshed.uid) {
             window.localStorage.removeItem(`pending_email_${refreshed.uid}`);

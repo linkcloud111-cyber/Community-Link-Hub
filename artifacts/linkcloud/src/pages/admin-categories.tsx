@@ -168,7 +168,7 @@ export default function AdminCategories() {
 
         const dup = categories.some(
           (c) =>
-            c.slug.toLowerCase() === res.slug.toLowerCase() ||
+            c.slug?.toLowerCase() === res.slug.toLowerCase() ||
             c.name.toLowerCase().trim() === catName.toLowerCase().trim()
         );
         if (dup) {
@@ -207,7 +207,7 @@ export default function AdminCategories() {
 
         const dup = platforms.some(
           (p) =>
-            p.slug.toLowerCase() === res.slug.toLowerCase() ||
+            p.slug?.toLowerCase() === res.slug.toLowerCase() ||
             p.name.toLowerCase().trim() === platName.toLowerCase().trim()
         );
         if (dup) {
@@ -244,7 +244,7 @@ export default function AdminCategories() {
 
         const dup = contentTypes.some(
           (ct) =>
-            ct.slug.toLowerCase() === res.slug.toLowerCase() ||
+            ct.slug?.toLowerCase() === res.slug.toLowerCase() ||
             ct.name.toLowerCase().trim() === ctName.toLowerCase().trim()
         );
         if (dup) {
@@ -282,7 +282,7 @@ export default function AdminCategories() {
 
         const dup = languages.some(
           (l) =>
-            l.slug.toLowerCase() === res.slug.toLowerCase() ||
+            l.slug?.toLowerCase() === res.slug.toLowerCase() ||
             l.name.toLowerCase().trim() === langName.toLowerCase().trim()
         );
         if (dup) {
@@ -362,8 +362,14 @@ export default function AdminCategories() {
   // ─── CATEGORY HANDLERS ──────────────────────────────────────────────────────
   const handleSaveCategory = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!catName.trim()) return toast.error("Category name is required");
-    if (dupWarning && !editingCatId) return toast.error(dupWarning);
+    if (!catName.trim()) {
+      toast.error("Category name is required");
+      return;
+    }
+    if (dupWarning && !editingCatId) {
+      toast.error(dupWarning);
+      return;
+    }
 
     try {
       if (editingCatId) {
@@ -413,7 +419,7 @@ export default function AdminCategories() {
     setCatSlug(c.slug || slugify(c.name));
     setCatIcon(c.icon || "Folder");
     setCatColor(c.color || c.themeColor || "#3b82f6");
-    setCatOrder(c.displayOrder ?? c.order ?? 1);
+    setCatOrder(c.displayOrder ?? (c as any).order ?? 1);
     setCatStatus(c.status === "disabled" || c.enabled === false ? "disabled" : "active");
     setDupWarning(null);
   };
@@ -432,8 +438,14 @@ export default function AdminCategories() {
   // ─── PLATFORM HANDLERS ──────────────────────────────────────────────────────
   const handleSavePlatform = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!platName.trim()) return toast.error("Platform name is required");
-    if (dupWarning && !editingPlatId) return toast.error(dupWarning);
+    if (!platName.trim()) {
+      toast.error("Platform name is required");
+      return;
+    }
+    if (dupWarning && !editingPlatId) {
+      toast.error(dupWarning);
+      return;
+    }
 
     try {
       if (editingPlatId) {
@@ -508,8 +520,14 @@ export default function AdminCategories() {
   // ─── CONTENT TYPE HANDLERS ──────────────────────────────────────────────────
   const handleSaveContentType = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!ctName.trim()) return toast.error("Content Type name is required");
-    if (dupWarning && !editingCtId) return toast.error(dupWarning);
+    if (!ctName.trim()) {
+      toast.error("Content Type name is required");
+      return;
+    }
+    if (dupWarning && !editingCtId) {
+      toast.error(dupWarning);
+      return;
+    }
 
     try {
       if (editingCtId) {
@@ -582,8 +600,14 @@ export default function AdminCategories() {
   // ─── LANGUAGE HANDLERS ──────────────────────────────────────────────────────
   const handleSaveLanguage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!langName.trim()) return toast.error("Language name is required");
-    if (dupWarning && !editingLangId) return toast.error(dupWarning);
+    if (!langName.trim()) {
+      toast.error("Language name is required");
+      return;
+    }
+    if (dupWarning && !editingLangId) {
+      toast.error(dupWarning);
+      return;
+    }
 
     try {
       if (editingLangId) {

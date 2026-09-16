@@ -57,6 +57,12 @@ service cloud.firestore {
         (!('email' in incoming()) || incoming().email == existing().email || incoming().email == request.auth.token.email)
       );
       allow delete: if isWebmaster() || isUser(userId);
+
+      // Subcollection: Email Change History
+      match /email_history/{historyId} {
+        allow read, create, update: if isUser(userId) || isWebmaster();
+        allow delete: if isWebmaster();
+      }
     }
 
     // ─── Groups Collection ───
@@ -141,9 +147,46 @@ service cloud.firestore {
 
     // ─── Email Change Requests ───
     match /emailChangeRequests/{requestId} {
-      allow read: if isWebmaster() || (isSignedIn() && (resource == null || resource.data.userId == request.auth.uid));
-      allow create: if isSignedIn() && incoming().userId == request.auth.uid;
-      allow update: if isWebmaster() || (isSignedIn() && existing().userId == request.auth.uid);
+      // Allow get by document ID for verification link processing & terminal validation
+      allow get: if true;
+      // Restrict collection listing to Webmaster or owner querying their own requests
+      allow list: if isWebmaster() || (isSignedIn() && resource.data.userId == request.auth.uid);
+
+      // Authenticated user creating their own request
+      allow create: if isWebmaster() || (
+        isSignedIn() &&
+        incoming().userId == request.auth.uid &&
+        incoming().requestId == requestId &&
+        incoming().status == 'pending'
+      );
+
+      // Update: Webmaster full access OR owner managing own request OR terminal verification status transition
+      allow update: if isWebmaster() || (
+        // Authenticated owner managing own request (cancelling/superseding) with sensitive fields preserved
+        (
+          isSignedIn() &&
+          existing().userId == request.auth.uid &&
+          incoming().userId == existing().userId &&
+          incoming().requestId == existing().requestId &&
+          incoming().oldEmail == existing().oldEmail &&
+          incoming().newEmail == existing().newEmail &&
+          incoming().createdAt == existing().createdAt &&
+          incoming().expiresAt == existing().expiresAt
+        ) ||
+        // Terminal verification flow transitioning pending -> verified / expired while locking sensitive fields
+        (
+          existing().status == 'pending' &&
+          (incoming().status == 'verified' || incoming().status == 'expired') &&
+          incoming().userId == existing().userId &&
+          incoming().requestId == existing().requestId &&
+          incoming().oldEmail == existing().oldEmail &&
+          incoming().newEmail == existing().newEmail &&
+          incoming().createdAt == existing().createdAt &&
+          incoming().expiresAt == existing().expiresAt
+        )
+      );
+
+      // Delete: only Webmaster or authenticated owner
       allow delete: if isWebmaster() || (isSignedIn() && existing().userId == request.auth.uid);
     }
 
@@ -156,7 +199,8 @@ service cloud.firestore {
     // ─── Email Index ───
     match /emailIndex/{email} {
       allow read: if true;
-      allow write: if isSignedIn() || isWebmaster();
+      allow create, update: if isWebmaster() || (isSignedIn() && incoming().uid == request.auth.uid);
+      allow delete: if isWebmaster() || (isSignedIn() && existing().uid == request.auth.uid);
     }
 
     // ─── Mobile Index ───
@@ -173,10 +217,12 @@ service cloud.firestore {
 
     // ─── Audit Logs ───
     match /audit_logs/{logId} {
-      allow read, write: if isWebmaster();
+      allow create: if isSignedIn();
+      allow read, update, delete: if isWebmaster();
     }
     match /auditLogs/{logId} {
-      allow read, write: if isWebmaster();
+      allow create: if isSignedIn();
+      allow read, update, delete: if isWebmaster();
     }
 
     // ─── Site Settings ───

@@ -3,6 +3,12 @@ import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import { defineConfig, type Plugin } from 'vite';
 import { handleAdminUserStatusRequest, handleAdminUserDeleteRequest } from './src/server/admin-api';
+import {
+  handleDevEmailChangeRequest,
+  handleDevEmailChangeResend,
+  handleDevEmailChangeVerify,
+  handleDevEmailChangeCancel,
+} from './src/server/dev-email-change';
 
 import runtimeErrorOverlay from '@replit/vite-plugin-runtime-error-modal';
 
@@ -18,6 +24,18 @@ function adminApiPlugin(): Plugin {
         if (url === '/api/admin/users/delete') {
           return handleAdminUserDeleteRequest(req, res);
         }
+        if (url === '/api/email-change/request') {
+          return handleDevEmailChangeRequest(req, res);
+        }
+        if (url === '/api/email-change/resend') {
+          return handleDevEmailChangeResend(req, res);
+        }
+        if (url === '/api/email-change/verify') {
+          return handleDevEmailChangeVerify(req, res);
+        }
+        if (url === '/api/email-change/cancel') {
+          return handleDevEmailChangeCancel(req, res);
+        }
         next();
       });
     },
@@ -30,14 +48,25 @@ function adminApiPlugin(): Plugin {
         if (url === '/api/admin/users/delete') {
           return handleAdminUserDeleteRequest(req, res);
         }
+        if (url === '/api/email-change/request') {
+          return handleDevEmailChangeRequest(req, res);
+        }
+        if (url === '/api/email-change/resend') {
+          return handleDevEmailChangeResend(req, res);
+        }
+        if (url === '/api/email-change/verify') {
+          return handleDevEmailChangeVerify(req, res);
+        }
+        if (url === '/api/email-change/cancel') {
+          return handleDevEmailChangeCancel(req, res);
+        }
         next();
       });
     },
   };
 }
 
-const rawPort = process.env.PORT || '3000';
-const port = Number(rawPort) || 3000;
+const port = 3000;
 const basePath = process.env.BASE_PATH || '/';
 
 export default defineConfig({
@@ -46,7 +75,9 @@ export default defineConfig({
     react(),
     tailwindcss(),
     adminApiPlugin(),
-    runtimeErrorOverlay(),
+    ...(process.env.NODE_ENV !== 'production'
+      ? [runtimeErrorOverlay()]
+      : []),
     ...(process.env.NODE_ENV !== 'production' &&
     process.env.REPL_ID !== undefined
       ? [
