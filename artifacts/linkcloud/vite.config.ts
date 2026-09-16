@@ -2,20 +2,22 @@ import path from 'path';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import { defineConfig, type Plugin } from 'vite';
-import { handleAdminUserStatusRequest, handleAdminUserDeleteRequest } from './src/server/admin-api';
-import {
-  handleDevEmailChangeRequest,
-  handleDevEmailChangeResend,
-  handleDevEmailChangeVerify,
-  handleDevEmailChangeCancel,
-} from './src/server/dev-email-change';
 
 import runtimeErrorOverlay from '@replit/vite-plugin-runtime-error-modal';
 
 function adminApiPlugin(): Plugin {
   return {
     name: 'admin-api-plugin',
-    configureServer(server) {
+    apply: 'serve',
+    async configureServer(server) {
+      const { handleAdminUserStatusRequest, handleAdminUserDeleteRequest } = await import('./src/server/admin-api');
+      const {
+        handleDevEmailChangeRequest,
+        handleDevEmailChangeResend,
+        handleDevEmailChangeVerify,
+        handleDevEmailChangeCancel,
+      } = await import('./src/server/dev-email-change');
+
       server.middlewares.use((req, res, next) => {
         const url = req.url?.split('?')[0];
         if (url === '/api/admin/users/status') {
@@ -39,7 +41,15 @@ function adminApiPlugin(): Plugin {
         next();
       });
     },
-    configurePreviewServer(server) {
+    async configurePreviewServer(server) {
+      const { handleAdminUserStatusRequest, handleAdminUserDeleteRequest } = await import('./src/server/admin-api');
+      const {
+        handleDevEmailChangeRequest,
+        handleDevEmailChangeResend,
+        handleDevEmailChangeVerify,
+        handleDevEmailChangeCancel,
+      } = await import('./src/server/dev-email-change');
+
       server.middlewares.use((req, res, next) => {
         const url = req.url?.split('?')[0];
         if (url === '/api/admin/users/status') {
