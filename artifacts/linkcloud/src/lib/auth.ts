@@ -15,7 +15,6 @@ import {
   browserSessionPersistence,
   updatePassword,
   updateEmail,
-  verifyBeforeUpdateEmail,
   reload,
   getAuth,
   EmailAuthProvider,
@@ -74,83 +73,16 @@ export function getAppBaseUrl(): string {
   return import.meta.env.VITE_APP_URL || "https://linkcloud.in";
 }
 
+/**
+ * @deprecated Email Change flow uses custom Cloudflare / Resend verification API exclusively.
+ * Firebase verifyBeforeUpdateEmail has been permanently decoupled and disabled.
+ */
 export async function safeVerifyBeforeUpdateEmail(
-  user: User,
-  newEmail: string,
-  continuePath: string
+  _user: User,
+  _newEmail: string,
+  _continuePath: string
 ): Promise<void> {
-  const origin = getAppBaseUrl();
-  const authDomain = auth.config?.authDomain || "linkcloud-app.firebaseapp.com";
-  const targetUser = auth.currentUser || user;
-
-  // Pre-emptively refresh token if possible
-  try {
-    await targetUser.getIdToken(true);
-  } catch (tErr) {
-    console.warn("[EMAIL VERIFY] Token pre-refresh warning:", tErr);
-  }
-
-  const execVerify = async (actionSettings?: ActionCodeSettings) => {
-    try {
-      if (actionSettings) {
-        await verifyBeforeUpdateEmail(targetUser, newEmail, actionSettings);
-      } else {
-        await verifyBeforeUpdateEmail(targetUser, newEmail);
-      }
-    } catch (err: any) {
-      if (isSessionExpired(err)) {
-        console.warn("[EMAIL VERIFY] Token expired during verification send. Retrying after force-refreshing token...");
-        await targetUser.getIdToken(true);
-        if (actionSettings) {
-          await verifyBeforeUpdateEmail(targetUser, newEmail, actionSettings);
-        } else {
-          await verifyBeforeUpdateEmail(targetUser, newEmail);
-        }
-      } else {
-        throw err;
-      }
-    }
-  };
-
-  // Attempt 1: Current app origin
-  try {
-    const settings: ActionCodeSettings = {
-      url: `${origin}${continuePath}`,
-      handleCodeInApp: true,
-    };
-    await execVerify(settings);
-    console.log("[EMAIL VERIFY] Verification email dispatched to:", newEmail, "ContinueURL:", settings.url);
-    return;
-  } catch (err: any) {
-    const code = err?.code || "";
-    const msg = String(err?.message || "");
-    if (code !== "auth/unauthorized-continue-uri" && !msg.includes("unauthorized-continue-uri")) {
-      throw err;
-    }
-    console.warn("[EMAIL VERIFY] Current origin continue-url not allowlisted, trying Firebase project authDomain...");
-  }
-
-  // Attempt 2: Firebase project authDomain (allowlisted by default in Firebase project)
-  try {
-    const settings: ActionCodeSettings = {
-      url: `https://${authDomain}${continuePath}`,
-      handleCodeInApp: true,
-    };
-    await execVerify(settings);
-    console.log("[EMAIL VERIFY] Verification email dispatched to:", newEmail, "Fallback ContinueURL:", settings.url);
-    return;
-  } catch (err: any) {
-    const code = err?.code || "";
-    const msg = String(err?.message || "");
-    if (code !== "auth/unauthorized-continue-uri" && !msg.includes("unauthorized-continue-uri")) {
-      throw err;
-    }
-    console.warn("[EMAIL VERIFY] Fallback continue-url rejected, sending default email verification without continue URL...");
-  }
-
-  // Attempt 3: Default Firebase template without ActionCodeSettings continue URI
-  await execVerify();
-  console.log("[EMAIL VERIFY] Verification email dispatched via default Firebase template to:", newEmail);
+  console.warn("[EMAIL CHANGE] safeVerifyBeforeUpdateEmail is deprecated and disabled. Email change flow uses /api/email-change/request exclusively.");
 }
 
 export async function safeSendEmailVerification(
@@ -1270,8 +1202,7 @@ export async function updateUserEmailAddress(
     console.warn("[EMAIL REQUEST] Error saving email change request:", dbErr);
   }
 
-  // 4. Send verification email via custom server API (/api/email-change/request)
-  let apiSuccess = false;
+  // 4. Send verification email via custom server API (/api/email-change/request) exclusively
   let customApiRequestId = requestId;
   let customApiExpiresAt = expiresAt;
 
@@ -1292,7 +1223,6 @@ export async function updateUserEmailAddress(
     if (res.ok) {
       const data: any = await res.json();
       if (data.success) {
-        apiSuccess = true;
         customApiRequestId = data.requestId || requestId;
         customApiExpiresAt = data.expiresAt || expiresAt;
         console.log("[EMAIL REQUEST] Custom server-side email dispatch succeeded:", data);
@@ -1305,38 +1235,13 @@ export async function updateUserEmailAddress(
       if (res.status === 409) {
         throw new Error("This Gmail is already registered.");
       }
-      console.warn("[EMAIL REQUEST] Custom API non-200 response, falling back if needed:", res.status, errData);
+      throw new Error(errData.error || `Unable to send verification email (${res.status}). Please try again.`);
     }
   } catch (apiErr: any) {
-    if (apiErr.message && (apiErr.message.includes("wait") || apiErr.message.includes("already registered"))) {
-      throw apiErr;
-    }
-    console.warn("[EMAIL REQUEST] Custom API call failed or unavailable, fallback:", apiErr);
-  }
-
-  // Fallback: If custom API was unavailable, safeVerifyBeforeUpdateEmail fallback
-  if (!apiSuccess) {
-    try {
-      await safeVerifyBeforeUpdateEmail(
-        user,
-        gmailCheck.cleanEmail,
-        `/verify-handler?mode=verifyAndChangeEmail&reqId=${requestId}&uid=${user.uid}&v=${requestDoc.version}`
-      );
-    } catch (err: any) {
-      console.error("[EMAIL VERIFY] safeVerifyBeforeUpdateEmail failed:", err);
-      await setDoc(doc(db, "emailChangeRequests", requestId), { status: "cancelled", updatedAt: Date.now() }, { merge: true }).catch(() => {});
-      const code = err?.code || "";
-      const msg = String(err?.message || "");
-      if (code === "auth/email-already-in-use" || msg.includes("email-already-in-use")) {
-        throw new Error("This Gmail is already registered.");
-      } else if (code === "auth/invalid-email" || msg.includes("invalid-email")) {
-        throw new Error("Please enter a valid, active email address.");
-      } else if (code === "auth/requires-recent-login" || msg.includes("requires-recent-login")) {
-        throw new Error("Please sign in again to continue.");
-      } else {
-        throw new Error(formatAuthError(err));
-      }
-    }
+    console.error("[EMAIL REQUEST] Custom server email dispatch failed:", apiErr);
+    // Mark request as cancelled in Firestore on fatal dispatch failure
+    await setDoc(doc(db, "emailChangeRequests", requestId), { status: "cancelled", updatedAt: Date.now() }, { merge: true }).catch(() => {});
+    throw new Error(apiErr.message || "Failed to dispatch verification email. Please try again.");
   }
 
   const finalRequestId = customApiRequestId;
@@ -1415,8 +1320,7 @@ export async function resendPendingEmailVerification(
     }
   }
 
-  // Try custom server-side resend API first
-  let apiSuccess = false;
+  // Send verification email via custom server API (/api/email-change/resend) exclusively
   let resendRequestId = "";
   let resendExpiresAt = 0;
 
@@ -1437,7 +1341,6 @@ export async function resendPendingEmailVerification(
     if (res.ok) {
       const data: any = await res.json();
       if (data.success) {
-        apiSuccess = true;
         resendRequestId = data.requestId;
         resendExpiresAt = data.expiresAt;
         console.log("[EMAIL RESEND] Custom server-side resend succeeded:", data);
@@ -1447,13 +1350,11 @@ export async function resendPendingEmailVerification(
       if (res.status === 429) {
         throw new Error(errData.error || "Please wait before requesting another verification email.");
       }
-      console.warn("[EMAIL RESEND] Custom API non-200 response, falling back if needed:", res.status, errData);
+      throw new Error(errData.error || `Unable to resend verification email (${res.status}). Please try again.`);
     }
   } catch (apiErr: any) {
-    if (apiErr.message && apiErr.message.includes("wait")) {
-      throw apiErr;
-    }
-    console.warn("[EMAIL RESEND] Custom API call failed or unavailable, fallback:", apiErr);
+    console.error("[EMAIL RESEND] Custom server resend failed:", apiErr);
+    throw new Error(apiErr.message || "Failed to resend verification email. Please try again.");
   }
 
   // Invalidate previous requests as superseded
@@ -1491,37 +1392,6 @@ export async function resendPendingEmailVerification(
     console.log("[EMAIL RESEND] Superseded old link. Created new request:", { requestId, version: newReqDoc.version });
   } catch (e) {
     console.warn("[EMAIL RESEND] Error saving new request doc:", e);
-  }
-
-  if (!apiSuccess) {
-    try {
-      const targetUser = auth.currentUser || user;
-      try {
-        await targetUser.reload();
-        await targetUser.getIdToken(true);
-      } catch (reloadErr) {
-        console.warn("[EMAIL RESEND] User reload/token refresh warning:", reloadErr);
-      }
-      await safeVerifyBeforeUpdateEmail(
-        targetUser,
-        gmailCheck.cleanEmail,
-        `/verify-handler?mode=verifyAndChangeEmail&reqId=${requestId}&uid=${targetUser.uid}&v=${newReqDoc.version}`
-      );
-    } catch (err: any) {
-      console.error("[EMAIL RESEND] Resend fallback failed:", err);
-      const code = err?.code || "";
-      const msg = String(err?.message || "");
-      if (code === "auth/too-many-requests" || msg.includes("too-many-requests")) {
-        throw new Error("Too many attempts. Please wait a while before trying again.");
-      }
-      if (code === "auth/requires-recent-login" || msg.includes("requires-recent-login")) {
-        throw new Error("For security, please sign in again and try again.");
-      }
-      if (isSessionExpired(err) || code === "auth/user-token-expired" || msg.includes("user-token-expired")) {
-        throw new Error("Your session has expired. Please sign in again to continue.");
-      }
-      throw new Error(formatAuthError(err));
-    }
   }
 
   if (typeof window !== "undefined" && window.localStorage) {

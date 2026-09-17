@@ -292,10 +292,17 @@ export default function VerifyHandlerPage() {
           return;
         }
 
+        const finalUid = activeReqDoc?.userId || targetUid || auth.currentUser?.uid || "";
+        const targetNewEmail = activeReqDoc?.newEmail || actionEmail || "";
+        const targetOldEmail = activeReqDoc?.oldEmail || "";
+
+        if (targetNewEmail) setNewEmailDisplay(targetNewEmail);
+        if (targetOldEmail) setOldEmailDisplay(targetOldEmail);
+
         // Step D: Execute Verification
-        // Prefer custom server verify API (/api/email-change/verify)
+        // Use custom server verify API (/api/email-change/verify) for email change
         let serverVerifySuccess = false;
-        if (rawToken || rawReqId) {
+        if (rawMode === "verifyAndChangeEmail" || rawToken || rawReqId) {
           try {
             console.log("[VERIFY HANDLER] Calling /api/email-change/verify...");
             const res = await fetch("/api/email-change/verify", {
@@ -312,6 +319,9 @@ export default function VerifyHandlerPage() {
               const data: any = await res.json();
               serverVerifySuccess = true;
               console.log("[VERIFY HANDLER] Server verification response:", data);
+              if (data?.newEmail) {
+                setNewEmailDisplay(data.newEmail);
+              }
             } else {
               const errData: any = await res.json().catch(() => ({}));
               console.warn("[VERIFY HANDLER] Server API returned error:", res.status, errData);
@@ -330,25 +340,29 @@ export default function VerifyHandlerPage() {
                 setErrorMessage("This verification link was superseded by a newer request.");
                 return;
               }
+              setStatus("invalid");
+              setErrorMessage(errData?.error || "This verification link is invalid or has already been used.");
+              return;
             }
           } catch (apiErr) {
-            console.warn("[VERIFY HANDLER] Server API call exception, checking fallback:", apiErr);
+            console.warn("[VERIFY HANDLER] Server API call exception:", apiErr);
+            setStatus("invalid");
+            setErrorMessage("Unable to verify email change. Please check your internet connection.");
+            return;
           }
         }
 
-        // Fallback: If server verify wasn't invoked and rawOobCode exists, use applyActionCode
-        if (!serverVerifySuccess && rawOobCode && !rawToken) {
-          console.log("[VERIFY HANDLER] Executing applyActionCode fallback...");
+        // For Signup email verification (mode=verifyEmail), execute applyActionCode
+        if (!serverVerifySuccess && rawOobCode && rawMode === "verifyEmail") {
+          console.log("[VERIFY HANDLER] Executing applyActionCode for signup verification...");
           await applyActionCode(auth, rawOobCode);
-          console.log("[VERIFY HANDLER] applyActionCode successful!");
+          console.log("[VERIFY HANDLER] applyActionCode successful for signup verification!");
+        } else if (!serverVerifySuccess && rawMode === "verifyAndChangeEmail") {
+          console.warn("[VERIFY HANDLER] Server verification was not successful for email change.");
+          setStatus("invalid");
+          setErrorMessage("This verification link is invalid, expired, or has already been used.");
+          return;
         }
-
-        const targetNewEmail = activeReqDoc?.newEmail || actionEmail || "";
-        const targetOldEmail = activeReqDoc?.oldEmail || "";
-        const finalUid = activeReqDoc?.userId || targetUid || auth.currentUser?.uid || "";
-
-        if (targetNewEmail) setNewEmailDisplay(targetNewEmail);
-        if (targetOldEmail) setOldEmailDisplay(targetOldEmail);
 
         // Step E: Update Firestore Request Status to verified (Do NOT overwrite primary email yet - wait for manual Refresh Status)
         if (activeReqDoc?.requestId) {

@@ -283,7 +283,8 @@ export default function Dashboard() {
         await auth.currentUser.reload();
       }
 
-      if (auth.currentUser?.emailVerified) {
+      // If no pending email change exists and initial signup email is verified:
+      if (!pendingEmail && auth.currentUser?.emailVerified) {
         try {
           const userDocRef = doc(db, "users", currentUser.uid);
           await updateDoc(userDocRef, {

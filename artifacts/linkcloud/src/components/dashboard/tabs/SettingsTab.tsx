@@ -293,8 +293,8 @@ export function SettingsTab({
                 )}
               </button>
 
-              {/* Check / Refresh Status Button for unverified users */}
-              {!verified && (
+              {/* Check / Refresh Status Button for unverified users or users with pending email change */}
+              {(!verified || Boolean(effectivePendingEmail)) && (
                 <button
                   type="button"
                   id="lc_refresh_verification_status_btn"

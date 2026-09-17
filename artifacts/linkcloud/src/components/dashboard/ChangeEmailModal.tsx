@@ -400,7 +400,7 @@ export function ChangeEmailModal({
       setExpiresIn(Math.floor(EMAIL_CHANGE_TTL_MS / 1000));
       setStatusFeedback({
         type: "info",
-        message: "ℹ Verification link sent. Link is valid for 15 minutes.",
+        message: "ℹ Verification link sent. Link is valid for 5 minutes.",
       });
       toast.info("Verification email sent. Please check your Gmail.");
 
@@ -467,7 +467,7 @@ export function ChangeEmailModal({
       setExpiresIn(Math.floor(EMAIL_CHANGE_TTL_MS / 1000));
       setStatusFeedback({
         type: "info",
-        message: "ℹ A new verification link has been sent. Link is valid for 15 minutes.",
+        message: "ℹ A new verification link has been sent. Link is valid for 5 minutes.",
       });
       toast.info("Verification link sent again. Please check your Gmail inbox.");
     } catch (err: any) {
