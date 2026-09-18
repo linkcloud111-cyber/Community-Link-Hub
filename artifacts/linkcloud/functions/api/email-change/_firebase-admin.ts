@@ -106,7 +106,7 @@ export async function verifyFirebaseIdToken(
         Authorization: `Bearer ${accessToken}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ idToken: [idToken] }),
+      body: JSON.stringify({ idToken }),
     });
 
     if (!res.ok) {
