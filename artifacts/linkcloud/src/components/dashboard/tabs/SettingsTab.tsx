@@ -76,11 +76,12 @@ export function SettingsTab({
   useEffect(() => {
     if (typeof window === "undefined" || !currentUser?.uid) return;
     const cooldownKey = `resend_email_change_${currentUser.uid}`;
-    const lastSent = Number(window.localStorage.getItem(cooldownKey) || 0);
+    const storedVal = Number(window.localStorage.getItem(cooldownKey) || 0);
     const now = Date.now();
-    const elapsed = now - lastSent;
-    if (lastSent && elapsed < EMAIL_RESEND_COOLDOWN_MS) {
-      setCooldown(Math.ceil((EMAIL_RESEND_COOLDOWN_MS - elapsed) / 1000));
+    if (storedVal > now) {
+      setCooldown(Math.ceil((storedVal - now) / 1000));
+    } else if (storedVal > 0 && now - storedVal < EMAIL_RESEND_COOLDOWN_MS) {
+      setCooldown(Math.ceil((EMAIL_RESEND_COOLDOWN_MS - (now - storedVal)) / 1000));
     }
   }, [currentUser?.uid]);
 
@@ -125,16 +126,20 @@ export function SettingsTab({
 
     setResending(true);
     try {
+      let nextAllowed = Date.now() + EMAIL_RESEND_COOLDOWN_MS;
       if (effectivePendingEmail) {
-        await resendPendingEmailVerification(currentUser, effectivePendingEmail);
+        const res = await resendPendingEmailVerification(currentUser, effectivePendingEmail);
+        if (res?.nextAllowedAt) {
+          nextAllowed = res.nextAllowedAt;
+        }
       } else {
         await resendVerificationEmail(currentUser);
       }
 
-      const cooldownSecs = Math.floor(EMAIL_RESEND_COOLDOWN_MS / 1000); // 30 seconds
+      const cooldownSecs = Math.max(0, Math.ceil((nextAllowed - Date.now()) / 1000));
       setCooldown(cooldownSecs);
       if (typeof window !== "undefined" && currentUser?.uid) {
-        window.localStorage.setItem(`resend_email_change_${currentUser.uid}`, String(Date.now()));
+        window.localStorage.setItem(`resend_email_change_${currentUser.uid}`, String(nextAllowed));
       }
       setResendFeedback({
         sentAt: Date.now(),
@@ -146,7 +151,16 @@ export function SettingsTab({
         description: "Please check your inbox and spam/junk folder.",
       });
     } catch (err: any) {
-      // If default helper failed with specific message, surface it
+      const rawMsg = String(err?.message || "");
+      if (err?.status === 429 || rawMsg.includes("Please wait") || rawMsg.includes("cooldown")) {
+        const match = rawMsg.match(/(\d+)\s*(?:s|sec|seconds?)/i);
+        const retrySec = err?.retryAfter || (match ? parseInt(match[1], 10) : 30);
+        const targetNext = Date.now() + retrySec * 1000;
+        setCooldown(retrySec);
+        if (typeof window !== "undefined" && currentUser?.uid) {
+          window.localStorage.setItem(`resend_email_change_${currentUser.uid}`, String(targetNext));
+        }
+      }
       toast.error(err.message || "Failed to send verification email. Please try again later.");
     } finally {
       setResending(false);

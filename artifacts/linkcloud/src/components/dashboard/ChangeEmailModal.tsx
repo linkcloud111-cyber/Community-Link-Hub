@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useLocation } from "wouter";
 import {
   Mail,
@@ -90,9 +90,48 @@ export function ChangeEmailModal({
   const [refreshing, setRefreshing] = useState(false);
   const [cancelling, setCancelling] = useState(false);
 
-  // 60-second resend cooldown & 60-second expiration timers
+  // 30-second resend cooldown & 5-minute expiration timers
   const [cooldown, setCooldown] = useState(0);
+  const [nextAllowedAt, setNextAllowedAt] = useState<number | null>(null);
   const [expiresIn, setExpiresIn] = useState<number | null>(null);
+
+  // Authoritative cooldown setter updating state and localStorage
+  const startCooldown = useCallback((targetTimestamp: number) => {
+    const now = Date.now();
+    const remaining = Math.max(0, Math.ceil((targetTimestamp - now) / 1000));
+    if (remaining > 0) {
+      setNextAllowedAt(targetTimestamp);
+      setCooldown(remaining);
+      if (typeof window !== "undefined" && user?.uid) {
+        try {
+          window.localStorage.setItem(`resend_email_change_${user.uid}`, String(targetTimestamp));
+        } catch {}
+      }
+    } else {
+      setNextAllowedAt(null);
+      setCooldown(0);
+      if (typeof window !== "undefined" && user?.uid) {
+        try {
+          window.localStorage.removeItem(`resend_email_change_${user.uid}`);
+        } catch {}
+      }
+    }
+  }, [user?.uid]);
+
+  // Helper to extract retryAfter seconds from structured error or string
+  const parseRetryAfter = useCallback((err: any, msg: string): number => {
+    if (typeof err?.retryAfter === "number" && err.retryAfter > 0) {
+      return err.retryAfter;
+    }
+    const match = msg.match(/(\d+)\s*(?:s|sec|seconds?)/i);
+    if (match && match[1]) {
+      const parsed = parseInt(match[1], 10);
+      if (!isNaN(parsed) && parsed > 0) {
+        return parsed;
+      }
+    }
+    return Math.floor(EMAIL_RESEND_COOLDOWN_MS / 1000);
+  }, []);
 
   // Confirmation dialog for Cancel & Close
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
@@ -148,16 +187,32 @@ export function ChangeEmailModal({
         }
       }
 
-      // Check active 30-second resend cooldown & 15-minute expiration from localStorage
+      // Check active 30-second resend cooldown & expiration from localStorage
       if (typeof window !== "undefined" && user?.uid) {
-        const lastSent = Number(
+        const storedVal = Number(
           window.localStorage.getItem(`resend_email_change_${user.uid}`) || 0
         );
-        const elapsed = Date.now() - lastSent;
-        if (elapsed < EMAIL_RESEND_COOLDOWN_MS) {
-          setCooldown(Math.ceil((EMAIL_RESEND_COOLDOWN_MS - elapsed) / 1000));
+        const now = Date.now();
+        let remainingSec = 0;
+        let targetTimestamp = 0;
+
+        if (storedVal > now) {
+          targetTimestamp = storedVal;
+          remainingSec = Math.max(0, Math.ceil((targetTimestamp - now) / 1000));
+        } else if (storedVal > 0 && now - storedVal < EMAIL_RESEND_COOLDOWN_MS) {
+          targetTimestamp = storedVal + EMAIL_RESEND_COOLDOWN_MS;
+          remainingSec = Math.max(0, Math.ceil((targetTimestamp - now) / 1000));
+        }
+
+        if (remainingSec > 0 && targetTimestamp > 0) {
+          setNextAllowedAt(targetTimestamp);
+          setCooldown(remainingSec);
         } else {
+          setNextAllowedAt(null);
           setCooldown(0);
+          try {
+            window.localStorage.removeItem(`resend_email_change_${user.uid}`);
+          } catch {}
         }
 
         const expiresTimestamp = Number(
@@ -239,14 +294,47 @@ export function ChangeEmailModal({
     };
   }, [newEmail, currentEmail, isOpen, activePending, user?.uid]);
 
-  // 60-Second Cooldown countdown timer effect
+  // Authoritative cooldown countdown timer derived from absolute timestamp
   useEffect(() => {
-    if (cooldown <= 0) return;
-    const timer = setInterval(() => {
-      setCooldown((prev) => (prev <= 1 ? 0 : prev - 1));
-    }, 1000);
-    return () => clearInterval(timer);
-  }, [cooldown]);
+    if (!nextAllowedAt) {
+      setCooldown(0);
+      return;
+    }
+
+    const syncCooldown = () => {
+      const now = Date.now();
+      const remaining = Math.max(0, Math.ceil((nextAllowedAt - now) / 1000));
+      setCooldown(remaining);
+      if (remaining <= 0) {
+        setNextAllowedAt(null);
+        if (typeof window !== "undefined" && user?.uid) {
+          try {
+            window.localStorage.removeItem(`resend_email_change_${user.uid}`);
+          } catch {}
+        }
+        // Auto-clear rate limiting message when cooldown expires
+        setStatusFeedback((prev) => {
+          if (prev && prev.message.includes("Please wait")) {
+            return null;
+          }
+          return prev;
+        });
+      }
+    };
+
+    syncCooldown();
+    const timer = setInterval(syncCooldown, 1000);
+
+    const handleSync = () => syncCooldown();
+    window.addEventListener("focus", handleSync);
+    window.addEventListener("visibilitychange", handleSync);
+
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener("focus", handleSync);
+      window.removeEventListener("visibilitychange", handleSync);
+    };
+  }, [nextAllowedAt, user?.uid]);
 
   // 60-Second Expiration countdown timer effect
   useEffect(() => {
@@ -390,7 +478,7 @@ export function ChangeEmailModal({
     setSending(true);
     setStatusFeedback(null);
     try {
-      await updateUserEmailAddress(
+      const res = await updateUserEmailAddress(
         user,
         check.cleanEmail,
         currentPassword,
@@ -398,7 +486,8 @@ export function ChangeEmailModal({
       );
 
       setActivePending(check.cleanEmail);
-      setCooldown(Math.floor(EMAIL_RESEND_COOLDOWN_MS / 1000));
+      const targetCooldown = res?.nextAllowedAt || (Date.now() + EMAIL_RESEND_COOLDOWN_MS);
+      startCooldown(targetCooldown);
       setExpiresIn(Math.floor(EMAIL_CHANGE_TTL_MS / 1000));
       setStatusFeedback({
         type: "info",
@@ -421,7 +510,16 @@ export function ChangeEmailModal({
       const rawMsg = String(err?.message || "");
       let errorMsg = err?.message || "Failed to initiate email change.";
 
-      if (
+      // Handle structured 429 rate limit error
+      if (err?.status === 429 || rawMsg.includes("Please wait") || rawMsg.includes("cooldown")) {
+        const retrySec = parseRetryAfter(err, rawMsg);
+        startCooldown(Date.now() + retrySec * 1000);
+        errorMsg = `Please wait ${retrySec}s before requesting another verification email.`;
+        setStatusFeedback({
+          type: "info",
+          message: errorMsg,
+        });
+      } else if (
         rawCode === "auth/wrong-password" ||
         rawCode === "auth/invalid-credential" ||
         rawCode === "auth/invalid-login-credentials" ||
@@ -464,8 +562,9 @@ export function ChangeEmailModal({
     setResending(true);
     setStatusFeedback(null);
     try {
-      await resendPendingEmailVerification(user, activePending);
-      setCooldown(Math.floor(EMAIL_RESEND_COOLDOWN_MS / 1000));
+      const res = await resendPendingEmailVerification(user, activePending);
+      const targetCooldown = res?.nextAllowedAt || (Date.now() + EMAIL_RESEND_COOLDOWN_MS);
+      startCooldown(targetCooldown);
       setExpiresIn(Math.floor(EMAIL_CHANGE_TTL_MS / 1000));
       setStatusFeedback({
         type: "info",
@@ -473,12 +572,24 @@ export function ChangeEmailModal({
       });
       toast.info("Verification link sent again. Please check your Gmail inbox.");
     } catch (err: any) {
-      const msg = err?.message || "Unable to resend verification link. Please try again.";
-      setStatusFeedback({
-        type: "error",
-        message: `× ${msg}`,
-      });
-      toast.error(msg);
+      const rawMsg = String(err?.message || "");
+      let errorMsg = err?.message || "Unable to resend verification link. Please try again.";
+
+      if (err?.status === 429 || rawMsg.includes("Please wait") || rawMsg.includes("cooldown")) {
+        const retrySec = parseRetryAfter(err, rawMsg);
+        startCooldown(Date.now() + retrySec * 1000);
+        errorMsg = `Please wait ${retrySec}s before requesting another verification email.`;
+        setStatusFeedback({
+          type: "info",
+          message: errorMsg,
+        });
+      } else {
+        setStatusFeedback({
+          type: "error",
+          message: `× ${errorMsg}`,
+        });
+      }
+      toast.error(errorMsg);
     } finally {
       setResending(false);
     }
@@ -568,6 +679,7 @@ export function ChangeEmailModal({
         setCurrentPassword("");
         setShowPassword(false);
         setExpiresIn(null);
+        setNextAllowedAt(null);
         setCooldown(0);
         setStatusFeedback(null);
         onClose();
@@ -631,6 +743,8 @@ export function ChangeEmailModal({
     try {
       await cancelPendingEmailChange(user, activePending);
       setActivePending(null);
+      setNextAllowedAt(null);
+      setCooldown(0);
       setShowCancelConfirm(false);
       toast.success("Email change request cancelled.");
       if (onSuccess) {

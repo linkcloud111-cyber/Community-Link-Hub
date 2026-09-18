@@ -72,7 +72,12 @@ export async function onRequestPost(context: {
     const lastSentAt = activeDoc.createdAt || activeDoc.updatedAt || 0;
     if (now - lastSentAt < COOLDOWN_MS) {
       const waitSec = Math.ceil((COOLDOWN_MS - (now - lastSentAt)) / 1000);
-      return errorResponse(`Please wait ${waitSec}s before requesting another verification email.`, 429);
+      return errorResponse(
+        `Please wait ${waitSec}s before requesting another verification email.`,
+        429,
+        { retryAfter: waitSec },
+        { "Retry-After": String(waitSec) }
+      );
     }
 
     // 4. Supersede old request and create new token with fresh 5-minute TTL
@@ -158,6 +163,7 @@ export async function onRequestPost(context: {
       requestId: newRequestId,
       expiresAt,
       newEmail: targetEmail,
+      nextAllowedAt: now + COOLDOWN_MS,
       message: "New verification email dispatched. Link is valid for 5 minutes.",
     });
   } catch (err: any) {

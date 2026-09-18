@@ -92,7 +92,16 @@ export async function handleDevEmailChangeRequest(
   const lastRequest = devUserCooldownStore.get(uid) || 0;
   if (now - lastRequest < EMAIL_RESEND_COOLDOWN_MS) {
     const waitSec = Math.ceil((EMAIL_RESEND_COOLDOWN_MS - (now - lastRequest)) / 1000);
-    sendJson(res, { error: `Please wait ${waitSec}s before requesting another verification email.` }, 429);
+    res.setHeader("Retry-After", String(waitSec));
+    sendJson(
+      res,
+      {
+        success: false,
+        error: `Please wait ${waitSec}s before requesting another verification email.`,
+        retryAfter: waitSec,
+      },
+      429
+    );
     return;
   }
 
@@ -148,6 +157,7 @@ export async function handleDevEmailChangeRequest(
     requestId,
     expiresAt,
     newEmail,
+    nextAllowedAt: now + EMAIL_RESEND_COOLDOWN_MS,
     devVerificationLink: verificationLink,
     message: "Verification email sent. Link is valid for 5 minutes.",
   });
@@ -174,7 +184,16 @@ export async function handleDevEmailChangeResend(
   const lastRequest = devUserCooldownStore.get(uid) || 0;
   if (now - lastRequest < EMAIL_RESEND_COOLDOWN_MS) {
     const waitSec = Math.ceil((EMAIL_RESEND_COOLDOWN_MS - (now - lastRequest)) / 1000);
-    sendJson(res, { error: `Please wait ${waitSec}s before requesting another verification email.` }, 429);
+    res.setHeader("Retry-After", String(waitSec));
+    sendJson(
+      res,
+      {
+        success: false,
+        error: `Please wait ${waitSec}s before requesting another verification email.`,
+        retryAfter: waitSec,
+      },
+      429
+    );
     return;
   }
 
@@ -207,6 +226,7 @@ export async function handleDevEmailChangeResend(
     requestId,
     expiresAt,
     newEmail: pendingEmail,
+    nextAllowedAt: now + EMAIL_RESEND_COOLDOWN_MS,
     devVerificationLink: verificationLink,
     message: "New verification email dispatched. Link is valid for 5 minutes.",
   });

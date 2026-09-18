@@ -1092,7 +1092,7 @@ export async function updateUserEmailAddress(
   newEmail: string,
   currentPass: string,
   displayName?: string
-): Promise<{ requestId: string; expiresAt: number; newEmail: string }> {
+): Promise<{ requestId: string; expiresAt: number; newEmail: string; nextAllowedAt?: number }> {
   console.log("[EMAIL CHANGE] Initiating email change request for UID:", user.uid);
   const targetUser = auth.currentUser || user;
   try {
@@ -1171,41 +1171,11 @@ export async function updateUserEmailAddress(
   // 2. Invalidate all previous pending requests before creating new one
   await invalidateUserPendingEmailRequests(user.uid);
 
-  // 3. Create active request document with 15-minute TTL
-  const now = Date.now();
-  const requestId = `req_${user.uid}_${now}`;
-  const expiresAt = now + EMAIL_CHANGE_TTL_MS; // 15 minutes
-  const requestDoc: EmailChangeRequest = {
-    requestId,
-    userId: user.uid,
-    oldEmail: user.email.toLowerCase(),
-    newEmail: gmailCheck.cleanEmail.toLowerCase(),
-    status: "pending",
-    createdAt: now,
-    expiresAt,
-    version: 1,
-    updatedAt: now,
-  };
-
-  try {
-    await setDoc(doc(db, "emailChangeRequests", requestId), requestDoc);
-    await setDoc(doc(db, `users/${user.uid}/emailChanges`, "active"), {
-      version: 1,
-      status: "PENDING",
-      targetEmail: gmailCheck.cleanEmail.toLowerCase(),
-      createdAt: now,
-      expiresAt,
-      requestId,
-      updatedAt: now,
-    });
-    console.log("[EMAIL REQUEST] Generated single active email change request:", { requestId, expiresAt });
-  } catch (dbErr) {
-    console.warn("[EMAIL REQUEST] Error saving email change request:", dbErr);
-  }
-
-  // 4. Send verification email via custom server API (/api/email-change/request) exclusively
-  let customApiRequestId = requestId;
-  let customApiExpiresAt = expiresAt;
+  // 3. Send verification email via custom server API (/api/email-change/request) exclusively
+  // Server is the authoritative creator of the email-change request and active document
+  let customApiRequestId = "";
+  let customApiExpiresAt = 0;
+  let customApiNextAllowedAt = 0;
 
   try {
     const idToken = await user.getIdToken();
@@ -1224,14 +1194,24 @@ export async function updateUserEmailAddress(
     if (res.ok) {
       const data: any = await res.json();
       if (data.success) {
-        customApiRequestId = data.requestId || requestId;
-        customApiExpiresAt = data.expiresAt || expiresAt;
+        customApiRequestId = data.requestId;
+        customApiExpiresAt = data.expiresAt;
+        customApiNextAllowedAt = data.nextAllowedAt;
         console.log("[EMAIL REQUEST] Custom server-side email dispatch succeeded:", data);
       }
     } else {
       const errData: any = await res.json().catch(() => ({}));
       if (res.status === 429) {
-        throw new Error(errData.error || "Please wait before requesting another verification email.");
+        const retryAfterHeader = res.headers.get("Retry-After");
+        const retryAfterNum = typeof errData.retryAfter === "number"
+          ? errData.retryAfter
+          : retryAfterHeader
+          ? parseInt(retryAfterHeader, 10)
+          : undefined;
+        const err: any = new Error(errData.error || "Please wait before requesting another verification email.");
+        err.status = 429;
+        err.retryAfter = typeof retryAfterNum === "number" && !isNaN(retryAfterNum) ? retryAfterNum : undefined;
+        throw err;
       }
       if (res.status === 409) {
         throw new Error("This Gmail is already registered.");
@@ -1240,21 +1220,21 @@ export async function updateUserEmailAddress(
     }
   } catch (apiErr: any) {
     console.error("[EMAIL REQUEST] Custom server email dispatch failed:", apiErr);
-    // Mark request as cancelled in Firestore on fatal dispatch failure
-    await setDoc(doc(db, "emailChangeRequests", requestId), { status: "cancelled", updatedAt: Date.now() }, { merge: true }).catch(() => {});
-    throw new Error(apiErr.message || "Failed to dispatch verification email. Please try again.");
+    throw apiErr;
   }
 
-  const finalRequestId = customApiRequestId;
-  const finalExpiresAt = customApiExpiresAt;
+  const now = Date.now();
+  const finalRequestId = customApiRequestId || `req_${user.uid}_${now}`;
+  const finalExpiresAt = customApiExpiresAt || (now + EMAIL_CHANGE_TTL_MS);
+  const finalNextAllowedAt = customApiNextAllowedAt || (now + EMAIL_RESEND_COOLDOWN_MS);
 
-  // 5. Store pending email & request reference locally and in user profile
+  // 4. Store pending email & request reference locally and in user profile
   try {
     if (typeof window !== "undefined" && window.localStorage) {
       window.localStorage.setItem(`pending_email_${user.uid}`, gmailCheck.cleanEmail.toLowerCase());
       window.localStorage.setItem(`pending_email_req_${user.uid}`, finalRequestId);
       window.localStorage.setItem(`pending_email_expires_${user.uid}`, String(finalExpiresAt));
-      window.localStorage.setItem(`resend_email_change_${user.uid}`, String(now));
+      window.localStorage.setItem(`resend_email_change_${user.uid}`, String(finalNextAllowedAt));
     }
     await upsertUserProfile(user.uid, {
       pendingEmail: gmailCheck.cleanEmail.toLowerCase(),
@@ -1279,13 +1259,18 @@ export async function updateUserEmailAddress(
     console.warn("[EMAIL CHANGE] Failed to update pending user logs:", e);
   }
 
-  return { requestId: finalRequestId, expiresAt: finalExpiresAt, newEmail: gmailCheck.cleanEmail.toLowerCase() };
+  return {
+    requestId: finalRequestId,
+    expiresAt: finalExpiresAt,
+    newEmail: gmailCheck.cleanEmail.toLowerCase(),
+    nextAllowedAt: finalNextAllowedAt,
+  };
 }
 
 export async function resendPendingEmailVerification(
   user: User,
   pendingEmail: string
-): Promise<{ requestId: string; expiresAt: number; newEmail: string }> {
+): Promise<{ requestId: string; expiresAt: number; newEmail: string; nextAllowedAt?: number }> {
   console.log("[EMAIL RESEND] Resending verification link for UID:", user.uid);
   const targetUser = auth.currentUser || user;
   try {
@@ -1313,17 +1298,26 @@ export async function resendPendingEmailVerification(
   // 30-second cooldown check in localStorage
   if (typeof window !== "undefined" && window.localStorage) {
     const cooldownKey = `resend_email_change_${user.uid}`;
-    const lastSent = Number(window.localStorage.getItem(cooldownKey) || 0);
+    const storedVal = Number(window.localStorage.getItem(cooldownKey) || 0);
     const now = Date.now();
-    if (now - lastSent < EMAIL_RESEND_COOLDOWN_MS) {
-      const waitSec = Math.ceil((EMAIL_RESEND_COOLDOWN_MS - (now - lastSent)) / 1000);
-      throw new Error(`Please wait ${waitSec}s before resending.`);
+    let remaining = 0;
+    if (storedVal > now) {
+      remaining = Math.ceil((storedVal - now) / 1000);
+    } else if (storedVal > 0 && now - storedVal < EMAIL_RESEND_COOLDOWN_MS) {
+      remaining = Math.ceil((EMAIL_RESEND_COOLDOWN_MS - (now - storedVal)) / 1000);
+    }
+    if (remaining > 0) {
+      const err: any = new Error(`Please wait ${remaining}s before requesting another verification email.`);
+      err.status = 429;
+      err.retryAfter = remaining;
+      throw err;
     }
   }
 
   // Send verification email via custom server API (/api/email-change/resend) exclusively
   let resendRequestId = "";
   let resendExpiresAt = 0;
+  let resendNextAllowedAt = 0;
 
   try {
     const idToken = await targetUser.getIdToken();
@@ -1344,18 +1338,28 @@ export async function resendPendingEmailVerification(
       if (data.success) {
         resendRequestId = data.requestId;
         resendExpiresAt = data.expiresAt;
+        resendNextAllowedAt = data.nextAllowedAt;
         console.log("[EMAIL RESEND] Custom server-side resend succeeded:", data);
       }
     } else {
       const errData: any = await res.json().catch(() => ({}));
       if (res.status === 429) {
-        throw new Error(errData.error || "Please wait before requesting another verification email.");
+        const retryAfterHeader = res.headers.get("Retry-After");
+        const retryAfterNum = typeof errData.retryAfter === "number"
+          ? errData.retryAfter
+          : retryAfterHeader
+          ? parseInt(retryAfterHeader, 10)
+          : undefined;
+        const err: any = new Error(errData.error || "Please wait before requesting another verification email.");
+        err.status = 429;
+        err.retryAfter = typeof retryAfterNum === "number" && !isNaN(retryAfterNum) ? retryAfterNum : undefined;
+        throw err;
       }
       throw new Error(errData.error || `Unable to resend verification email (${res.status}). Please try again.`);
     }
   } catch (apiErr: any) {
     console.error("[EMAIL RESEND] Custom server resend failed:", apiErr);
-    throw new Error(apiErr.message || "Failed to resend verification email. Please try again.");
+    throw apiErr;
   }
 
   // Invalidate previous requests as superseded
@@ -1366,6 +1370,8 @@ export async function resendPendingEmailVerification(
   const now = Date.now();
   const requestId = resendRequestId || `req_${user.uid}_${now}`;
   const expiresAt = resendExpiresAt || (now + EMAIL_CHANGE_TTL_MS); // 5 minutes
+  const finalNextAllowedAt = resendNextAllowedAt || (now + EMAIL_RESEND_COOLDOWN_MS);
+
   const newReqDoc: EmailChangeRequest = {
     requestId,
     userId: user.uid,
@@ -1396,7 +1402,7 @@ export async function resendPendingEmailVerification(
   }
 
   if (typeof window !== "undefined" && window.localStorage) {
-    window.localStorage.setItem(`resend_email_change_${targetUser.uid}`, String(Date.now()));
+    window.localStorage.setItem(`resend_email_change_${targetUser.uid}`, String(finalNextAllowedAt));
     window.localStorage.setItem(`pending_email_${targetUser.uid}`, gmailCheck.cleanEmail.toLowerCase());
     window.localStorage.setItem(`pending_email_req_${targetUser.uid}`, requestId);
     window.localStorage.setItem(`pending_email_expires_${targetUser.uid}`, String(expiresAt));
@@ -1407,7 +1413,12 @@ export async function resendPendingEmailVerification(
   });
   await logAuditEvent("Verification Resent", `Verification email resent to ${gmailCheck.cleanEmail}`, targetUser.email || "", targetUser.uid);
 
-  return { requestId, expiresAt, newEmail: gmailCheck.cleanEmail.toLowerCase() };
+  return {
+    requestId,
+    expiresAt,
+    newEmail: gmailCheck.cleanEmail.toLowerCase(),
+    nextAllowedAt: finalNextAllowedAt,
+  };
 }
 
 let globalCancelCounter = 0;
@@ -1460,6 +1471,7 @@ export async function cancelPendingEmailChange(user: User, pendingEmail?: string
       window.localStorage.removeItem(`pending_email_${user.uid}`);
       window.localStorage.removeItem(`pending_email_req_${user.uid}`);
       window.localStorage.removeItem(`pending_email_expires_${user.uid}`);
+      window.localStorage.removeItem(`resend_email_change_${user.uid}`);
     }
 
     // 3. Clear user profile

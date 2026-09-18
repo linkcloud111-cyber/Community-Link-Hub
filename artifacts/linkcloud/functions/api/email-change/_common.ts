@@ -7,7 +7,7 @@ export interface Env {
   VITE_APP_URL?: string;
 }
 
-export function jsonResponse(data: any, status = 200): Response {
+export function jsonResponse(data: any, status = 200, extraHeaders: Record<string, string> = {}): Response {
   return new Response(JSON.stringify(data), {
     status,
     headers: {
@@ -15,12 +15,26 @@ export function jsonResponse(data: any, status = 200): Response {
       "Access-Control-Allow-Origin": "*",
       "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
       "Access-Control-Allow-Headers": "Content-Type, Authorization",
+      ...extraHeaders,
     },
   });
 }
 
-export function errorResponse(error: string, status = 400, details?: any): Response {
-  return jsonResponse({ success: false, error, ...(details ? { details } : {}) }, status);
+export function errorResponse(
+  error: string,
+  status = 400,
+  details?: any,
+  extraHeaders: Record<string, string> = {}
+): Response {
+  const body: Record<string, any> = { success: false, error };
+  if (details) {
+    if (typeof details === "object" && !Array.isArray(details)) {
+      Object.assign(body, details);
+    } else {
+      body.details = details;
+    }
+  }
+  return jsonResponse(body, status, extraHeaders);
 }
 
 export function generateSecureToken(): string {

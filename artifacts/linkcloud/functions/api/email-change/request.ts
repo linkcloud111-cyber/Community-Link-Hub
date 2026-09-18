@@ -74,10 +74,15 @@ export async function onRequestPost(context: {
     const now = Date.now();
     const activeDoc = await firestoreGetDoc(`users/${uid}/emailChanges/active`, env);
     if (activeDoc) {
-      const lastRequestedAt = activeDoc.createdAt || activeDoc.lastRequestedAt || 0;
+      const lastRequestedAt = activeDoc.createdAt || activeDoc.lastRequestedAt || activeDoc.updatedAt || 0;
       if (now - lastRequestedAt < COOLDOWN_MS) {
         const waitSec = Math.ceil((COOLDOWN_MS - (now - lastRequestedAt)) / 1000);
-        return errorResponse(`Please wait ${waitSec}s before requesting another verification email.`, 429);
+        return errorResponse(
+          `Please wait ${waitSec}s before requesting another verification email.`,
+          429,
+          { retryAfter: waitSec },
+          { "Retry-After": String(waitSec) }
+        );
       }
     }
 
@@ -157,6 +162,7 @@ export async function onRequestPost(context: {
       requestId,
       expiresAt,
       newEmail,
+      nextAllowedAt: now + COOLDOWN_MS,
       message: "Verification email sent. Link is valid for 5 minutes.",
     });
   } catch (err: any) {
