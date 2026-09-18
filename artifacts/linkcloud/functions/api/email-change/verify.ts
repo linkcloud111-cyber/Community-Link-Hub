@@ -4,7 +4,7 @@ import {
   hashToken,
   type Env,
 } from "./_common";
-import { adminUpdateUserEmail } from "./_firebase-admin";
+import { adminUpdateUserEmail, adminCreateCustomToken } from "./_firebase-admin";
 import {
   firestoreGetDoc,
   firestoreSetDoc,
@@ -91,11 +91,18 @@ async function processVerification({
       );
     }
     if (reqDoc.status === "completed") {
+      let customToken = "";
+      try {
+        customToken = await adminCreateCustomToken(env, effectiveUid);
+      } catch (tokErr) {
+        console.warn("[COMPLETED REQ CUSTOM TOKEN NOTICE]", tokErr);
+      }
       return jsonResponse({
         success: true,
         alreadyCompleted: true,
         oldEmail: reqDoc.oldEmail,
         newEmail: reqDoc.newEmail,
+        customToken,
         message: "Email address change has already been verified and completed.",
       });
     }
@@ -134,12 +141,13 @@ async function processVerification({
       return errorResponse(`Failed to update authentication email: ${adminAuthErr.message}`, 500);
     }
 
-    // 7. Update Firestore Request Document to verified & completed
+    // 7. Update Firestore Request Document to completed
     await firestoreSetDoc(
       `emailChangeRequests/${reqId}`,
       {
-        status: "verified",
+        status: "completed",
         verifiedAt: now,
+        completedAt: now,
         updatedAt: now,
       },
       env
@@ -149,20 +157,24 @@ async function processVerification({
     await firestoreSetDoc(
       `users/${effectiveUid}/emailChanges/active`,
       {
-        status: "VERIFIED",
+        status: "COMPLETED",
+        targetEmail: newEmail,
         verifiedAt: now,
+        completedAt: now,
         updatedAt: now,
       },
       env
     );
 
-    // 9. Update user profile document in Firestore
+    // 9. Update user profile document in Firestore (commit new email and clear pending)
     await firestoreSetDoc(
       `users/${effectiveUid}`,
       {
         email: newEmail,
         emailVerified: true,
         emailIndex: newEmail,
+        pendingEmail: null,
+        activeEmailChangeRequestId: null,
         updatedAt: new Date().toISOString(),
       },
       env
@@ -195,13 +207,23 @@ async function processVerification({
       console.warn("[EMAIL INDEX SET NOTICE]", setIndexErr);
     }
 
+    let customToken = "";
+    try {
+      customToken = await adminCreateCustomToken(env, effectiveUid);
+      console.log(`[VERIFY CUSTOM TOKEN] Successfully minted custom token for UID ${effectiveUid}`);
+    } catch (tokErr: any) {
+      console.warn("[VERIFY CUSTOM TOKEN NOTICE]", tokErr);
+    }
+
     return jsonResponse({
       success: true,
       verified: true,
+      completed: true,
       uid: effectiveUid,
       oldEmail,
       newEmail,
-      message: "New email address verified successfully!",
+      customToken,
+      message: "New email address verified and updated successfully!",
     });
   } catch (err: any) {
     console.error("[VERIFY EMAIL CHANGE ERROR]", err);

@@ -17,9 +17,10 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import type { User } from "firebase/auth";
-import { updateEmail } from "firebase/auth";
+import { signInWithCustomToken } from "firebase/auth";
 import { auth, db } from "@/lib/firebase";
-import { doc, getDoc, updateDoc, deleteField, setDoc } from "firebase/firestore";
+import { doc, getDoc, setDoc } from "firebase/firestore";
+import { useAuth } from "@/contexts/AuthContext";
 import type { UserProfile } from "@/lib/types";
 import { validateNewGmail, STRICT_EMAIL_REGEX } from "@/lib/utils";
 import {
@@ -64,6 +65,7 @@ export function ChangeEmailModal({
   onSuccess,
 }: ChangeEmailModalProps) {
   const [, setLocation] = useLocation();
+  const { refreshProfile, startSessionHandoff, endSessionHandoff } = useAuth();
   const currentEmail = user?.email || profile?.email || "";
 
   // Check pending email from profile or localStorage
@@ -482,120 +484,81 @@ export function ChangeEmailModal({
     }
   };
 
-  // 3. Refresh verification status / Manual Refresh (Screen 2 Action)
+  // 3. Refresh verification status / Manual Refresh (Screen 2 Action) - STRICTLY READ-ONLY
   const handleManualRefresh = async () => {
     if (!user || refreshing) return;
     setRefreshing(true);
     setStatusFeedback(null);
     try {
-      // 1. Reload current Firebase User to fetch latest verification status (Rule 2)
-      try {
-        await auth.currentUser?.reload();
-      } catch (reloadErr) {
-        console.warn("Reload user notice handled safely:", reloadErr);
-      }
-
-      // Graceful Token Refresh / Transition (Rule 1 & 5)
-      const currentUser = auth.currentUser || user;
-      try {
-        await currentUser.getIdToken(true);
-      } catch (tokenError: any) {
-        if (
-          tokenError?.code === "auth/user-token-expired" ||
-          tokenError?.code === "auth/user-token-revoked"
-        ) {
-          console.warn("Handled temporary token transition during email sync. Staying authenticated.");
-        } else {
-          console.warn("Token refresh notice handled safely:", tokenError);
-        }
-      }
-
-      // 2. Fetch Direct Firestore Request State (Rule 3)
-      let directStatus: string | null = null;
+      // 1. Fetch Firestore Request State (Strictly READ-ONLY - NO writes, NO token refreshes with revoked token)
+      let activeReqDoc: any = null;
       let targetEmail: string = activePending || "";
+      let activeRequestId: string | null = null;
       try {
         const dbRef = doc(db, `users/${user.uid}/emailChanges`, "active");
         const requestDoc = await getDoc(dbRef);
         if (requestDoc.exists()) {
           const reqData = requestDoc.data();
-          directStatus = reqData.status || null;
           if (reqData.targetEmail) {
             targetEmail = reqData.targetEmail;
           }
+          if (reqData.requestId) {
+            activeRequestId = reqData.requestId;
+            const fullReqSnap = await getDoc(doc(db, "emailChangeRequests", reqData.requestId));
+            if (fullReqSnap.exists()) {
+              activeReqDoc = fullReqSnap.data();
+            }
+          }
         }
       } catch (dbErr) {
-        console.warn("Direct requestDoc check notice:", dbErr);
+        console.warn("[REFRESH STATUS READ-ONLY] Direct requestDoc check notice:", dbErr);
       }
 
-      // 3. Check and sync email change status
-      const result = await checkAndSyncEmailChangeStatus({
-        manual: true,
-        targetPendingEmail: targetEmail || activePending,
-        caller: "ChangeEmailModal.handleManualRefresh",
-      });
+      if (!activeReqDoc) {
+        activeReqDoc = await getActiveEmailChangeRequest(user.uid);
+        if (activeReqDoc?.requestId) {
+          activeRequestId = activeReqDoc.requestId;
+        }
+        if (activeReqDoc?.newEmail) {
+          targetEmail = activeReqDoc.newEmail;
+        }
+      }
 
-      const freshUser = auth.currentUser || user;
-      const cleanTarget = (targetEmail || activePending || "").trim().toLowerCase();
-      const currentAuthEmail = (freshUser.email || "").trim().toLowerCase();
-      const currentProfileEmail = (profile?.email || "").trim().toLowerCase();
+      const status = (activeReqDoc?.status || "").toLowerCase();
+      const isCompleted = status === "completed" || status === "verified";
 
-      const isVerified =
-        directStatus === "VERIFIED" ||
-        directStatus === "COMPLETED" ||
-        result.status === "success" ||
-        (cleanTarget && currentAuthEmail === cleanTarget) ||
-        (cleanTarget && currentProfileEmail === cleanTarget && freshUser.emailVerified);
-
-      if (isVerified) {
-        // 4. Perform final synchronization with Firestore and Auth (Rule 4)
-        if (cleanTarget) {
-          // If Auth email still has old email and updateEmail is needed:
-          if (freshUser && currentAuthEmail !== cleanTarget) {
-            try {
-              await updateEmail(freshUser, cleanTarget);
-            } catch (authUpdateErr) {
-              console.warn("Notice: Auth updateEmail during sync:", authUpdateErr);
-            }
+      if (isCompleted) {
+        // Request fresh session via Custom Token from server
+        startSessionHandoff();
+        try {
+          const res = await fetch("/api/email-change/session-refresh", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              uid: user.uid,
+              requestId: activeRequestId || `req_${user.uid}`,
+            }),
+          });
+          const data = await res.json();
+          if (res.ok && data?.customToken) {
+            console.log("[REFRESH STATUS READ-ONLY] Fresh custom token received, establishing valid session...");
+            await signInWithCustomToken(auth, data.customToken);
+            await refreshProfile();
           }
+        } catch (tokenErr) {
+          console.warn("[REFRESH STATUS READ-ONLY] Session refresh token notice:", tokenErr);
+        } finally {
+          endSessionHandoff();
+        }
 
-          // Update Firestore user document collection
+        // Clean up local storage tracking
+        if (typeof window !== "undefined" && window.localStorage) {
           try {
-            const userDocRef = doc(db, `users/${user.uid}`);
-            await updateDoc(userDocRef, {
-              email: cleanTarget,
-              pendingEmail: deleteField(),
-              emailIndex: cleanTarget,
-              emailVerified: true,
-            });
-          } catch (uDocErr) {
-            console.warn("Notice: userDocRef update in handleManualRefresh:", uDocErr);
-          }
-
-          // Mark active request document as COMPLETED
-          try {
-            const userActiveRef = doc(db, `users/${user.uid}/emailChanges`, "active");
-            const actSnap = await getDoc(userActiveRef).catch(() => null);
-            const actReqId = (actSnap && actSnap.exists()) ? actSnap.data()?.requestId : null;
-            await updateDoc(userActiveRef, {
-              status: "COMPLETED",
-              updatedAt: Date.now(),
-            });
-            if (actReqId) {
-              await updateDoc(doc(db, "emailChangeRequests", actReqId), {
-                status: "completed",
-                updatedAt: Date.now(),
-              }).catch(() => {});
-            }
-          } catch (cErr) {
-            console.warn("Notice: marking active email change as COMPLETED:", cErr);
-          }
-
-          // Commit to Firestore index, localStorage, history and audit log
-          try {
-            await commitEmailChangeInFirestore(user.uid, cleanTarget, profile?.email || "");
-          } catch (cErr) {
-            console.warn("Notice committing email change in firestore:", cErr);
-          }
+            window.localStorage.removeItem(`pending_email_${user.uid}`);
+            window.localStorage.removeItem(`pending_email_req_${user.uid}`);
+            window.localStorage.removeItem(`pending_email_expires_${user.uid}`);
+            window.localStorage.removeItem(`resend_email_change_${user.uid}`);
+          } catch {}
         }
 
         // Clean up modal state
@@ -613,7 +576,7 @@ export function ChangeEmailModal({
           await onSuccess();
         }
 
-        // 5. Navigate directly to /dashboard?tab=profile (Rule 5 & 6)
+        // Navigate directly to /dashboard?tab=profile
         setLocation("/dashboard?tab=profile", { replace: true });
         if (typeof window !== "undefined") {
           window.history.replaceState(null, "", "/dashboard?tab=profile");
@@ -621,20 +584,20 @@ export function ChangeEmailModal({
         }
         toast.success("Email updated successfully");
         return;
-      } else if (directStatus === "EXPIRED" || result.status === "expired") {
+      } else if (status === "expired" || (activeReqDoc?.expiresAt && Date.now() > activeReqDoc.expiresAt)) {
         setStatusFeedback({
           type: "error",
           message: "× Verification link expired. Please resend the link.",
         });
         setExpiresIn(0);
         toast.warning("Verification link expired. Please send a new verification link.");
-      } else if (directStatus === "CANCELLED" || result.status === "cancelled") {
+      } else if (status === "cancelled") {
         setStatusFeedback({
           type: "error",
           message: "× Verification link cancelled.",
         });
         toast.error("Verification link has been cancelled.");
-      } else if (directStatus === "SUPERSEDED" || result.status === "superseded") {
+      } else if (status === "superseded") {
         setStatusFeedback({
           type: "error",
           message: "× This is an older verification link. Please use the latest link.",
@@ -648,7 +611,7 @@ export function ChangeEmailModal({
         toast.info("Email not verified yet. Please open the verification link sent to your inbox or spam folder.");
       }
     } catch (error: any) {
-      console.error("Sync error handled safely:", error);
+      console.error("[REFRESH STATUS READ-ONLY] Status check error:", error);
       setStatusFeedback({
         type: "warning",
         message: "Email not verified yet. Please open the verification link sent to your inbox or spam folder.",

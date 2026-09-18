@@ -15,6 +15,7 @@ import {
   browserSessionPersistence,
   updatePassword,
   updateEmail,
+  signInWithCustomToken,
   reload,
   getAuth,
   EmailAuthProvider,
@@ -1705,11 +1706,7 @@ export async function checkAndSyncEmailChangeStatus(
   const manual = Boolean(options?.manual);
   const caller = options?.caller || "direct";
   const invocationId = `sync_${++globalSyncCounter}_${Date.now()}`;
-  console.log(`[EMAIL SYNC] invocation=${invocationId} manual=${manual} caller=${caller} target=${options?.targetPendingEmail || "none"}`);
-
-  if (!manual) {
-    console.warn(`[EMAIL SYNC] invocation=${invocationId} Notice: checkAndSyncEmailChangeStatus invoked with manual: false. Non-manual automatic polling has been deprecated.`);
-  }
+  console.log(`[EMAIL SYNC READ-ONLY] invocation=${invocationId} manual=${manual} caller=${caller} target=${options?.targetPendingEmail || "none"}`);
 
   if (activeSyncPromise) {
     try {
@@ -1726,35 +1723,13 @@ export async function checkAndSyncEmailChangeStatus(
   const syncOperation = (async (): Promise<EmailVerificationSyncResult> => {
     try {
       const currentUser = auth.currentUser;
-      if (!currentUser) {
+      const uid = currentUser?.uid;
+      if (!uid) {
         const msg = "Unable to check verification status. Please sign in again.";
         if (manual) toast.error(msg);
         return { status: "error", message: msg };
       }
 
-      // Explicitly reload Firebase currentUser to fetch the latest verification status
-      try {
-        await auth.currentUser?.reload();
-      } catch (reloadErr) {
-        console.warn("[EMAIL SYNC] auth.currentUser.reload notice handled safely:", reloadErr);
-      }
-
-      // Gracefully handle token transitions without destroying the session
-      try {
-        await auth.currentUser?.getIdToken(true);
-      } catch (tokenErr: any) {
-        if (
-          tokenErr?.code === "auth/user-token-expired" ||
-          tokenErr?.code === "auth/user-token-revoked"
-        ) {
-          console.warn("[EMAIL SYNC] Handled temporary token transition during email sync. Staying authenticated.");
-        } else {
-          console.warn("[EMAIL SYNC] Token refresh notice handled safely:", tokenErr);
-        }
-      }
-
-      const freshUser = auth.currentUser || currentUser;
-      const uid = freshUser.uid;
       const pendingKey = `pending_email_${uid}`;
       const savedPending =
         options?.targetPendingEmail ||
@@ -1762,34 +1737,20 @@ export async function checkAndSyncEmailChangeStatus(
           ? window.localStorage.getItem(pendingKey)
           : null);
 
-      // Check active request from Firestore
+      // Check active request from Firestore (strictly READ-ONLY)
       const activeReq = await getActiveEmailChangeRequest(uid);
       const now = Date.now();
 
       // If user has no pending email in local state or active request, check current email verification status
       if (!activeReq && !savedPending) {
-        let reloadedUser = freshUser;
-        try {
-          await auth.currentUser?.reload();
-          await auth.currentUser?.getIdToken(true);
-          reloadedUser = auth.currentUser || freshUser;
-        } catch {}
-
         const profile = await getUserProfile(uid);
-
-        if (reloadedUser.emailVerified || profile?.emailVerified || profile?.status === "active") {
-          if (profile && (!profile.emailVerified || profile.status !== "active")) {
-            await upsertUserProfile(uid, {
-              emailVerified: true,
-              status: "active",
-            }).catch(() => {});
-          }
+        if (profile?.emailVerified || profile?.status === "active") {
           const successMsg = "Email verified successfully";
           if (manual) toast.success(successMsg);
           return {
             status: "success",
             message: successMsg,
-            verifiedEmail: reloadedUser.email ? reloadedUser.email.trim().toLowerCase() : "",
+            verifiedEmail: profile?.email ? profile.email.trim().toLowerCase() : "",
           };
         } else {
           const pendingMsg = "Verification is still pending. Please click the link in your email and try again.";
@@ -1801,78 +1762,66 @@ export async function checkAndSyncEmailChangeStatus(
         }
       }
 
-      // 1. Check cancelled
+      // 1. Check cancelled (READ-ONLY)
       if (activeReq && activeReq.status === "cancelled") {
-        console.warn("[EMAIL SYNC] Request has been cancelled");
+        console.warn("[EMAIL SYNC READ-ONLY] Request has been cancelled");
         const msg = "Verification link cancelled.";
         if (manual) toast.error(msg);
         return { status: "cancelled", message: msg };
       }
 
-      // 2. Check superseded
+      // 2. Check superseded (READ-ONLY)
       if (activeReq && activeReq.status === "superseded") {
-        console.warn("[EMAIL SYNC] Request was superseded by a newer request");
+        console.warn("[EMAIL SYNC READ-ONLY] Request was superseded by a newer request");
         const msg = "This is an older verification link. Please use the latest link.";
         if (manual) toast.error(msg);
         return { status: "superseded", message: msg };
       }
 
-      // 3. Check expiration (15-minute TTL)
+      // 3. Check expiration (READ-ONLY)
       if (activeReq && (activeReq.status === "expired" || (activeReq.status === "pending" && now > activeReq.expiresAt))) {
-        console.warn("[EMAIL SYNC] Request has expired (15-minute TTL elapsed)");
-        if (activeReq.status !== "expired") {
-          await setDoc(doc(db, "emailChangeRequests", activeReq.requestId), {
-            status: "expired",
-            updatedAt: now,
-          }, { merge: true }).catch(() => {});
-        }
+        console.warn("[EMAIL SYNC READ-ONLY] Request has expired (15-minute TTL elapsed)");
         const msg = "Verification link expired. Please send a new verification link.";
         if (manual) toast.error(msg);
         return { status: "expired", message: msg };
       }
 
-      // 4. Force reload Firebase user & token refresh safely
-      let reloadedUser = currentUser;
-      try {
-        await currentUser.reload();
-        await currentUser.getIdToken(true);
-        reloadedUser = auth.currentUser || currentUser;
-      } catch (reloadErr: any) {
-        console.warn("[EMAIL SYNC] Firebase Auth reload transient notice:", reloadErr?.code || reloadErr?.message);
-        // Do NOT fail or log out if token is in transition. reloadedUser remains currentUser.
-      }
-
-      const targetVerifiedEmail = (activeReq?.newEmail || savedPending || "").trim().toLowerCase();
-
-      // If active request was marked 'verified' by email-action handler in Gmail tab:
-      if (activeReq && activeReq.status === "verified") {
-        console.log("[EMAIL SYNC] Detected request verified in Firestore. Synchronizing...", {
+      // 4. Check completed / verified: request fresh session via Custom Token
+      if (activeReq && (activeReq.status === "completed" || activeReq.status === "verified")) {
+        console.log("[EMAIL SYNC READ-ONLY] Detected request completed on server. Requesting session refresh token...", {
           requestId: activeReq.requestId,
-          newEmail: targetVerifiedEmail,
         });
 
-        if (activeReq.requestId) {
-          await setDoc(doc(db, "emailChangeRequests", activeReq.requestId), {
-            status: "completed",
-            updatedAt: Date.now(),
-          }, { merge: true }).catch(() => {});
+        const targetVerifiedEmail = (activeReq.newEmail || savedPending || "").trim().toLowerCase();
+
+        try {
+          const res = await fetch("/api/email-change/session-refresh", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              uid,
+              requestId: activeReq.requestId,
+            }),
+          });
+          const data = await res.json();
+          if (res.ok && data?.customToken) {
+            console.log("[EMAIL SYNC READ-ONLY] Fresh custom token received. Signing in...");
+            await signInWithCustomToken(auth, data.customToken);
+          }
+        } catch (tokErr) {
+          console.warn("[EMAIL SYNC READ-ONLY] Session refresh token notice:", tokErr);
         }
 
-        // Try one more token reload if needed
-        if (reloadedUser.email?.trim().toLowerCase() !== targetVerifiedEmail) {
+        // Clean up local storage tracking
+        if (typeof window !== "undefined" && window.localStorage) {
           try {
-            await currentUser.reload();
-            await currentUser.getIdToken(true);
-            reloadedUser = auth.currentUser || currentUser;
+            window.localStorage.removeItem(`pending_email_${uid}`);
+            window.localStorage.removeItem(`pending_email_req_${uid}`);
+            window.localStorage.removeItem(`pending_email_expires_${uid}`);
+            window.localStorage.removeItem(`resend_email_change_${uid}`);
           } catch {}
         }
 
-        const effectiveNewEmail = targetVerifiedEmail || (reloadedUser.email ? reloadedUser.email.trim().toLowerCase() : "");
-        const profile = await getUserProfile(uid);
-        const oldEmail = profile?.email ? profile.email.trim().toLowerCase() : (activeReq.oldEmail || "");
-
-        await commitEmailChangeInFirestore(uid, effectiveNewEmail, oldEmail);
-
         const successMsg = "Email updated successfully";
         if (manual) {
           toast.success(successMsg);
@@ -1880,69 +1829,12 @@ export async function checkAndSyncEmailChangeStatus(
         return {
           status: "success",
           message: successMsg,
-          verifiedEmail: effectiveNewEmail,
+          verifiedEmail: targetVerifiedEmail,
         };
       }
 
-      const currentAuthEmail = reloadedUser.email ? reloadedUser.email.trim().toLowerCase() : "";
-      const expectedEmail = targetVerifiedEmail;
-
-      // Get current profile in Firestore
-      const profile = await getUserProfile(uid);
-      const firestoreEmail = profile?.email ? profile.email.trim().toLowerCase() : "";
-
-      // Determine if email change has completed in Firebase Auth
-      const isEmailChangedInAuth =
-        expectedEmail && currentAuthEmail === expectedEmail;
-      const isAuthAheadOfFirestore =
-        currentAuthEmail && firestoreEmail && currentAuthEmail !== firestoreEmail;
-
-      if (isEmailChangedInAuth || isAuthAheadOfFirestore) {
-        console.log("[EMAIL SYNC] Authoritative email verified in Firebase Auth! Committing to Firestore...", {
-          currentAuthEmail,
-          expectedEmail,
-        });
-
-        if (activeReq && activeReq.requestId) {
-          await setDoc(doc(db, "emailChangeRequests", activeReq.requestId), {
-            status: "completed",
-            updatedAt: Date.now(),
-          }, { merge: true }).catch(() => {});
-        }
-
-        const oldEmail = firestoreEmail || activeReq?.oldEmail || (expectedEmail && expectedEmail !== currentAuthEmail ? firestoreEmail : "");
-        await commitEmailChangeInFirestore(uid, currentAuthEmail, oldEmail);
-
-        const successMsg = "Email updated successfully";
-        if (manual) {
-          toast.success(successMsg);
-        }
-        return {
-          status: "success",
-          message: successMsg,
-          verifiedEmail: currentAuthEmail,
-        };
-      }
-
-      // Check if user is already verified and no pending exists
-      if (!expectedEmail && !profile?.pendingEmail) {
-        if (reloadedUser.emailVerified) {
-          if (profile && !profile.emailVerified) {
-            await upsertUserProfile(uid, { emailVerified: true, status: "active" });
-          }
-          if (manual) {
-            toast.success("Email updated successfully");
-          }
-          return {
-            status: "success",
-            message: "Email updated successfully",
-            verifiedEmail: currentAuthEmail,
-          };
-        }
-      }
-
-      // Still pending in Firebase Auth
-      console.log("[EMAIL SYNC] Verification is still pending in Firebase Auth");
+      // Still pending
+      console.log("[EMAIL SYNC READ-ONLY] Verification is still pending");
       const pendingMsg = "Verification is still pending. Please click the link in your email and try again.";
       if (manual) {
         toast.info(pendingMsg);
@@ -1952,7 +1844,7 @@ export async function checkAndSyncEmailChangeStatus(
         message: pendingMsg,
       };
     } catch (err: any) {
-      console.error("[EMAIL SYNC] Error in checkAndSyncEmailChangeStatus:", err);
+      console.error("[EMAIL SYNC READ-ONLY] Error in checkAndSyncEmailChangeStatus:", err);
       const errorMsg = "Unable to check verification status. Please check your internet connection and try again.";
       if (manual) {
         toast.error(errorMsg);
@@ -2015,69 +1907,29 @@ export async function signOut(): Promise<void> {
   await logout();
 }
 
-// 1. Initiate Email Change Process
+// 1. Initiate Email Change Process via custom decoupled flow
 export const handleUpdateEmailSecure = async (newEmail: string, currentPassword?: string) => {
   const user = auth.currentUser;
-  
   if (!user) {
     throw new Error("No user logged in.");
   }
-
-  try {
-    if (currentPassword && user.email) {
-      try {
-        const cred = EmailAuthProvider.credential(user.email, currentPassword);
-        await reauthenticateWithCredential(user, cred);
-      } catch (authErr: any) {
-        if (authErr?.code === 'auth/wrong-password' || authErr?.code === 'auth/invalid-credential') {
-          throw new Error("Incorrect current password.");
-        }
-      }
-    }
-
-    // Step A: Update email in Firebase Auth
-    await updateEmail(user, newEmail);
-
-    // Step B: Send Email Verification Link
-    await sendEmailVerification(user);
-
-    // Step C: Set an expiration timestamp in LocalStorage (e.g., valid for 10 minutes)
-    const expirationTime = new Date().getTime() + 10 * 60 * 1000; 
-    localStorage.setItem("email_verify_expires", expirationTime.toString());
-
-    return { success: true, message: "Verification link sent successfully." };
-  } catch (error: any) {
-    // Handle specific Firebase errors gracefully
-    let errorMessage = error?.message || "Failed to update email.";
-    if (error.code === 'auth/email-already-in-use') {
-      errorMessage = "This email is already registered by another account.";
-    } else if (error.code === 'auth/invalid-email') {
-      errorMessage = "The provided email format is invalid.";
-    } else if (error.code === 'auth/requires-recent-login') {
-      errorMessage = "Please log out and log back in before changing your email.";
-    }
-    throw new Error(errorMessage);
+  if (!currentPassword) {
+    throw new Error("Current password is required.");
   }
+
+  // Route to the authoritative decoupled flow
+  await updateUserEmailAddress(user, newEmail, currentPassword);
+  return { success: true, message: "Verification link sent successfully." };
 };
 
-// 1.5 Resend Verification Email with reset expiration
+// 1.5 Resend Verification Email with custom decoupled flow
 export const resendVerificationEmailSecure = async () => {
   const user = auth.currentUser;
   if (!user) {
     throw new Error("No user logged in.");
   }
-
-  try {
-    await sendEmailVerification(user);
-    const expirationTime = new Date().getTime() + 10 * 60 * 1000;
-    localStorage.setItem("email_verify_expires", expirationTime.toString());
-    return { success: true, message: "Verification email resent successfully." };
-  } catch (error: any) {
-    if (error.code === 'auth/too-many-requests') {
-      throw new Error("Too many requests. Please wait a moment before trying again.");
-    }
-    throw new Error(error.message || "Failed to resend verification email.");
-  }
+  await resendPendingEmailVerification(user);
+  return { success: true, message: "Verification email resent successfully." };
 };
 
 // 2. Check Verification Status securely with Timer Validation

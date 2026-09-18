@@ -178,3 +178,54 @@ export async function adminUpdateUserEmail(
     throw new Error(`Failed to update Firebase Auth email: ${res.status} ${text}`);
   }
 }
+
+/**
+ * Mint a Firebase Custom Token for a given UID using the service account private key.
+ * Follows Firebase Custom Token JWT specification with RS256 algorithm.
+ */
+export async function adminCreateCustomToken(
+  env: Env,
+  uid: string,
+  additionalClaims?: Record<string, any>
+): Promise<string> {
+  const serviceAccount = getServiceAccount(env);
+  if (!serviceAccount) {
+    throw new Error("FIREBASE_SERVICE_ACCOUNT_KEY is required to create custom token");
+  }
+
+  const now = Math.floor(Date.now() / 1000);
+  const header = { alg: "RS256", typ: "JWT" };
+  const payload: any = {
+    iss: serviceAccount.client_email,
+    sub: serviceAccount.client_email,
+    aud: "https://identitytoolkit.googleapis.com/google.identity.identitytoolkit.v1.IdentityToolkit",
+    iat: now,
+    exp: now + 3600,
+    uid: uid,
+  };
+  if (additionalClaims && typeof additionalClaims === "object") {
+    payload.claims = additionalClaims;
+  }
+
+  const encodedHeader = base64UrlEncode(JSON.stringify(header));
+  const encodedPayload = base64UrlEncode(JSON.stringify(payload));
+  const unsignedToken = `${encodedHeader}.${encodedPayload}`;
+
+  const keyBytes = pemToArrayBuffer(serviceAccount.private_key);
+  const cryptoKey = await crypto.subtle.importKey(
+    "pkcs8",
+    keyBytes.buffer as ArrayBuffer,
+    { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
+    false,
+    ["sign"]
+  );
+
+  const signatureBuffer = await crypto.subtle.sign(
+    "RSASSA-PKCS1-v1_5",
+    cryptoKey,
+    new TextEncoder().encode(unsignedToken)
+  );
+
+  const signature = base64UrlEncode(new Uint8Array(signatureBuffer));
+  return `${unsignedToken}.${signature}`;
+}

@@ -39,11 +39,18 @@ export default function VerifyEmailPage() {
     const urlParams = new URLSearchParams(window.location.search);
     const oobCode = urlParams.get("oobCode");
     const mode = urlParams.get("mode");
+    const token = urlParams.get("token");
+    const reqId = urlParams.get("reqId");
+
+    if (token || reqId || mode === "verifyAndChangeEmail") {
+      setLocation(`/verify-handler${window.location.search}`);
+      return;
+    }
 
     if (!oobCode || actionProcessedRef.current) return;
     actionProcessedRef.current = true;
 
-    if (mode === "verifyAndChangeEmail" || mode === "verifyEmail") {
+    if (mode === "verifyEmail") {
       setLocation(`/verify-handler${window.location.search}`);
       return;
     }

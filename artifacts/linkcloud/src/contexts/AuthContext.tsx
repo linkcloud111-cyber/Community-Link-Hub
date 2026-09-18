@@ -24,6 +24,9 @@ interface AuthContextValue {
   loading: boolean;
   isWebmaster: boolean;
   pendingEmail: string | null;
+  isSessionHandoff: boolean;
+  startSessionHandoff: () => void;
+  endSessionHandoff: () => void;
   refreshProfile: () => Promise<void>;
   checkAndSyncEmailChangeStatus: (options?: {
     manual?: boolean;
@@ -37,6 +40,9 @@ const AuthContext = createContext<AuthContextValue>({
   loading: true,
   isWebmaster: false,
   pendingEmail: null,
+  isSessionHandoff: false,
+  startSessionHandoff: () => {},
+  endSessionHandoff: () => {},
   refreshProfile: async () => {},
   checkAndSyncEmailChangeStatus: async () => ({
     status: "pending",
@@ -49,6 +55,35 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [pendingEmail, setPendingEmail] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isSessionHandoff, setIsSessionHandoff] = useState<boolean>(() => {
+    if (typeof window !== "undefined" && window.sessionStorage) {
+      return window.sessionStorage.getItem("linkcloud_session_handoff") === "true";
+    }
+    return false;
+  });
+  const isSessionHandoffRef = React.useRef(isSessionHandoff);
+  useEffect(() => {
+    isSessionHandoffRef.current = isSessionHandoff;
+  }, [isSessionHandoff]);
+
+  const startSessionHandoff = useCallback(() => {
+    console.log("[AUTH CONTEXT] Starting session handoff (protecting routes)...");
+    setIsSessionHandoff(true);
+    isSessionHandoffRef.current = true;
+    if (typeof window !== "undefined" && window.sessionStorage) {
+      window.sessionStorage.setItem("linkcloud_session_handoff", "true");
+    }
+  }, []);
+
+  const endSessionHandoff = useCallback(() => {
+    console.log("[AUTH CONTEXT] Ending session handoff...");
+    setIsSessionHandoff(false);
+    isSessionHandoffRef.current = false;
+    if (typeof window !== "undefined" && window.sessionStorage) {
+      window.sessionStorage.removeItem("linkcloud_session_handoff");
+    }
+  }, []);
+
   const initialAuthResolvedRef = React.useRef(false);
 
   // Stable fetchAndCheckProfile
@@ -153,11 +188,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const refreshProfile = useCallback(async () => {
     if (auth.currentUser) {
-      try {
-        await auth.currentUser.reload().catch(() => {});
-        await auth.currentUser.getIdToken(true).catch(() => {});
-      } catch (err) {
-        console.warn("[AUTH CONTEXT] refreshProfile non-fatal reload warning:", err);
+      if (!isSessionHandoffRef.current) {
+        try {
+          await auth.currentUser.reload().catch(() => {});
+        } catch (err) {
+          console.warn("[AUTH CONTEXT] refreshProfile non-fatal reload warning:", err);
+        }
       }
       const updatedUser = auth.currentUser;
       if (updatedUser) {
@@ -223,6 +259,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 }
                 return firebaseUser;
               });
+              if (isSessionHandoffRef.current) {
+                endSessionHandoff();
+              }
+            } else if (isSessionHandoffRef.current) {
+              console.log("[AUTH STATE] Transient null user during active session handoff. Retaining current session state.");
+              // Retain in-memory session while handoff completes signInWithCustomToken
             } else if (auth.currentUser) {
               console.log("[AUTH STATE] Retaining existing in-memory auth user session:", auth.currentUser.uid);
               setUser(auth.currentUser);
@@ -253,7 +295,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         unsubscribe();
       } catch {}
     };
-  }, [fetchAndCheckProfile]);
+  }, [fetchAndCheckProfile, endSessionHandoff]);
 
   // Centralized checkAndSyncEmailChangeStatus method provided by AuthContext.
   // ONLY invoked manually when the user explicitly clicks the "Refresh Verification Status" button.
@@ -261,12 +303,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     async (options?: { manual?: boolean; targetPendingEmail?: string | null; caller?: string }): Promise<EmailVerificationSyncResult> => {
       const result = await checkAndSyncEmailAuth({ ...options, caller: options?.caller || "AuthContext" });
       if (result.status === "success" && auth.currentUser) {
-        try {
-          await auth.currentUser.reload().catch(() => {});
-          await auth.currentUser.getIdToken(true).catch(() => {});
-        } catch (e) {
-          console.warn("[AUTH CONTEXT] token reload notice:", e);
-        }
         const refreshed = auth.currentUser;
         if (refreshed) {
           const clonedUser = Object.assign(Object.create(Object.getPrototypeOf(refreshed)), refreshed);
@@ -297,6 +333,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         loading,
         isWebmaster: Boolean(checkIsWebmaster),
         pendingEmail,
+        isSessionHandoff,
+        startSessionHandoff,
+        endSessionHandoff,
         refreshProfile,
         checkAndSyncEmailChangeStatus,
       }}

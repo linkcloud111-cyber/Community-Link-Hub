@@ -95,6 +95,12 @@ export default function EmailActionPage() {
     console.log("[EMAIL ACTION] operation=", rawMode);
     console.log("[EMAIL ACTION] reqId=", rawReqId, "uid=", rawUid, "email=", rawEmail);
 
+    // If verifyAndChangeEmail mode or custom token/reqId is provided, delegate immediately to dedicated verify-handler
+    if (rawMode === "verifyAndChangeEmail" || searchParams.get("token") || (searchParams.get("reqId") && !rawOobCode)) {
+      window.location.replace('/verify-handler' + window.location.search);
+      return;
+    }
+
     if (!rawOobCode) {
       console.warn("[EMAIL ACTION] No oobCode provided in URL parameters");
       setStatus("invalid");

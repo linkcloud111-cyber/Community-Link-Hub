@@ -6,6 +6,7 @@ import {
   checkActionCode,
   confirmPasswordReset,
   verifyPasswordResetCode,
+  signInWithCustomToken,
 } from "firebase/auth";
 import {
   doc,
@@ -58,7 +59,7 @@ function maskEmail(email: string): string {
 
 export default function VerifyHandlerPage() {
   const [, setLocation] = useLocation();
-  const { refreshProfile, isWebmaster } = useAuth();
+  const { refreshProfile, isWebmaster, startSessionHandoff, endSessionHandoff } = useAuth();
 
   const [status, setStatus] = useState<HandlerStatus>("loading");
   const [errorMessage, setErrorMessage] = useState<string>("");
@@ -143,7 +144,41 @@ export default function VerifyHandlerPage() {
         return;
       }
 
-      // 3. Email Change (verifyAndChangeEmail) or Initial Verification (verifyEmail)
+      // 3. Signup Email Verification Mode (verifyEmail) - Pure Firebase Native Flow
+      if (rawMode === "verifyEmail") {
+        try {
+          console.log("[VERIFY HANDLER] Executing applyActionCode for native signup verification...");
+          await applyActionCode(auth, rawOobCode);
+          console.log("[VERIFY HANDLER] applyActionCode successful for signup verification!");
+
+          if (auth.currentUser) {
+            await upsertUserProfile(auth.currentUser.uid, {
+              emailVerified: true,
+              status: "active",
+            }).catch(() => {});
+            await refreshProfile();
+          }
+
+          setStatus("success");
+          toast.success("Email address verified successfully!");
+        } catch (err: any) {
+          console.error("[VERIFY HANDLER] Signup verification error:", err);
+          const code = err?.code || "";
+          if (code === "auth/expired-action-code") {
+            setStatus("expired");
+            setErrorMessage("This verification link has expired. Please request a new verification link.");
+          } else if (auth.currentUser?.emailVerified) {
+            setStatus("success");
+            toast.success("Email address verified successfully!");
+          } else {
+            setStatus("invalid");
+            setErrorMessage("This verification link is invalid or has already been used.");
+          }
+        }
+        return;
+      }
+
+      // 4. Custom Email Change Mode (verifyAndChangeEmail) - LinkCloud Flow
       try {
         let activeReqDoc: EmailChangeRequest | null = null;
         let actionEmail = rawEmail;
@@ -235,7 +270,7 @@ export default function VerifyHandlerPage() {
 
         // Step C: Request Lifecycle Guards
         if (!activeReqDoc) {
-          console.warn("[VERIFY HANDLER] No matching email change request found. Aborting applyActionCode.");
+          console.warn("[VERIFY HANDLER] No matching email change request found.");
           setStatus("invalid");
           setErrorMessage("This verification link is invalid or has already been used.");
           return;
@@ -246,7 +281,7 @@ export default function VerifyHandlerPage() {
 
         // 1. User ID matching check (if rawUid present)
         if (rawUid && activeReqDoc.userId && rawUid !== activeReqDoc.userId) {
-          console.warn("[VERIFY HANDLER] User ID mismatch. Aborting applyActionCode.");
+          console.warn("[VERIFY HANDLER] User ID mismatch.");
           setStatus("invalid");
           setErrorMessage("This verification link does not belong to the active user account.");
           return;
@@ -254,7 +289,7 @@ export default function VerifyHandlerPage() {
 
         // 2. Email matching check (if actionEmail present)
         if (actionEmail && activeReqDoc.newEmail && actionEmail.trim().toLowerCase() !== activeReqDoc.newEmail.trim().toLowerCase()) {
-          console.warn("[VERIFY HANDLER] Email mismatch. Aborting applyActionCode.");
+          console.warn("[VERIFY HANDLER] Email mismatch.");
           setStatus("invalid");
           setErrorMessage("This verification link does not match the requested email address.");
           return;
@@ -262,7 +297,7 @@ export default function VerifyHandlerPage() {
 
         // 3. Expiration check (15-minute TTL)
         if (activeReqDoc.status === "expired" || now > activeReqDoc.expiresAt) {
-          console.warn("[VERIFY HANDLER] Request expired. Aborting applyActionCode.");
+          console.warn("[VERIFY HANDLER] Request expired.");
           setStatus("expired");
           setErrorMessage("This verification link has expired. Please return to LinkCloud and request a new one.");
           return;
@@ -270,7 +305,7 @@ export default function VerifyHandlerPage() {
 
         // 4. Cancellation check
         if (activeReqDoc.status === "cancelled") {
-          console.warn("[VERIFY HANDLER] Request cancelled. Aborting applyActionCode.");
+          console.warn("[VERIFY HANDLER] Request cancelled.");
           setStatus("cancelled");
           setErrorMessage("This verification link is no longer valid.");
           return;
@@ -278,18 +313,15 @@ export default function VerifyHandlerPage() {
 
         // 5. Superseded check
         if (activeReqDoc.status === "superseded") {
-          console.warn("[VERIFY HANDLER] Request superseded. Aborting applyActionCode.");
+          console.warn("[VERIFY HANDLER] Request superseded.");
           setStatus("superseded");
           setErrorMessage("This verification link was superseded by a newer request. Please use your latest link.");
           return;
         }
 
-        // 6. Completed check
+        // 6. Completed check - check if already completed
         if (activeReqDoc.status === "completed") {
-          console.warn("[VERIFY HANDLER] Request already completed. Aborting applyActionCode.");
-          setStatus("invalid");
-          setErrorMessage("This verification link is invalid or has already been used.");
-          return;
+          console.log("[VERIFY HANDLER] Request already completed on server.");
         }
 
         const finalUid = activeReqDoc?.userId || targetUid || auth.currentUser?.uid || "";
@@ -299,111 +331,81 @@ export default function VerifyHandlerPage() {
         if (targetNewEmail) setNewEmailDisplay(targetNewEmail);
         if (targetOldEmail) setOldEmailDisplay(targetOldEmail);
 
-        // Step D: Execute Verification
-        // Use custom server verify API (/api/email-change/verify) for email change
-        let serverVerifySuccess = false;
-        if (rawMode === "verifyAndChangeEmail" || rawToken || rawReqId) {
-          try {
-            console.log("[VERIFY HANDLER] Calling /api/email-change/verify...");
-            const res = await fetch("/api/email-change/verify", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                reqId: rawReqId || activeReqDoc?.requestId,
-                token: rawToken || rawOobCode,
-                uid: finalUid,
-              }),
-            });
+        // Step D: Execute Verification via /api/email-change/verify
+        console.log("[VERIFY HANDLER] Calling /api/email-change/verify...");
+        const res = await fetch("/api/email-change/verify", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            reqId: rawReqId || activeReqDoc?.requestId,
+            token: rawToken || rawOobCode,
+            uid: finalUid,
+          }),
+        });
 
-            if (res.ok) {
-              const data: any = await res.json();
-              serverVerifySuccess = true;
-              console.log("[VERIFY HANDLER] Server verification response:", data);
-              if (data?.newEmail) {
-                setNewEmailDisplay(data.newEmail);
-              }
-            } else {
-              const errData: any = await res.json().catch(() => ({}));
-              console.warn("[VERIFY HANDLER] Server API returned error:", res.status, errData);
-              if (errData?.details?.code === "expired" || res.status === 410) {
-                setStatus("expired");
-                setErrorMessage(errData.error || "This verification link has expired.");
-                return;
-              }
-              if (errData?.details?.code === "cancelled") {
-                setStatus("cancelled");
-                setErrorMessage("This verification link is no longer valid.");
-                return;
-              }
-              if (errData?.details?.code === "superseded") {
-                setStatus("superseded");
-                setErrorMessage("This verification link was superseded by a newer request.");
-                return;
-              }
-              setStatus("invalid");
-              setErrorMessage(errData?.error || "This verification link is invalid or has already been used.");
-              return;
-            }
-          } catch (apiErr) {
-            console.warn("[VERIFY HANDLER] Server API call exception:", apiErr);
-            setStatus("invalid");
-            setErrorMessage("Unable to verify email change. Please check your internet connection.");
+        if (!res.ok) {
+          const errData: any = await res.json().catch(() => ({}));
+          console.warn("[VERIFY HANDLER] Server API returned error:", res.status, errData);
+          if (errData?.details?.code === "expired" || res.status === 410) {
+            setStatus("expired");
+            setErrorMessage(errData.error || "This verification link has expired.");
             return;
           }
-        }
-
-        // For Signup email verification (mode=verifyEmail), execute applyActionCode
-        if (!serverVerifySuccess && rawOobCode && rawMode === "verifyEmail") {
-          console.log("[VERIFY HANDLER] Executing applyActionCode for signup verification...");
-          await applyActionCode(auth, rawOobCode);
-          console.log("[VERIFY HANDLER] applyActionCode successful for signup verification!");
-        } else if (!serverVerifySuccess && rawMode === "verifyAndChangeEmail") {
-          console.warn("[VERIFY HANDLER] Server verification was not successful for email change.");
+          if (errData?.details?.code === "cancelled") {
+            setStatus("cancelled");
+            setErrorMessage("This verification link is no longer valid.");
+            return;
+          }
+          if (errData?.details?.code === "superseded") {
+            setStatus("superseded");
+            setErrorMessage("This verification link was superseded by a newer request.");
+            return;
+          }
           setStatus("invalid");
-          setErrorMessage("This verification link is invalid, expired, or has already been used.");
+          setErrorMessage(errData?.error || "This verification link is invalid or has already been used.");
           return;
         }
 
-        // Step E: Update Firestore Request Status to verified (Do NOT overwrite primary email yet - wait for manual Refresh Status)
-        if (activeReqDoc?.requestId) {
-          await setDoc(
-            doc(db, "emailChangeRequests", activeReqDoc.requestId),
-            { status: "verified", verifiedAt: Date.now(), updatedAt: Date.now() },
-            { merge: true }
-          ).catch(() => {});
+        const data: any = await res.json();
+        console.log("[VERIFY HANDLER] Server verification response received:", {
+          success: data?.success,
+          newEmail: data?.newEmail,
+          hasCustomToken: Boolean(data?.customToken),
+        });
+
+        if (data?.newEmail) {
+          setNewEmailDisplay(data.newEmail);
         }
 
-        if (finalUid) {
-          await setDoc(
-            doc(db, `users/${finalUid}/emailChanges`, "active"),
-            { status: "VERIFIED", verifiedAt: Date.now(), updatedAt: Date.now() },
-            { merge: true }
-          ).catch(() => {});
-
-          // If this was an initial account verification (not an email change request)
-          if (!activeReqDoc) {
-            await upsertUserProfile(finalUid, {
-              emailVerified: true,
-              status: "active",
-            }).catch(() => {});
-          }
-        }
-
-        // Step F: Refresh active user in-memory auth state if session exists
-        // Note: Do NOT call refreshProfile() here - final Firestore sync waits for manual Refresh Status
-        if (auth.currentUser) {
+        // Step E: Clean up local pending tracking
+        if (typeof window !== "undefined" && window.localStorage && finalUid) {
           try {
-            await auth.currentUser.reload();
-            await auth.currentUser.getIdToken(true);
-            console.log("[VERIFY HANDLER] Active session reloaded:", auth.currentUser.email);
-          } catch (reloadErr) {
-            console.warn("[VERIFY HANDLER] Active session reload notice:", reloadErr);
+            window.localStorage.removeItem(`pending_email_${finalUid}`);
+            window.localStorage.removeItem(`pending_email_req_${finalUid}`);
+            window.localStorage.removeItem(`pending_email_expires_${finalUid}`);
+            window.localStorage.removeItem(`resend_email_change_${finalUid}`);
+          } catch {}
+        }
+
+        // Step F: Recover / Re-establish fresh Firebase authenticated session via Custom Token
+        // CRITICAL: DO NOT call auth.currentUser.reload() or getIdToken(true).
+        // Use signInWithCustomToken to seamlessly transition the browser session!
+        if (data?.customToken) {
+          try {
+            startSessionHandoff();
+            console.log("[VERIFY HANDLER] Signing in with fresh Firebase Custom Token...");
+            await signInWithCustomToken(auth, data.customToken);
+            console.log("[VERIFY HANDLER] Custom token sign-in succeeded! Active user:", auth.currentUser?.email);
+            await refreshProfile();
+          } catch (custErr) {
+            console.error("[VERIFY HANDLER] Custom token authentication error:", custErr);
+          } finally {
+            endSessionHandoff();
           }
         }
 
         setStatus("success");
-        toast.success("New email address verified successfully!");
-        // NO automatic redirect: user stays on page as mandated by specification.
+        toast.success("Email address updated successfully!");
       } catch (err: any) {
         console.error("[VERIFY HANDLER] Verification error:", err);
         const code = err?.code || "";
@@ -497,10 +499,10 @@ export default function VerifyHandlerPage() {
 
             <div className="space-y-2">
               <h2 id="lc_handler_success_heading" className="text-2xl font-bold text-emerald-500 dark:text-emerald-400">
-                New email address verified successfully!
+                Email address updated successfully!
               </h2>
               <p className="text-sm text-muted-foreground">
-                Please return to your LinkCloud tab and click <strong>&apos;Refresh Status&apos;</strong> to complete your email change.
+                Your LinkCloud account email has been updated. You can now use your new email to sign in.
               </p>
             </div>
 
@@ -514,7 +516,7 @@ export default function VerifyHandlerPage() {
                 )}
                 {newEmailDisplay && (
                   <div className="flex items-center justify-between py-0.5">
-                    <span className="text-muted-foreground font-medium">Verified New Email:</span>
+                    <span className="text-muted-foreground font-medium">Updated Primary Email:</span>
                     <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400">
                       {maskEmail(newEmailDisplay)}
                     </span>
@@ -524,19 +526,33 @@ export default function VerifyHandlerPage() {
             )}
 
             <div className="pt-2 space-y-3">
-              <button
-                type="button"
-                id="lc_handler_return_btn"
-                onClick={() => {
-                  setLocation(isWebmaster ? "/webmaster/dashboard" : "/dashboard?tab=profile");
-                }}
-                className="w-full min-h-[48px] py-3.5 px-6 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm transition shadow-lg shadow-emerald-600/20 flex items-center justify-center gap-2 cursor-pointer"
-              >
-                <span>Return to LinkCloud</span>
-                <ArrowRight className="w-4 h-4" />
-              </button>
+              {auth.currentUser ? (
+                <button
+                  type="button"
+                  id="lc_handler_return_btn"
+                  onClick={() => {
+                    setLocation(isWebmaster ? "/webmaster/dashboard" : "/dashboard?tab=profile");
+                  }}
+                  className="w-full min-h-[48px] py-3.5 px-6 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm transition shadow-lg shadow-emerald-600/20 flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <span>Return to Dashboard</span>
+                  <ArrowRight className="w-4 h-4" />
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  id="lc_handler_return_btn"
+                  onClick={() => {
+                    setLocation(`/login?email=${encodeURIComponent(newEmailDisplay || "")}`);
+                  }}
+                  className="w-full min-h-[48px] py-3.5 px-6 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm transition shadow-lg shadow-emerald-600/20 flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <span>Sign In with New Email</span>
+                  <ArrowRight className="w-4 h-4" />
+                </button>
+              )}
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                You can safely close this browser window or return to LinkCloud.
+                You can safely close this browser window or continue to LinkCloud.
               </p>
             </div>
           </div>

@@ -254,6 +254,7 @@ export async function handleDevEmailChangeVerify(
   }
 
   // Update Firebase Auth if Admin SDK is connected
+  let customToken = "";
   const app = getFirebaseAdminApp();
   if (app && stored.userId) {
     try {
@@ -262,21 +263,72 @@ export async function handleDevEmailChangeVerify(
         emailVerified: true,
       });
       console.log(`[Dev Server] Updated Firebase Auth for ${stored.userId} to ${stored.newEmail}`);
+      customToken = await getAuth(app).createCustomToken(stored.userId);
+      console.log(`[Dev Server] Minted customToken for ${stored.userId}`);
     } catch (e: any) {
       console.warn("[Dev Server] updateUser notice:", e.message);
     }
   }
 
-  stored.status = "verified";
+  stored.status = "completed";
 
   sendJson(res, {
     success: true,
     verified: true,
+    completed: true,
     uid: stored.userId,
     oldEmail: stored.oldEmail,
     newEmail: stored.newEmail,
-    message: "New email address verified successfully!",
+    customToken,
+    message: "New email address verified and updated successfully!",
   });
+}
+
+export async function handleDevEmailChangeSessionRefresh(
+  req: IncomingMessage,
+  res: ServerResponse
+) {
+  if (req.method === "OPTIONS") {
+    sendJson(res, {}, 204);
+    return;
+  }
+  if (req.method !== "POST") {
+    sendJson(res, { error: "Method not allowed. Use POST." }, 405);
+    return;
+  }
+
+  const body = await parseBody(req);
+  const uid = (body.uid || "").trim();
+  const reqId = (body.reqId || body.requestId || "").trim();
+
+  if (!uid) {
+    sendJson(res, { error: "Missing required parameter: uid." }, 400);
+    return;
+  }
+
+  const app = getFirebaseAdminApp();
+  if (!app) {
+    sendJson(res, { error: "Firebase Admin is not configured on dev server." }, 500);
+    return;
+  }
+
+  try {
+    const customToken = await getAuth(app).createCustomToken(uid);
+    let newEmail = "";
+    if (reqId && devRequestStore.has(reqId)) {
+      newEmail = devRequestStore.get(reqId)!.newEmail;
+    }
+    sendJson(res, {
+      success: true,
+      uid,
+      newEmail,
+      customToken,
+      message: "Fresh session custom token generated successfully.",
+    });
+  } catch (err: any) {
+    console.error("[Dev Server] createCustomToken error:", err);
+    sendJson(res, { error: err.message || "Failed to create custom token" }, 500);
+  }
 }
 
 export async function handleDevEmailChangeCancel(

@@ -144,7 +144,7 @@ const ProtectedRoute = ({
   webmasterOnly?: boolean;
   allowBoth?: boolean;
 }) => {
-  const { user, profile, isWebmaster, loading, pendingEmail } = useAuth();
+  const { user, profile, isWebmaster, loading, pendingEmail, isSessionHandoff } = useAuth();
   const [, setLocation] = useLocation();
 
   const isEmailVerified = Boolean(
@@ -154,11 +154,12 @@ const ProtectedRoute = ({
     profile?.status === "active" ||
     profile?.pendingEmail ||
     pendingEmail ||
-    isWebmaster
+    isWebmaster ||
+    isSessionHandoff
   );
 
   React.useEffect(() => {
-    if (!loading) {
+    if (!loading && !isSessionHandoff) {
       if (!user && !auth.currentUser) {
         if (webmasterOnly) {
           setLocation('/webmaster/login');
@@ -173,9 +174,9 @@ const ProtectedRoute = ({
         setLocation('/verify-email');
       }
     }
-  }, [user, profile, isWebmaster, loading, webmasterOnly, allowBoth, isEmailVerified, setLocation]);
+  }, [user, profile, isWebmaster, loading, isSessionHandoff, webmasterOnly, allowBoth, isEmailVerified, setLocation]);
 
-  if (loading) {
+  if (loading || isSessionHandoff) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <Loader2 className="w-8 h-8 animate-spin text-primary" />

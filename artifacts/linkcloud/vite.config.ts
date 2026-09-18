@@ -16,6 +16,7 @@ function adminApiPlugin(): Plugin {
         handleDevEmailChangeRequest,
         handleDevEmailChangeResend,
         handleDevEmailChangeVerify,
+        handleDevEmailChangeSessionRefresh,
         handleDevEmailChangeCancel,
       } = await server.ssrLoadModule('/src/server/dev-email-change.ts');
 
@@ -35,6 +36,9 @@ function adminApiPlugin(): Plugin {
         }
         if (url === '/api/email-change/verify') {
           return handleDevEmailChangeVerify(req, res);
+        }
+        if (url === '/api/email-change/session-refresh') {
+          return handleDevEmailChangeSessionRefresh(req, res);
         }
         if (url === '/api/email-change/cancel') {
           return handleDevEmailChangeCancel(req, res);
