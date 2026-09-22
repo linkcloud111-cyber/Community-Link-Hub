@@ -132,11 +132,9 @@ export default function AdminUsers() {
   // Self protection check
   const isSelf = (uid: string) => {
     if (currentUser?.uid === uid) return true;
-    if (currentUser?.email?.toLowerCase() === "linkcloud111@gmail.com") {
-      const targetUser = users.find((u) => u.uid === uid);
-      if (targetUser?.email?.toLowerCase() === "linkcloud111@gmail.com" || targetUser?.role === "webmaster") {
-        return true;
-      }
+    const targetUser = users.find((u) => u.uid === uid);
+    if (targetUser?.role === "webmaster") {
+      return true;
     }
     return false;
   };

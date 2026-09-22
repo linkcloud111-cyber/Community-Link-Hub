@@ -63,7 +63,7 @@ export default function Footer() {
             </h4>
             <ul className="space-y-2.5 text-sm text-muted-foreground">
               <li>
-                <Link href="/" className="hover:text-primary transition-colors">
+                <Link href="/groups" className="hover:text-primary transition-colors">
                   Browse Communities
                 </Link>
               </li>
@@ -143,7 +143,7 @@ export default function Footer() {
               {PLATFORMS.map((p) => (
                 <li key={p.name}>
                   <Link
-                    href={`/?platform=${encodeURIComponent(p.name)}`}
+                    href={`/groups?platform=${encodeURIComponent(p.name)}`}
                     className="flex items-center gap-2 hover:text-primary transition-colors group"
                   >
                     <p.icon className={`w-4 h-4 ${p.color}`} />

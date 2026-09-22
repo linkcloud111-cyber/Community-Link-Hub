@@ -1,10 +1,18 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { createContactMessage } from "@/lib/firestore";
+import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 import { Mail, Phone, User, MessageSquare, Send, Loader2, CheckCircle2 } from "lucide-react";
 import { motion } from "framer-motion";
+import { PageBreadcrumb } from "@/components/page-breadcrumb";
+import { CharacterCounter } from "@/components/character-counter";
+import { usePageTitle } from "@/lib/page-meta";
+import { validateIndianMobile } from "@/lib/utils";
 
 export default function ContactPage() {
+  usePageTitle("Contact Webmaster", "Support & Inquiries");
+  const { user, profile } = useAuth();
+
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
@@ -13,10 +21,35 @@ export default function ContactPage() {
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
 
+  // Prefill user data if logged in
+  useEffect(() => {
+    if (user || profile) {
+      if (profile?.displayName || user?.displayName) {
+        setName((prev) => prev || profile?.displayName || user?.displayName || "");
+      }
+      if (profile?.email || user?.email) {
+        setEmail((prev) => prev || profile?.email || user?.email || "");
+      }
+      if (profile?.mobile) {
+        setPhone((prev) => prev || profile.mobile);
+      }
+    }
+  }, [user, profile]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim() || !email.trim() || !subject.trim() || !message.trim()) {
       toast.error("Please fill in all required fields.");
+      return;
+    }
+
+    if (phone.trim() && !validateIndianMobile(phone.trim())) {
+      toast.error("Please enter a valid 10-digit Indian mobile number (6000000000 - 9999999999).");
+      return;
+    }
+
+    if (message.trim().length < 20) {
+      toast.error("Message must be at least 20 characters long.");
       return;
     }
 
@@ -31,9 +64,6 @@ export default function ContactPage() {
       });
       toast.success("Your message has been sent to the webmaster!");
       setSubmitted(true);
-      setName("");
-      setEmail("");
-      setPhone("");
       setSubject("");
       setMessage("");
     } catch {
@@ -44,7 +74,9 @@ export default function ContactPage() {
   };
 
   return (
-    <div className="max-w-3xl mx-auto space-y-8 pb-20">
+    <div className="max-w-3xl mx-auto space-y-6 pb-20">
+      <PageBreadcrumb items={[{ label: "Contact Webmaster" }]} />
+
       <div className="text-center space-y-3">
         <span className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-primary/10 text-primary text-xs font-semibold uppercase tracking-wider">
           Support & Inquiries
@@ -89,7 +121,7 @@ export default function ContactPage() {
                   required
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  placeholder="John Doe"
+                  placeholder="Your Full Name"
                   className="w-full px-4 py-3 bg-background border border-border rounded-xl text-sm focus:ring-2 focus:ring-primary outline-none transition"
                 />
               </div>
@@ -104,7 +136,7 @@ export default function ContactPage() {
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="john@example.com"
+                  placeholder="name@example.com"
                   className="w-full px-4 py-3 bg-background border border-border rounded-xl text-sm focus:ring-2 focus:ring-primary outline-none transition"
                 />
               </div>
@@ -114,14 +146,14 @@ export default function ContactPage() {
               {/* Mobile Number */}
               <div className="space-y-1.5">
                 <label className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
-                  <Phone className="w-3.5 h-3.5 text-primary" /> Mobile Number *
+                  <Phone className="w-3.5 h-3.5 text-primary" /> Mobile Number (Optional)
                 </label>
                 <input
                   type="tel"
-                  required
                   value={phone}
                   onChange={(e) => setPhone(e.target.value)}
-                  placeholder="+91 98765 43210"
+                  placeholder="e.g. 9876543210"
+                  maxLength={10}
                   className="w-full px-4 py-3 bg-background border border-border rounded-xl text-sm focus:ring-2 focus:ring-primary outline-none transition"
                 />
               </div>
@@ -136,9 +168,11 @@ export default function ContactPage() {
                   required
                   value={subject}
                   onChange={(e) => setSubject(e.target.value)}
+                  maxLength={100}
                   placeholder="e.g. Listing Inquiry, Support, Bug Report"
                   className="w-full px-4 py-3 bg-background border border-border rounded-xl text-sm focus:ring-2 focus:ring-primary outline-none transition"
                 />
+                <CharacterCounter current={subject.length} max={100} />
               </div>
             </div>
 
@@ -152,15 +186,17 @@ export default function ContactPage() {
                 rows={5}
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
-                placeholder="Describe your message or request in detail..."
+                maxLength={1000}
+                placeholder="Describe your message or request in detail (minimum 20 characters)..."
                 className="w-full px-4 py-3 bg-background border border-border rounded-xl text-sm focus:ring-2 focus:ring-primary outline-none transition resize-none"
               />
+              <CharacterCounter current={message.length} min={20} max={1000} />
             </div>
 
             <button
               type="submit"
               disabled={submitting}
-              className="w-full py-3.5 bg-primary text-primary-foreground font-bold rounded-xl text-sm hover:bg-primary/90 transition shadow-lg shadow-primary/20 flex items-center justify-center gap-2"
+              className="w-full py-3.5 bg-primary text-primary-foreground font-bold rounded-xl text-sm hover:bg-primary/90 transition shadow-lg shadow-primary/20 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-70"
             >
               {submitting ? (
                 <><Loader2 className="w-4 h-4 animate-spin" /> Sending Message...</>

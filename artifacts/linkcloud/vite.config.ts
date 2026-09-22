@@ -10,8 +10,12 @@ function adminApiPlugin(): Plugin {
     name: 'admin-api-plugin',
     apply: 'serve',
     async configureServer(server) {
-      const { handleAdminUserStatusRequest, handleAdminUserDeleteRequest } =
-        await server.ssrLoadModule('/src/server/admin-api.ts');
+      const {
+        handleAdminUserStatusRequest,
+        handleAdminUserDeleteRequest,
+        handleAdminStatsRequest,
+        handleAdminMigrationDryRunRequest,
+      } = await server.ssrLoadModule('/src/server/admin-api.ts');
       const {
         handleDevEmailChangeRequest,
         handleDevEmailChangeResend,
@@ -19,6 +23,11 @@ function adminApiPlugin(): Plugin {
         handleDevEmailChangeSessionRefresh,
         handleDevEmailChangeCancel,
       } = await server.ssrLoadModule('/src/server/dev-email-change.ts');
+      const {
+        handleAuthProvisionUser,
+        handleAuthProvisionGoogleUser,
+        handleAuthProvisionPhoneUser,
+      } = await server.ssrLoadModule('/src/server/auth-api.ts');
 
       server.middlewares.use((req, res, next) => {
         const url = req.url?.split('?')[0];
@@ -27,6 +36,21 @@ function adminApiPlugin(): Plugin {
         }
         if (url === '/api/admin/users/delete') {
           return handleAdminUserDeleteRequest(req, res);
+        }
+        if (url === '/api/admin/stats') {
+          return handleAdminStatsRequest(req, res);
+        }
+        if (url === '/api/admin/migration/dry-run') {
+          return handleAdminMigrationDryRunRequest(req, res);
+        }
+        if (url === '/api/auth/provision-user') {
+          return handleAuthProvisionUser(req, res);
+        }
+        if (url === '/api/auth/provision-google-user') {
+          return handleAuthProvisionGoogleUser(req, res);
+        }
+        if (url === '/api/auth/provision-phone-user') {
+          return handleAuthProvisionPhoneUser(req, res);
         }
         if (url === '/api/email-change/request') {
           return handleDevEmailChangeRequest(req, res);

@@ -9,6 +9,7 @@ import {
 } from "@/lib/firestore";
 import type { ContactMessage, Complaint } from "@/lib/types";
 import AdminNav from "@/components/admin-nav";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toast } from "sonner";
 import { Loader2, MessageSquare, Mail, Phone, CheckCircle2, Trash2, AlertCircle } from "lucide-react";
 
@@ -45,15 +46,10 @@ export default function AdminContacts() {
     }
   };
 
-  const handleDeleteMsg = async (id: string) => {
-    if (!confirm("Delete this message?")) return;
-    try {
-      await deleteContactMessage(id);
-      setMessages((prev) => prev.filter((m) => m.id !== id));
-      toast.success("Message deleted");
-    } catch {
-      toast.error("Failed to delete message");
-    }
+  const [deleteConfirm, setDeleteConfirm] = useState<{ id: string; type: "message" | "complaint" } | null>(null);
+
+  const handleDeleteMsg = (id: string) => {
+    setDeleteConfirm({ id, type: "message" });
   };
 
   const handleStatusComp = async (id: string, status: Complaint["status"]) => {
@@ -66,14 +62,26 @@ export default function AdminContacts() {
     }
   };
 
-  const handleDeleteComp = async (id: string) => {
-    if (!confirm("Delete this complaint record?")) return;
+  const handleDeleteComp = (id: string) => {
+    setDeleteConfirm({ id, type: "complaint" });
+  };
+
+  const confirmDeleteAction = async () => {
+    if (!deleteConfirm) return;
+    const { id, type } = deleteConfirm;
     try {
-      await deleteComplaint(id);
-      setComplaints((prev) => prev.filter((c) => c.id !== id));
-      toast.success("Complaint deleted");
+      if (type === "message") {
+        await deleteContactMessage(id);
+        setMessages((prev) => prev.filter((m) => m.id !== id));
+        toast.success("Message deleted");
+      } else {
+        await deleteComplaint(id);
+        setComplaints((prev) => prev.filter((c) => c.id !== id));
+        toast.success("Complaint deleted");
+      }
+      setDeleteConfirm(null);
     } catch {
-      toast.error("Failed to delete complaint");
+      toast.error(`Failed to delete ${type}`);
     }
   };
 
@@ -327,6 +335,17 @@ export default function AdminContacts() {
           ))}
         </div>
       )}
+      {/* Delete Record Confirmation Dialog */}
+      <ConfirmDialog
+        open={!!deleteConfirm}
+        onOpenChange={(open) => !open && setDeleteConfirm(null)}
+        title={deleteConfirm?.type === "message" ? "Delete Contact Message" : "Delete Complaint Record"}
+        description={`Are you sure you want to permanently delete this ${deleteConfirm?.type || "record"}? This action cannot be undone.`}
+        confirmText="Delete"
+        cancelText="Cancel"
+        variant="destructive"
+        onConfirm={confirmDeleteAction}
+      />
     </div>
   );
 }

@@ -39,24 +39,49 @@ service cloud.firestore {
     }
 
     // ─── Webmaster Collection ───
+    // Client write is strictly DENIED. Webmaster records can only be provisioned server-side.
     match /webmaster/{webmasterId} {
-      allow read, write: if isSignedIn();
+      allow read: if isWebmaster();
+      allow write: if false;
+    }
+
+    // ─── Counters Collection ───
+    // Sequential counter for user provisioning. Client write is strictly DENIED.
+    match /counters/{counterId} {
+      allow read: if isWebmaster();
+      allow write: if false;
+    }
+
+    // ─── Legacy Identity Map ───
+    // Mapping legacy Firebase Auth UIDs to canonical LinkCloud UIDs. Server managed.
+    match /legacyIdentityMap/{legacyUid} {
+      allow read: if isSignedIn() && (request.auth.uid == legacyUid || isWebmaster());
+      allow write: if false;
     }
 
     // ─── Users Collection ───
     match /users/{userId} {
       allow get: if isUser(userId) || isWebmaster();
       allow list: if isWebmaster();
-      allow create: if isUser(userId) && (
-        !('role' in incoming()) || incoming().role == 'user' || isWebmaster()
+      allow create: if isWebmaster() || (
+        isUser(userId) &&
+        (!('role' in incoming()) || incoming().role == 'user') &&
+        (!('status' in incoming()) || incoming().status == 'pending_verification' || incoming().status == 'active')
       );
-      allow update: if isWebmaster() || (
+      allow update: if (
+        isWebmaster() && (
+          request.auth.uid != userId ||
+          (!('role' in incoming()) || incoming().role == 'webmaster')
+        )
+      ) || (
         isUser(userId) &&
         (!('uid' in incoming()) || incoming().uid == existing().uid) &&
+        (!('accountUid' in incoming()) || incoming().accountUid == existing().accountUid) &&
         (!('role' in incoming()) || incoming().role == existing().role) &&
+        (!('status' in incoming()) || incoming().status == existing().status) &&
         (!('email' in incoming()) || incoming().email == existing().email || incoming().email == request.auth.token.email)
       );
-      allow delete: if isWebmaster() || isUser(userId);
+      allow delete: if isWebmaster() && request.auth.uid != userId;
 
       // Subcollection: Email Change History
       match /email_history/{historyId} {
@@ -65,18 +90,18 @@ service cloud.firestore {
       }
     }
 
-    // ─── Groups Collection ───
+    // ─── Groups Collection (Public Safe Projection) ───
     match /groups/{groupId} {
-      allow get: if existing().status == 'approved' && existing().hidden != true
-        || (isSignedIn() && existing().submittedBy == request.auth.uid)
-        || isWebmaster();
+      allow get: if (existing().status == 'approved' && existing().hidden != true)
+        || isWebmaster()
+        || (isSignedIn() && (
+            (existing().submittedBy == request.auth.uid) ||
+            (exists(/databases/$(database)/documents/groupOwnership/$(groupId)) && get(/databases/$(database)/documents/groupOwnership/$(groupId)).data.submittedBy == request.auth.uid)
+          ));
 
-      allow list: if true; // Directory queries filtered by status == 'approved' or submittedBy
+      allow list: if true; // Directory queries filtered by status == 'approved' or owner
 
-      allow create: if (
-        (isSignedIn() && incoming().submittedBy == request.auth.uid) ||
-        (!isSignedIn() && incoming().submittedByName is string)
-      )
+      allow create: if isSignedIn()
         && incoming().name is string
         && incoming().name.size() >= 2
         && incoming().joinUrl is string
@@ -84,16 +109,29 @@ service cloud.firestore {
 
       allow update: if isWebmaster() || (
         isSignedIn()
-        && existing().submittedBy == request.auth.uid
+        && (
+          (existing().submittedBy == request.auth.uid) ||
+          (exists(/databases/$(database)/documents/groupOwnership/$(groupId)) && get(/databases/$(database)/documents/groupOwnership/$(groupId)).data.submittedBy == request.auth.uid)
+        )
         && (existing().status == 'pending' || existing().allowResubmit == true)
-        && incoming().submittedBy == request.auth.uid
       );
 
       allow delete: if isWebmaster() || (
         isSignedIn()
-        && existing().submittedBy == request.auth.uid
+        && (
+          (existing().submittedBy == request.auth.uid) ||
+          (exists(/databases/$(database)/documents/groupOwnership/$(groupId)) && get(/databases/$(database)/documents/groupOwnership/$(groupId)).data.submittedBy == request.auth.uid)
+        )
         && existing().status == 'pending'
       );
+    }
+
+    // ─── Private Group Ownership Metadata ───
+    // Protects submitter PII from public extraction
+    match /groupOwnership/{groupId} {
+      allow read: if isWebmaster() || (isSignedIn() && resource.data.submittedBy == request.auth.uid);
+      allow create: if isWebmaster() || (isSignedIn() && incoming().submittedBy == request.auth.uid);
+      allow update, delete: if isWebmaster() || (isSignedIn() && resource.data.submittedBy == request.auth.uid);
     }
 
     // ─── Favorites Collection ───
@@ -191,38 +229,52 @@ service cloud.firestore {
     }
 
     // ─── Account UID Registry ───
+    // Client write is strictly DENIED. Managed server-side only. Read restricted to Webmaster.
     match /accountUidRegistry/{accountUid} {
-      allow read: if true;
-      allow write: if isSignedIn() || isWebmaster();
+      allow read: if isWebmaster();
+      allow write: if false;
     }
 
     // ─── Email Index ───
     match /emailIndex/{email} {
-      allow read: if true;
-      allow create, update: if isWebmaster() || (isSignedIn() && incoming().uid == request.auth.uid);
+      allow get: if true;
+      allow list: if isWebmaster();
+      allow create: if isWebmaster() || (
+        isSignedIn() &&
+        incoming().uid == request.auth.uid &&
+        !exists(/databases/$(database)/documents/emailIndex/$(email))
+      );
+      allow update: if isWebmaster();
       allow delete: if isWebmaster() || (isSignedIn() && existing().uid == request.auth.uid);
     }
 
     // ─── Mobile Index ───
     match /mobileIndex/{phone} {
-      allow read: if true;
-      allow write: if isSignedIn() || isWebmaster();
+      allow get: if true;
+      allow list: if isWebmaster();
+      allow create: if isWebmaster() || (
+        isSignedIn() &&
+        incoming().uid == request.auth.uid &&
+        !exists(/databases/$(database)/documents/mobileIndex/$(phone))
+      );
+      allow update: if isWebmaster();
+      allow delete: if isWebmaster() || (isSignedIn() && existing().uid == request.auth.uid);
     }
 
     // ─── Deleted Accounts Tombstone ───
     match /deletedAccounts/{docId} {
-      allow read: if true;
-      allow write: if isSignedIn() || isWebmaster();
+      allow read: if isWebmaster();
+      allow write: if isWebmaster();
     }
 
     // ─── Audit Logs ───
     match /audit_logs/{logId} {
-      allow create: if isSignedIn();
       allow read, update, delete: if isWebmaster();
+      allow create: if isWebmaster() || (isSignedIn() && incoming().actorUid == request.auth.uid);
     }
     match /auditLogs/{logId} {
-      allow create: if isSignedIn();
       allow read, update, delete: if isWebmaster();
+      allow create: if isWebmaster() || (isSignedIn() && incoming().actorUid == request.auth.uid);
     }
 
     // ─── Site Settings ───

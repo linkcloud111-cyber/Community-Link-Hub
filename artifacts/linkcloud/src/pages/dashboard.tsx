@@ -36,6 +36,7 @@ import type { Group, Notification, ContactMessage, Complaint, UserProfile } from
 import { validateGmailAddress, validateIndianMobile } from "@/lib/utils";
 import { toast } from "sonner";
 import { Loader2, Mail, Phone, Lock, Eye, EyeOff, ShieldCheck, X, RefreshCw } from "lucide-react";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 
 // Dashboard modular components
 import { DashboardSidebar } from "@/components/dashboard/DashboardSidebar";
@@ -79,6 +80,8 @@ export default function Dashboard() {
   const [editProfileOpen, setEditProfileOpen] = useState(false);
   const [emailModalOpen, setEmailModalOpen] = useState(false);
   const [phoneModalOpen, setPhoneModalOpen] = useState(false);
+  const [deleteConfirmState, setDeleteConfirmState] = useState<{ id: string; name: string } | null>(null);
+  const [isDeletingGroup, setIsDeletingGroup] = useState(false);
 
   // Firestore Data Collections
   const [groups, setGroups] = useState<Group[]>([]);
@@ -145,14 +148,22 @@ export default function Dashboard() {
   };
 
   // Group Delete
-  const handleDeleteGroup = async (id: string, name: string) => {
-    if (!confirm(`Are you sure you want to delete "${name}"?`)) return;
+  const handleDeleteGroup = (id: string, name: string) => {
+    setDeleteConfirmState({ id, name });
+  };
+
+  const handleConfirmDeleteGroup = async () => {
+    if (!deleteConfirmState) return;
+    setIsDeletingGroup(true);
     try {
-      await deleteGroup(id);
-      setGroups((prev) => prev.filter((g) => g.id !== id));
-      toast.success("Group deleted successfully.");
+      await deleteGroup(deleteConfirmState.id);
+      setGroups((prev) => prev.filter((g) => g.id !== deleteConfirmState.id));
+      toast.success("Community deleted successfully.");
+      setDeleteConfirmState(null);
     } catch {
-      toast.error("Failed to delete group.");
+      toast.error("Failed to delete community.");
+    } finally {
+      setIsDeletingGroup(false);
     }
   };
 
@@ -552,6 +563,21 @@ export default function Dashboard() {
         profile={profile}
         onSuccess={refreshProfile}
       />
+      {/* DELETE GROUP CONFIRM DIALOG */}
+      <ConfirmDialog
+        open={Boolean(deleteConfirmState)}
+        onOpenChange={(open) => {
+          if (!open && !isDeletingGroup) setDeleteConfirmState(null);
+        }}
+        title="Delete Community Listing"
+        description={`Are you sure you want to permanently remove "${deleteConfirmState?.name}"? This action cannot be undone and will remove the community from directory indexes.`}
+        confirmText="Yes, Delete Community"
+        cancelText="Cancel"
+        variant="destructive"
+        isLoading={isDeletingGroup}
+        onConfirm={handleConfirmDeleteGroup}
+      />
+
       {/* MOBILE BOTTOM NAVIGATION BAR */}
       <MobileBottomNav
         activeTab={activeTab}

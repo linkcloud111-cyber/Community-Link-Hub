@@ -15,6 +15,7 @@ import {
 } from "@/lib/firestore";
 import type { SiteSettings, FAQItem, AuditLog, SearchAnalytics, HelpArticle } from "@/lib/types";
 import AdminNav from "@/components/admin-nav";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 import {
@@ -238,15 +239,10 @@ export default function AdminSettings() {
     }
   };
 
-  const handleDeleteFaq = async (id: string) => {
-    if (!confirm("Are you sure you want to delete this FAQ?")) return;
-    try {
-      await deleteFAQ(id);
-      toast.success("FAQ deleted");
-      setFaqs(faqs.filter((f) => f.id !== id));
-    } catch {
-      toast.error("Failed to delete FAQ");
-    }
+  const [deleteConfirm, setDeleteConfirm] = useState<{ id: string; type: "faq" | "article" } | null>(null);
+
+  const handleDeleteFaq = (id: string) => {
+    setDeleteConfirm({ id, type: "faq" });
   };
 
   // Help Article Handlers
@@ -264,14 +260,26 @@ export default function AdminSettings() {
     }
   };
 
-  const handleDeleteArticle = async (id: string) => {
-    if (!confirm("Delete this help article?")) return;
+  const handleDeleteArticle = (id: string) => {
+    setDeleteConfirm({ id, type: "article" });
+  };
+
+  const confirmDeleteAction = async () => {
+    if (!deleteConfirm) return;
+    const { id, type } = deleteConfirm;
     try {
-      await deleteHelpArticle(id);
-      toast.success("Help article deleted");
-      setHelpArticles(helpArticles.filter((a) => a.id !== id));
+      if (type === "faq") {
+        await deleteFAQ(id);
+        toast.success("FAQ deleted");
+        setFaqs(faqs.filter((f) => f.id !== id));
+      } else {
+        await deleteHelpArticle(id);
+        toast.success("Help article deleted");
+        setHelpArticles(helpArticles.filter((a) => a.id !== id));
+      }
+      setDeleteConfirm(null);
     } catch {
-      toast.error("Failed to delete article");
+      toast.error(`Failed to delete ${type}`);
     }
   };
 
@@ -1602,6 +1610,18 @@ export default function AdminSettings() {
           </div>
         </div>
       )}
+
+      {/* Delete Record Confirmation Dialog */}
+      <ConfirmDialog
+        open={!!deleteConfirm}
+        onOpenChange={(open) => !open && setDeleteConfirm(null)}
+        title={deleteConfirm?.type === "faq" ? "Delete FAQ" : "Delete Help Article"}
+        description={`Are you sure you want to permanently delete this ${deleteConfirm?.type === "faq" ? "FAQ" : "help article"}? This action cannot be undone.`}
+        confirmText="Delete"
+        cancelText="Cancel"
+        variant="destructive"
+        onConfirm={confirmDeleteAction}
+      />
     </div>
   );
 }

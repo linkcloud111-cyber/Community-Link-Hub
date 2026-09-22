@@ -61,13 +61,15 @@ export default function AdminNav({ stats: initialStats }: AdminNavProps) {
         const Icon = item.icon;
         const isActive =
           location === item.href ||
+          (item.href === "/webmaster" && (location === "/webmaster/dashboard" || location === "/webmaster")) ||
           (item.href !== "/webmaster" && location.startsWith(item.href));
 
         return (
           <Link
             key={item.href}
             href={item.href}
-            className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
+            aria-current={isActive ? "page" : undefined}
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap min-h-[44px] ${
               isActive
                 ? "bg-primary text-primary-foreground shadow-sm shadow-primary/20"
                 : "text-muted-foreground hover:text-foreground hover:bg-muted"

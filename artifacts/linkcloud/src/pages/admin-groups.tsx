@@ -23,6 +23,7 @@ import type { Group, GroupStatus, UserProfile } from "@/lib/types";
 import AdminNav from "@/components/admin-nav";
 import { PlatformIcon } from "@/components/platform-icon";
 import { CategoryIcon } from "@/components/category-icon";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toast } from "sonner";
 import {
   Loader2,
@@ -75,6 +76,9 @@ export default function AdminGroups() {
   const [viewGroup, setViewGroup] = useState<Group | null>(null);
   const [changesGroup, setChangesGroup] = useState<Group | null>(null);
   const [changesMsg, setChangesMsg] = useState("");
+
+  // Delete confirmation state
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
 
   // Submitter inspector modal state
   const [inspectSubmitterUid, setInspectSubmitterUid] = useState<string | null>(null);
@@ -231,14 +235,20 @@ export default function AdminGroups() {
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (!confirm("Are you sure you want to PERMANENTLY delete this group?")) return;
+  const handleDelete = (id: string) => {
+    setDeleteConfirmId(id);
+  };
+
+  const confirmDeleteAction = async () => {
+    if (!deleteConfirmId) return;
+    const id = deleteConfirmId;
     setActionLoading(id);
     try {
       await deleteGroup(id);
       setGroups((prev) => prev.filter((g) => g.id !== id));
       setSelectedIds((prev) => prev.filter((i) => i !== id));
       toast.success("Group deleted permanently");
+      setDeleteConfirmId(null);
     } catch {
       toast.error("Failed to delete group");
     } finally {
@@ -1217,6 +1227,19 @@ export default function AdminGroups() {
           </div>
         </div>
       )}
+
+      {/* Delete Group Permanent Confirmation Dialog */}
+      <ConfirmDialog
+        open={!!deleteConfirmId}
+        onOpenChange={(open) => !open && setDeleteConfirmId(null)}
+        title="Delete Group Permanently"
+        description="Are you sure you want to permanently delete this group? All associated listings and details will be removed immediately. This action cannot be undone."
+        confirmText="Delete Group"
+        cancelText="Cancel"
+        variant="destructive"
+        onConfirm={confirmDeleteAction}
+        loading={actionLoading === deleteConfirmId}
+      />
     </div>
   );
 }

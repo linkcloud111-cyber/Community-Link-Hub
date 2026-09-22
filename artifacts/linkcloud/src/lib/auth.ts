@@ -1,6 +1,5 @@
 import {
   signInWithEmailAndPassword,
-  createUserWithEmailAndPassword,
   fetchSignInMethodsForEmail,
   signInWithPopup,
   GoogleAuthProvider,
@@ -405,24 +404,24 @@ export async function signInUserWithGoogle(): Promise<User> {
         await firebaseSignOut(auth);
         throw new Error("Account not found. Your previous LinkCloud account has been permanently deleted. Please create a new account.");
       }
+      return u;
     } else {
-      const accountUid = await generateUniqueAccountUid(u.uid);
-      await upsertUserProfile(u.uid, {
-        uid: u.uid,
-        accountUid,
-        displayName: u.displayName || "User",
-        email: u.email || "",
-        phone: u.phoneNumber || "",
-        photoURL: u.photoURL || "",
-        emailVerified: u.emailVerified,
-        phoneVerified: Boolean(u.phoneNumber),
-        role: "user",
-        status: "active",
-        groupCount: 0,
+      // Provision canonical sequential user via server API
+      const idToken = await u.getIdToken();
+      const response = await fetch("/api/auth/provision-google-user", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ idToken }),
       });
-    }
+      const resData = await response.json().catch(() => ({}));
+      if (response.ok && resData?.customToken) {
+        const cred = await signInWithCustomToken(auth, resData.customToken);
+        return cred.user;
+      }
 
-    return u;
+      await firebaseSignOut(auth);
+      throw new Error(resData?.error || "Failed to provision canonical Google user session. Please try again.");
+    }
   } catch (err: any) {
     if (err.message && (err.message.startsWith("This is a Webmaster account") || err.message.startsWith("Your LinkCloud account") || err.message.startsWith("Account not found"))) {
       throw err;
@@ -439,74 +438,32 @@ export async function checkWebmasterCollection(uid: string): Promise<boolean> {
       return false;
     }
 
-    // Read Firestore document: /webmaster/{auth.currentUser.uid}
+    // Read Firestore document: /webmaster/{uid}
     const webmasterDocRef = doc(db, "webmaster", uid);
     const webmasterDocSnap = await getDoc(webmasterDocRef);
-    const exists = webmasterDocSnap.exists();
 
-    if (!exists) {
-      const currentUserEmail = auth.currentUser?.email?.toLowerCase();
-      let userProfile = null;
-      try {
-        userProfile = await getUserProfile(uid);
-      } catch (pErr) {
-        // ignore profile error
+    if (webmasterDocSnap.exists()) {
+      const data = webmasterDocSnap.data();
+      const isActive = data.active === true || data.active === "true" || data.status === "active";
+      const isRoleWebmaster = data.role === "webmaster";
+      if (isActive && isRoleWebmaster) {
+        return true;
       }
-
-      const isOwnerEmail = currentUserEmail === "linkcloud111@gmail.com" || currentUserEmail === "webmaster@linkcloud.in";
-      const isProfileWebmaster = userProfile?.role === "webmaster";
-
-      if (isOwnerEmail || isProfileWebmaster) {
-        try {
-          await setDoc(webmasterDocRef, {
-            active: true,
-            role: "webmaster",
-            email: currentUserEmail || userProfile?.email || "",
-            createdAt: serverTimestamp(),
-          });
-          return true;
-        } catch (setErr) {
-          console.warn("Failed to auto-provision webmaster document:", setErr);
-        }
-      }
-
-      // Check if document exists under another ID for same email
-      if (currentUserEmail) {
-        try {
-          const q = query(collection(db, "webmaster"), where("email", "==", currentUserEmail));
-          const querySnap = await getDocs(q);
-          if (!querySnap.empty) {
-            const foundDoc = querySnap.docs[0];
-            const data = foundDoc.data();
-            if (data.active !== false && (data.role === "webmaster" || !data.role)) {
-              await setDoc(webmasterDocRef, {
-                active: true,
-                role: "webmaster",
-                email: currentUserEmail,
-                createdAt: serverTimestamp(),
-              });
-              return true;
-            }
-          }
-        } catch (searchErr) {
-          console.warn("Secondary webmaster query error:", searchErr);
-        }
-      }
-
-      return false;
     }
 
-    const data = webmasterDocSnap.data();
-    const isActive = data.active === true || data.active === "true" || data.active === undefined || data.status === "active";
-    const isRoleWebmaster = data.role === "webmaster" || !data.role;
-
-    if (isActive && isRoleWebmaster) {
-      return true;
-    } else {
-      return false;
+    // Secondary check: verify user profile record
+    try {
+      const userProfile = await getUserProfile(uid);
+      if (userProfile && userProfile.role === "webmaster" && userProfile.status === "active") {
+        return true;
+      }
+    } catch {
+      // ignore
     }
+
+    return false;
   } catch (err: any) {
-    console.warn("Error reading webmaster/{uid} document in Firestore:", err?.code || "N/A", err?.message || err);
+    console.warn("Error reading webmaster status in Firestore:", err?.code || "N/A", err?.message || err);
     return false;
   }
 }
@@ -550,8 +507,8 @@ export async function loginWebmaster(email: string, password: string): Promise<U
     await upsertUserProfile(uid, {
       uid,
       email: u.email?.toLowerCase() || cleanEmail,
-      role: "webmaster",
       status: "active",
+      updatedAt: new Date().toISOString(),
     });
 
     return u;
@@ -595,8 +552,8 @@ export async function signInWebmasterGoogle(): Promise<User> {
     await upsertUserProfile(uid, {
       uid,
       email: u.email?.toLowerCase() || "",
-      role: "webmaster",
       status: "active",
+      updatedAt: new Date().toISOString(),
     });
 
     return u;
@@ -745,24 +702,24 @@ export async function verifyOTP(
         await firebaseSignOut(auth);
         throw new Error("Account not found. Your previous LinkCloud account has been permanently deleted. Please create a new account.");
       }
+      return u;
     } else {
-      const accountUid = await generateUniqueAccountUid(u.uid);
-      await upsertUserProfile(u.uid, {
-        uid: u.uid,
-        accountUid,
-        displayName: u.displayName || `User ${u.phoneNumber?.slice(-4) || ""}`,
-        email: u.email || "",
-        phone: u.phoneNumber || "",
-        photoURL: "",
-        emailVerified: false,
-        phoneVerified: true,
-        role: "user",
-        status: "active",
-        groupCount: 0,
+      // Provision canonical sequential user via server API
+      const idToken = await u.getIdToken();
+      const response = await fetch("/api/auth/provision-phone-user", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ idToken }),
       });
-    }
+      const resData = await response.json().catch(() => ({}));
+      if (response.ok && resData?.customToken) {
+        const cred = await signInWithCustomToken(auth, resData.customToken);
+        return cred.user;
+      }
 
-    return u;
+      await firebaseSignOut(auth);
+      throw new Error(resData?.error || "Failed to provision canonical Phone user session. Please try again.");
+    }
   } catch (err: any) {
     if (
       err.message &&
@@ -837,35 +794,33 @@ export async function registerWithEmail(data: {
     // Ignore invalid-email or other fetch errors if any
   }
 
-  // All validations passed! Create user in Firebase Auth.
+  // All validations passed! Provision canonical sequential user via server API
   try {
-    const result = await createUserWithEmailAndPassword(auth, gmailCheck.cleanEmail, password);
-    const u = result.user;
+    const response = await fetch("/api/auth/provision-user", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        fullName: fullName.trim(),
+        dob,
+        email: gmailCheck.cleanEmail,
+        phone: phoneCheck.formatted,
+        password,
+      }),
+    });
 
-    await updateProfile(u, { displayName: fullName.trim() });
+    const resData = await response.json().catch(() => ({}));
+    if (!response.ok || !resData?.customToken) {
+      throw new Error(resData?.error || "Registration failed on server. Please try again.");
+    }
+
+    const cred = await signInWithCustomToken(auth, resData.customToken);
+    const u = cred.user;
 
     try {
       await safeSendEmailVerification(u, `/verify-handler?mode=verifyEmail&uid=${u.uid}`);
     } catch (err) {
       console.warn("Could not send verification email:", err);
     }
-
-    const accountUid = await generateUniqueAccountUid(u.uid);
-
-    await upsertUserProfile(u.uid, {
-      uid: u.uid,
-      accountUid,
-      displayName: fullName.trim(),
-      dob,
-      email: gmailCheck.cleanEmail,
-      phone: phoneCheck.formatted,
-      photoURL: "",
-      emailVerified: false,
-      phoneVerified: false,
-      role: "user",
-      status: "pending_verification",
-      groupCount: 0,
-    });
 
     return u;
   } catch (err: any) {
@@ -2022,15 +1977,11 @@ export const handleFinalVerificationCheck = async (navigate?: (path: string) => 
         navigate("/dashboard?tab=profile");
       }
     } else {
-      if (typeof window !== "undefined" && typeof window.alert === "function") {
-        alert("Email is still not verified. Please check your inbox and click the verification link first.");
-      }
+      toast.info("Email is still not verified. Please check your inbox and click the verification link first.");
     }
   } catch (error) {
     console.error("Verification check failed:", error);
-    if (typeof window !== "undefined" && typeof window.alert === "function") {
-      alert("An error occurred while checking verification status. Please try again.");
-    }
+    toast.error("An error occurred while checking verification status. Please try again.");
   }
 };
 

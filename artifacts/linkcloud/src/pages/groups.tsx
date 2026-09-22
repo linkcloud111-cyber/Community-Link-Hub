@@ -10,6 +10,8 @@ import type { Group, FilterSettings } from "@/lib/types";
 import GroupCard from "@/components/group-card";
 import SkeletonCard from "@/components/skeleton-card";
 import { PlatformIcon } from "@/components/platform-icon";
+import { PageBreadcrumb } from "@/components/page-breadcrumb";
+import { EmptyState } from "@/components/empty-state";
 import {
   Search,
   X,
@@ -216,6 +218,60 @@ export default function GroupsPage() {
     filterSettings,
   ]);
 
+  // Synchronize URL query parameters with filter state
+  useEffect(() => {
+    const params = new URLSearchParams();
+    if (search.trim()) params.set("q", search.trim());
+    if (platform && platform !== "All") params.set("platform", platform);
+    if (categoryId) params.set("category", categoryId);
+    if (contentType && contentType !== "All") params.set("type", contentType);
+    if (language && language !== "All") params.set("lang", language);
+    if (state) params.set("state", state);
+    if (district) params.set("district", district);
+    if (city) params.set("city", city);
+    if (linkStatus && linkStatus !== "all") params.set("status", linkStatus);
+    if (viewTab && viewTab !== "all") params.set("tab", viewTab);
+    if (sortBy && sortBy !== "latest") params.set("sort", sortBy);
+
+    const newQuery = params.toString();
+    const targetUrl = newQuery ? `/groups?${newQuery}` : "/groups";
+    if (window.location.pathname + window.location.search !== targetUrl) {
+      window.history.replaceState(null, "", targetUrl);
+    }
+  }, [
+    search,
+    platform,
+    categoryId,
+    contentType,
+    language,
+    state,
+    district,
+    city,
+    linkStatus,
+    viewTab,
+    sortBy,
+  ]);
+
+  // Handle browser Back / Forward navigation popstate
+  useEffect(() => {
+    const handlePopState = () => {
+      const p = new URLSearchParams(window.location.search);
+      setSearch(p.get("q") || "");
+      setPlatform(p.get("platform") || "All");
+      setCategoryId(p.get("category") || "");
+      setContentType(p.get("type") || "All");
+      setLanguage(p.get("lang") || "All");
+      setState(p.get("state") || "");
+      setDistrict(p.get("district") || "");
+      setCity(p.get("city") || "");
+      setLinkStatus((p.get("status") as any) || "all");
+      setViewTab((p.get("tab") as any) || "all");
+      setSortBy((p.get("sort") as any) || "latest");
+    };
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, []);
+
   // Realtime Search Suggestions
   const searchSuggestions = useMemo(() => {
     if (!search.trim() || search.length < 2) return [];
@@ -265,7 +321,9 @@ export default function GroupsPage() {
   const hasMore = visibleCount < allApprovedGroups.length;
 
   return (
-    <div className="space-y-8 pb-20">
+    <div className="space-y-6 pb-20">
+      <PageBreadcrumb items={[{ label: "Public Directory" }]} className="-mt-1" />
+
       {/* Page Heading & Quick View Tabs */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div className="space-y-2">
@@ -636,21 +694,14 @@ export default function GroupsPage() {
         </div>
       ) : allApprovedGroups.length === 0 ? (
         /* Empty State */
-        <div className="bg-card border border-border/80 rounded-3xl p-12 text-center space-y-4 max-w-md mx-auto shadow-sm">
-          <div className="w-16 h-16 bg-muted rounded-2xl flex items-center justify-center mx-auto text-muted-foreground">
-            <Search className="w-8 h-8" />
-          </div>
-          <h3 className="text-xl font-bold">No groups found.</h3>
-          <p className="text-sm text-muted-foreground">
-            No communities matched your filters or search terms. Try adjusting or clearing your filters.
-          </p>
-          <button
-            onClick={clearFilters}
-            className="px-6 py-2.5 bg-primary text-primary-foreground text-sm font-bold rounded-xl hover:bg-primary/90 transition-colors inline-flex items-center gap-2"
-          >
-            <RotateCcw className="w-4 h-4" /> Reset Filters
-          </button>
-        </div>
+        <EmptyState
+          icon={<Search className="w-8 h-8" />}
+          title="No communities found"
+          description="No communities matched your active search terms or filters. Try clearing your filters or exploring another category."
+          actionLabel="Reset All Filters"
+          onAction={clearFilters}
+          className="max-w-lg mx-auto"
+        />
       ) : (
         <div className="space-y-8">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">

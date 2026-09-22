@@ -79,6 +79,7 @@ export interface LanguageItem {
 
 export type GroupStatus = "pending" | "approved" | "rejected";
 
+export type PersistedUserRole = "user" | "webmaster";
 export type UserRole = "visitor" | "user" | "webmaster";
 
 export type AccountStatus = "active" | "suspended" | "banned" | "deleted" | "pending_verification";
@@ -112,6 +113,7 @@ export interface Group {
   joinUrl: string;
   logoUrl: string;
   submittedBy: string;
+  submitterUid?: string;
   submittedByName: string;
   submittedByEmail: string;
   status: GroupStatus;
@@ -154,8 +156,8 @@ export interface UserProfile {
   emailVerified: boolean;
   phoneVerified: boolean;
 
-  // Role
-  role: UserRole;
+  // Persisted authorization roles are ONLY 'user' | 'webmaster'
+  role: PersistedUserRole;
 
   // Account Status
   status: AccountStatus;

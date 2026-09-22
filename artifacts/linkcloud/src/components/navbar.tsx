@@ -77,34 +77,50 @@ export default function Navbar() {
     location === "/notifications";
 
   return (
-    <nav className={`sticky top-0 z-50 w-full border-b border-white/5 bg-background/70 backdrop-blur-xl supports-[backdrop-filter]:bg-background/60 ${isDashboardRoute ? "hidden lg:block" : ""}`}>
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex justify-between items-center h-16">
-          {/* Logo */}
-          <div className="flex items-center gap-8">
-            <Link href="/" className="flex items-center gap-2 group flex-shrink-0">
-              <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center text-primary-foreground shadow-lg shadow-primary/30 group-hover:scale-105 transition-transform">
-                <Cloud className="w-4 h-4" />
-              </div>
-              <span className="font-bold text-lg tracking-tight">LinkCloud</span>
-            </Link>
+    <>
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-[100] focus:px-4 focus:py-2 focus:bg-primary focus:text-primary-foreground focus:rounded-xl focus:shadow-2xl focus:outline-none focus:ring-2 focus:ring-ring font-semibold text-xs transition"
+      >
+        Skip to main content
+      </a>
+      <nav
+        aria-label="Main Navigation"
+        className={`sticky top-0 z-50 w-full border-b border-white/5 bg-background/70 backdrop-blur-xl supports-[backdrop-filter]:bg-background/60 ${isDashboardRoute ? "hidden lg:block" : ""}`}
+      >
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex justify-between items-center h-16">
+            {/* Logo */}
+            <div className="flex items-center gap-8">
+              <Link href="/" className="flex items-center gap-2 group flex-shrink-0">
+                <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center text-primary-foreground shadow-lg shadow-primary/30 group-hover:scale-105 transition-transform">
+                  <Cloud className="w-4 h-4" />
+                </div>
+                <span className="font-bold text-lg tracking-tight">LinkCloud</span>
+              </Link>
 
-            <div className="hidden md:flex items-center gap-1">
-              {navLinks.map((link) => (
-                <Link
-                  key={link.href}
-                  href={link.href}
-                  className={`px-3 py-2 text-sm font-medium rounded-lg transition-colors ${
-                    location === link.href
-                      ? "text-primary bg-primary/10"
-                      : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
-                  }`}
-                >
-                  {link.label}
-                </Link>
-              ))}
+              <div className="hidden md:flex items-center gap-1">
+                {navLinks.map((link) => {
+                  const isActive =
+                    location === link.href ||
+                    (link.href !== "/" && location.startsWith(link.href));
+                  return (
+                    <Link
+                      key={link.href}
+                      href={link.href}
+                      aria-current={isActive ? "page" : undefined}
+                      className={`px-3 py-2 text-sm font-medium rounded-lg transition-colors ${
+                        isActive
+                          ? "text-primary bg-primary/10"
+                          : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
+                      }`}
+                    >
+                      {link.label}
+                    </Link>
+                  );
+                })}
+              </div>
             </div>
-          </div>
 
           {/* Right side */}
           <div className="hidden md:flex items-center gap-3">
@@ -448,5 +464,6 @@ export default function Navbar() {
         </div>
       )}
     </nav>
-  );
+  </>
+);
 }

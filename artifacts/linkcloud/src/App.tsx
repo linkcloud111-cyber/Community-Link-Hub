@@ -201,7 +201,7 @@ function Router() {
       </div>
 
       <Navbar />
-      <main className="flex-1 w-full max-w-7xl mx-auto px-2 sm:px-6 lg:px-8 py-3 sm:py-8 z-10 min-w-0">
+      <main id="main-content" tabIndex={-1} className="flex-1 w-full max-w-7xl mx-auto px-2 sm:px-6 lg:px-8 py-3 sm:py-8 z-10 min-w-0 outline-none">
         <RouteErrorBoundary>
           <Suspense
             fallback={

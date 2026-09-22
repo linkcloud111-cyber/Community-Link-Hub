@@ -10,6 +10,7 @@ import {
 } from "@/lib/firestore";
 import type { Report, Group } from "@/lib/types";
 import AdminNav from "@/components/admin-nav";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toast } from "sonner";
 import {
   Loader2,
@@ -62,14 +63,22 @@ export default function AdminReports() {
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (!confirm("Delete this report?")) return;
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+
+  const handleDelete = (id: string) => {
+    setDeleteConfirmId(id);
+  };
+
+  const confirmDeleteReport = async () => {
+    if (!deleteConfirmId) return;
+    const id = deleteConfirmId;
     try {
       await deleteReport(id);
       setReports((prev) => prev.filter((r) => r.id !== id));
       toast.success("Report deleted");
+      setDeleteConfirmId(null);
     } catch {
-      toast.error("Failed to delete");
+      toast.error("Failed to delete report");
     }
   };
 
@@ -365,6 +374,17 @@ export default function AdminReports() {
           </div>
         </div>
       )}
+      {/* Delete Report Confirmation Dialog */}
+      <ConfirmDialog
+        open={!!deleteConfirmId}
+        onOpenChange={(open) => !open && setDeleteConfirmId(null)}
+        title="Delete Report"
+        description="Are you sure you want to delete this report record? This action cannot be undone."
+        confirmText="Delete Report"
+        cancelText="Cancel"
+        variant="destructive"
+        onConfirm={confirmDeleteReport}
+      />
     </div>
   );
 }

@@ -40,9 +40,11 @@ import {
   ShieldAlert,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import { usePageTitle } from "@/lib/page-meta";
 
 export default function Home() {
   const { isWebmaster } = useAuth();
+  usePageTitle("Discover & Join Verified Communities", "India's Public Community Directory");
   const [, setLocation] = useLocation();
   const {
     activeCategories: categories,
@@ -143,7 +145,7 @@ export default function Home() {
           </p>
         </div>
         <div className="pt-4 flex items-center gap-2 text-xs font-mono text-muted-foreground bg-muted/30 px-4 py-2 rounded-xl border border-border">
-          <ShieldAlert className="w-4 h-4 text-amber-500" /> Admin Bypass Enabled in Header
+          <ShieldAlert className="w-4 h-4 text-amber-500" /> Webmaster Bypass Enabled in Header
         </div>
       </div>
     );

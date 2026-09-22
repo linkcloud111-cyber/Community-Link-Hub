@@ -17,12 +17,15 @@ import {
   FileText,
 } from "lucide-react";
 import { PlatformIcon } from "@/components/platform-icon";
+import { PageBreadcrumb } from "@/components/page-breadcrumb";
+import { CharacterCounter } from "@/components/character-counter";
+import { usePageTitle } from "@/lib/page-meta";
 
 const AGE_OPTIONS = ["All Ages", "13+", "16+", "18+", "21+"];
 
 export default function DashboardEdit() {
   const { id } = useParams();
-  const { user, isWebmaster } = useAuth();
+  const { user, profile, isWebmaster } = useAuth();
   const [, setLocation] = useLocation();
 
   const {
@@ -37,6 +40,8 @@ export default function DashboardEdit() {
   const [group, setGroup] = useState<Group | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+
+  usePageTitle(group ? `Edit ${group.name}` : "Edit Community", "Member Dashboard");
 
   const [name, setName] = useState("");
   const [platform, setPlatform] = useState("");
@@ -115,8 +120,10 @@ export default function DashboardEdit() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!group || !user) return;
-    if (group.submittedBy !== user.uid) {
-      toast.error("You can only edit your own submissions.");
+    const isOwner = group.submittedBy === user.uid || (group as any).submitterUid === user.uid;
+    const hasEditPermission = isOwner || isWebmaster || profile?.role === "webmaster";
+    if (!hasEditPermission) {
+      toast.error("You do not have permission to edit this community.");
       return;
     }
     if (!name.trim()) { toast.error("Name is required."); return; }
@@ -182,7 +189,12 @@ export default function DashboardEdit() {
     );
   }
 
-  if (!group || (group.submittedBy !== user?.uid && !isWebmaster)) {
+  const isOwner = Boolean(
+    user && (group?.submittedBy === user.uid || (group as any)?.submitterUid === user.uid)
+  );
+  const canEdit = Boolean(isOwner || isWebmaster || profile?.role === "webmaster");
+
+  if (!group || !canEdit) {
     return (
       <div className="text-center py-20 space-y-4">
         <p className="text-lg text-muted-foreground">You do not have permission to edit this community.</p>
@@ -198,14 +210,15 @@ export default function DashboardEdit() {
   const labelClass = "block text-xs font-bold uppercase tracking-wider text-muted-foreground mb-1.5";
 
   return (
-    <div className="max-w-4xl mx-auto space-y-8 pb-20">
+    <div className="max-w-4xl mx-auto space-y-6 pb-20">
+      <PageBreadcrumb
+        items={[
+          { label: "Dashboard", href: isWebmaster ? "/webmaster/dashboard" : "/dashboard" },
+          { label: "My Communities", href: isWebmaster ? "/webmaster/groups" : "/dashboard?tab=groups" },
+          { label: `Edit: ${group.name}` },
+        ]}
+      />
       <div>
-        <Link
-          href={isWebmaster ? "/webmaster/dashboard" : "/dashboard"}
-          className="inline-flex items-center gap-1.5 text-xs font-bold text-muted-foreground hover:text-foreground mb-2 transition"
-        >
-          <ArrowLeft className="w-4 h-4" /> Back to Dashboard
-        </Link>
         <h1 className="text-3xl font-extrabold tracking-tight">Edit Community Submission</h1>
         <p className="text-xs sm:text-sm text-muted-foreground mt-1">
           Update details and resubmit for Web Administrator review
@@ -247,6 +260,7 @@ export default function DashboardEdit() {
                 className={inputClass}
                 maxLength={80}
               />
+              <CharacterCounter current={name.length} max={80} />
             </div>
 
             {/* Platform */}
@@ -328,10 +342,7 @@ export default function DashboardEdit() {
 
             {/* Description */}
             <div>
-              <div className="flex justify-between items-center mb-1.5">
-                <label className={labelClass}>Description *</label>
-                <span className="text-xs font-bold text-muted-foreground">{description.length} / 500</span>
-              </div>
+              <label className={labelClass}>Description *</label>
               <textarea
                 required
                 rows={4}
@@ -340,6 +351,7 @@ export default function DashboardEdit() {
                 maxLength={500}
                 className={`${inputClass} resize-none`}
               />
+              <CharacterCounter current={description.length} min={20} max={500} />
             </div>
 
             {/* Language */}
@@ -420,6 +432,7 @@ export default function DashboardEdit() {
                 maxLength={300}
                 className={`${inputClass} resize-none`}
               />
+              <CharacterCounter current={rules.length} max={300} />
             </div>
 
             {/* Minimum Age */}

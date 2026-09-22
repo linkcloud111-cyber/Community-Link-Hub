@@ -28,6 +28,8 @@ import {
   Share2,
 } from "lucide-react";
 import { PlatformIcon } from "@/components/platform-icon";
+import { PageBreadcrumb } from "@/components/page-breadcrumb";
+import { usePageTitle } from "@/lib/page-meta";
 
 const AGE_OPTIONS = ["All Ages", "13+", "16+", "18+", "21+"];
 
@@ -122,6 +124,7 @@ function getPlatformConfig(platformName: string) {
 export default function DashboardSubmit() {
   const { user, isWebmaster, profile } = useAuth();
   const [, setLocation] = useLocation();
+  usePageTitle("Submit a Community", "Public Directory");
   const {
     activeCategories: categories,
     activePlatforms: platforms,
@@ -515,16 +518,12 @@ export default function DashboardSubmit() {
   const labelClass = "block text-xs font-bold uppercase tracking-wider text-muted-foreground mb-1.5";
 
   return (
-    <div className="max-w-4xl mx-auto space-y-8 pb-20">
+    <div className="max-w-4xl mx-auto space-y-6 pb-20">
+      <PageBreadcrumb items={[{ label: "Submit Community" }]} className="-mt-1" />
+
       {/* HEADER */}
       <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div>
-          <Link
-            href={isWebmaster ? "/webmaster/dashboard" : "/dashboard"}
-            className="inline-flex items-center gap-1.5 text-xs font-bold text-muted-foreground hover:text-foreground mb-2 transition"
-          >
-            <ArrowLeft className="w-4 h-4" /> Back to Dashboard
-          </Link>
           <h1 className="text-3xl font-extrabold tracking-tight">Group Submission Module</h1>
           <p className="text-xs sm:text-sm text-muted-foreground mt-1">
             List your WhatsApp, Telegram, Discord or Social community on LinkCloud

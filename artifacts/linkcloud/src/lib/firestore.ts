@@ -18,7 +18,7 @@ import {
   DocumentSnapshot,
   QueryDocumentSnapshot,
 } from "firebase/firestore";
-import { db } from "./firebase";
+import { db, auth } from "./firebase";
 import type {
   Group,
   UserProfile,
@@ -43,6 +43,20 @@ function groupFromDoc(snap: DocumentSnapshot | QueryDocumentSnapshot): Group {
   return { id: snap.id, ...snap.data() } as Group;
 }
 
+/**
+ * Strips PII (submittedByName, submittedByEmail, submittedBy) from public group records
+ * to strictly prevent forensic data leakage to unauthenticated or unauthorized visitors.
+ */
+export function sanitizePublicGroup(group: Group): Group {
+  if (!group) return group;
+  const currentUid = auth?.currentUser?.uid;
+  if (currentUid && (group.submittedBy === currentUid || group.submitterUid === currentUid)) {
+    return group;
+  }
+  const { submittedByName, submittedByEmail, submittedBy, submitterUid, ...sanitized } = group as any;
+  return sanitized as Group;
+}
+
 // ─── Groups ───────────────────────────────────────────────────────────────────
 
 // Fetch all approved groups (ignoring hidden groups for public directory)
@@ -51,7 +65,7 @@ async function getAllApproved(): Promise<Group[]> {
     if (!db || typeof db !== "object" || !("app" in db)) return [];
     const q = query(collection(db, "groups"), where("status", "==", "approved"));
     const snap = await getDocs(q);
-    const docs = snap.docs.map(groupFromDoc);
+    const docs = snap.docs.map(groupFromDoc).map(sanitizePublicGroup);
 
     // Fetch disabled locations to enforce location disable logic
     const disabledStateSet = new Set<string>();
@@ -259,7 +273,7 @@ export async function getGroupById(id: string): Promise<Group | null> {
     if (!db || typeof db !== "object" || !("app" in db)) return null;
     const snap = await getDoc(doc(db, "groups", id));
     if (!snap.exists()) return null;
-    return groupFromDoc(snap);
+    return sanitizePublicGroup(groupFromDoc(snap));
   } catch (err) {
     console.warn("Error fetching group by ID:", err);
     return null;
@@ -296,11 +310,27 @@ export async function getUserGroups(uid: string): Promise<Group[]> {
     if (!db || typeof db !== "object" || !("app" in db) || !uid) return [];
     const map = new Map<string, Group>();
     
+    // 1. Direct query by submittedBy
     const q1 = query(collection(db, "groups"), where("submittedBy", "==", uid));
     const snap1 = await getDocs(q1);
     snap1.docs.forEach((d) => {
       map.set(d.id, groupFromDoc(d));
     });
+
+    // 2. Query protected groupOwnership by submittedBy
+    try {
+      const qOwn = query(collection(db, "groupOwnership"), where("submittedBy", "==", uid));
+      const snapOwn = await getDocs(qOwn);
+      for (const ownDoc of snapOwn.docs) {
+        const gId = ownDoc.id;
+        if (!map.has(gId)) {
+          const gDoc = await getDoc(doc(db, "groups", gId));
+          if (gDoc.exists()) {
+            map.set(gDoc.id, groupFromDoc(gDoc));
+          }
+        }
+      }
+    } catch {}
 
     try {
       const q2 = query(collection(db, "groups"), where("userId", "==", uid));
@@ -365,8 +395,9 @@ export async function createGroup(
     submittedByName: string;
   }
 ): Promise<string> {
+  const { submittedByName, submittedByEmail, ...publicGroupData } = data;
   const ref = await addDoc(collection(db, "groups"), {
-    ...data,
+    ...publicGroupData,
     contentType: data.contentType || "General Discussion",
     logoUrl: data.logoUrl || "",
     description: data.description,
@@ -379,8 +410,7 @@ export async function createGroup(
     tags: Array.isArray(data.tags) ? data.tags : [],
     joinUrl: data.joinUrl,
     submittedBy: data.submittedBy,
-    submittedByName: data.submittedByName,
-    submittedByEmail: data.submittedByEmail || "",
+    submitterUid: data.submittedBy,
     status: data.status || "pending",
     featured: false,
     pinned: false,
@@ -393,6 +423,23 @@ export async function createGroup(
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
+
+  // Store private submitter PII in protected /groupOwnership/{groupId}
+  try {
+    await setDoc(doc(db, "groupOwnership", ref.id), {
+      groupId: ref.id,
+      submittedBy: data.submittedBy,
+      submitterUid: data.submittedBy,
+      ownerUid: data.submittedBy,
+      submittedByName: submittedByName || "",
+      submittedByEmail: submittedByEmail || "",
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+  } catch (ownErr) {
+    console.warn("Error storing group ownership metadata:", ownErr);
+  }
+
   return ref.id;
 }
 
@@ -752,9 +799,14 @@ export async function updateUserRole(uid: string, role: UserRole, adminEmail = "
 
 async function syncAuthStatusBackend(uid: string, status: AccountStatus, webmasterEmail: string, webmasterUid: string) {
   try {
+    const token = await auth?.currentUser?.getIdToken();
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
     const res = await fetch("/api/admin/users/status", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers,
       body: JSON.stringify({ uid, status, webmasterEmail, webmasterUid }),
     });
     if (res.ok) {
@@ -769,9 +821,14 @@ async function syncAuthStatusBackend(uid: string, status: AccountStatus, webmast
 
 async function syncAuthDeleteBackend(uid: string, webmasterEmail: string, webmasterUid: string) {
   try {
+    const token = await auth?.currentUser?.getIdToken();
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
     const res = await fetch("/api/admin/users/delete", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers,
       body: JSON.stringify({ uid, webmasterEmail, webmasterUid }),
     });
     if (res.ok) {
@@ -784,6 +841,36 @@ async function syncAuthDeleteBackend(uid: string, webmasterEmail: string, webmas
   return null;
 }
 
+export async function getAdminServerStats(): Promise<any> {
+  try {
+    const token = await auth?.currentUser?.getIdToken();
+    const headers: Record<string, string> = {};
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
+    const res = await fetch("/api/admin/stats", { headers });
+    if (res.ok) return await res.json();
+  } catch (err) {
+    console.warn("[Admin API] getAdminServerStats notice:", err);
+  }
+  return null;
+}
+
+export async function runAdminMigrationDryRun(): Promise<any> {
+  try {
+    const token = await auth?.currentUser?.getIdToken();
+    const headers: Record<string, string> = {};
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
+    const res = await fetch("/api/admin/migration/dry-run", { headers });
+    if (res.ok) return await res.json();
+  } catch (err) {
+    console.warn("[Admin API] runAdminMigrationDryRun notice:", err);
+  }
+  return null;
+}
+
 export async function updateUserStatus(
   uid: string,
   status: AccountStatus,
@@ -792,7 +879,7 @@ export async function updateUserStatus(
 ): Promise<void> {
   // Webmaster self-protection
   if (
-    (uid === adminUid || uid === "webmaster" || (adminEmail.toLowerCase() === "linkcloud111@gmail.com" && uid === adminUid)) &&
+    (uid === adminUid || uid === "webmaster") &&
     (status === "suspended" || status === "banned" || status === "deleted")
   ) {
     throw new Error("Self-Protection: You cannot suspend, ban, or delete your active Webmaster account.");
@@ -1105,7 +1192,7 @@ export async function performPermanentUserDeletion(params: {
   } = params;
 
   if (!isSelfDelete) {
-    if (targetUid === adminUid || (adminEmail.toLowerCase() === "linkcloud111@gmail.com" && targetUid === adminUid)) {
+    if (targetUid === adminUid || targetUid === "webmaster") {
       throw new Error("Self-Protection: You cannot delete your active Webmaster account.");
     }
   }
@@ -1883,12 +1970,13 @@ export async function deleteContactMessage(id: string): Promise<void> {
 
 export async function createComplaint(
   data: Omit<Complaint, "id" | "createdAt" | "status">
-): Promise<void> {
-  await addDoc(collection(db, "complaints"), {
+): Promise<string> {
+  const docRef = await addDoc(collection(db, "complaints"), {
     ...data,
     status: "pending",
     createdAt: serverTimestamp(),
   });
+  return docRef.id;
 }
 
 export async function getComplaints(): Promise<Complaint[]> {

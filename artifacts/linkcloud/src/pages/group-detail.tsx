@@ -38,6 +38,7 @@ import {
 import GroupCard from "@/components/group-card";
 import ReportModal from "@/components/report-modal";
 import { PlatformBadge, CategoryBadge, ContentTypeBadge, LanguageBadge } from "@/components/taxonomy-badge";
+import { PageBreadcrumb } from "@/components/page-breadcrumb";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
 
@@ -67,7 +68,7 @@ export default function GroupDetail() {
         }
 
         // Security check: Only approved & non-hidden groups are visible publicly
-        const isOwner = user && data.submittedBy === user.uid;
+        const isOwner = user && (data.submittedBy === user.uid || (data as any).submitterUid === user.uid);
         const isWebmasterUser = isWebmaster || profile?.role === "webmaster";
         const isApprovedPublic = data.status === "approved" && !data.hidden;
 
@@ -271,7 +272,9 @@ export default function GroupDetail() {
     );
   }
 
-  const isOwner = Boolean(user && group.submittedBy === user.uid);
+  const isOwner = Boolean(
+    user && (group.submittedBy === user.uid || (group as any).submitterUid === user.uid)
+  );
   const isWebmasterUser = Boolean(isWebmaster || profile?.role === "webmaster");
   const canSeePrivateDetails = isOwner || isWebmasterUser;
 
@@ -294,14 +297,22 @@ export default function GroupDetail() {
     : "Recently";
 
   return (
-    <div className="max-w-5xl mx-auto space-y-8 pb-20">
-      {/* Back link */}
-      <Link
-        href="/"
-        className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors font-medium"
-      >
-        <ArrowLeft className="w-4 h-4" /> Back to Discover
-      </Link>
+    <div className="max-w-5xl mx-auto space-y-6 pb-20">
+      {/* Breadcrumb Navigation */}
+      <PageBreadcrumb
+        items={[
+          { label: "Directory", href: "/groups" },
+          ...(group.categoryName
+            ? [
+                {
+                  label: group.categoryName,
+                  href: `/groups?category=${encodeURIComponent(group.categoryId)}`,
+                },
+              ]
+            : []),
+          { label: group.name },
+        ]}
+      />
 
       {/* Main Container */}
       <motion.div

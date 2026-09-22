@@ -1,26 +1,11 @@
 import type { IncomingMessage, ServerResponse } from "http";
+import crypto from "crypto";
 import { getFirebaseAdminApp } from "./admin-api";
 import { getAuth } from "firebase-admin/auth";
+import { getFirestore } from "firebase-admin/firestore";
 
 export const EMAIL_CHANGE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 export const EMAIL_RESEND_COOLDOWN_MS = 30 * 1000; // 30 seconds
-
-// In-memory rate limiting and request tracking cache for dev server
-const devRequestStore = new Map<
-  string,
-  {
-    requestId: string;
-    userId: string;
-    oldEmail: string;
-    newEmail: string;
-    rawToken: string;
-    expiresAt: number;
-    createdAt: number;
-    status: "pending" | "verified" | "cancelled" | "superseded" | "expired";
-  }
->();
-
-const devUserCooldownStore = new Map<string, number>();
 
 function sendJson(res: ServerResponse, data: any, status = 200) {
   res.statusCode = status;
@@ -47,6 +32,10 @@ function parseBody(req: IncomingMessage): Promise<any> {
   });
 }
 
+function hashToken(rawToken: string): string {
+  return crypto.createHash("sha256").update(rawToken).digest("hex");
+}
+
 export async function handleDevEmailChangeRequest(
   req: IncomingMessage,
   res: ServerResponse
@@ -61,66 +50,136 @@ export async function handleDevEmailChangeRequest(
   }
 
   const authHeader = req.headers["authorization"] || "";
+  if (!authHeader.startsWith("Bearer ")) {
+    sendJson(res, { error: "Authentication required: Missing Bearer token." }, 401);
+    return;
+  }
+
   const idToken = authHeader.replace("Bearer ", "").trim();
+  if (!idToken) {
+    sendJson(res, { error: "Authentication required: Empty Bearer token." }, 401);
+    return;
+  }
+
+  const app = getFirebaseAdminApp();
+  if (!app) {
+    sendJson(res, { error: "Server authentication service unavailable." }, 503);
+    return;
+  }
 
   let uid = "";
   let currentAuthEmail = "";
-
-  const app = getFirebaseAdminApp();
-  if (app && idToken) {
-    try {
-      const decoded = await getAuth(app).verifyIdToken(idToken);
-      uid = decoded.uid;
-      currentAuthEmail = decoded.email || "";
-    } catch (e: any) {
-      // If mock token or token decode fallback
-      console.warn("[Dev Server] verifyIdToken notice:", e.message);
-    }
+  try {
+    const decoded = await getAuth(app).verifyIdToken(idToken);
+    uid = decoded.uid;
+    currentAuthEmail = decoded.email || "";
+  } catch (e: any) {
+    sendJson(res, { error: `Authentication failed: ${e.message}` }, 401);
+    return;
   }
 
   const body = await parseBody(req);
   const newEmail = (body.newEmail || "").trim().toLowerCase();
-  uid = uid || body.uid || "dev_user";
-  currentAuthEmail = currentAuthEmail || body.currentEmail || "";
+  currentAuthEmail = currentAuthEmail || (body.currentEmail || "").trim().toLowerCase();
 
   if (!newEmail || !newEmail.endsWith("@gmail.com")) {
     sendJson(res, { error: "Only personal Gmail addresses (@gmail.com) are supported." }, 400);
     return;
   }
 
-  const now = Date.now();
-  const lastRequest = devUserCooldownStore.get(uid) || 0;
-  if (now - lastRequest < EMAIL_RESEND_COOLDOWN_MS) {
-    const waitSec = Math.ceil((EMAIL_RESEND_COOLDOWN_MS - (now - lastRequest)) / 1000);
-    res.setHeader("Retry-After", String(waitSec));
-    sendJson(
-      res,
-      {
-        success: false,
-        error: `Please wait ${waitSec}s before requesting another verification email.`,
-        retryAfter: waitSec,
-      },
-      429
-    );
+  if (currentAuthEmail && newEmail === currentAuthEmail) {
+    sendJson(res, { error: "New email must be different from your current email." }, 400);
     return;
   }
 
-  devUserCooldownStore.set(uid, now);
+  const firestore = app ? getFirestore(app) : null;
+  const now = Date.now();
 
-  const rawToken = Math.random().toString(36).substring(2) + Math.random().toString(36).substring(2);
+  // Check email uniqueness in emailIndex
+  if (firestore) {
+    try {
+      const existingIndexDoc = await firestore.collection("emailIndex").doc(newEmail).get();
+      if (existingIndexDoc.exists && existingIndexDoc.data()?.uid && existingIndexDoc.data()?.uid !== uid) {
+        sendJson(res, { error: "This Gmail address is already registered to another account." }, 409);
+        return;
+      }
+    } catch (idxErr) {
+      console.warn("[Dev Server] emailIndex check note:", idxErr);
+    }
+  }
+
+  // Check cooldown from Firestore
+  if (firestore) {
+    try {
+      const recentReqs = await firestore
+        .collection("emailChangeRequests")
+        .where("userId", "==", uid)
+        .orderBy("createdAt", "desc")
+        .limit(1)
+        .get();
+
+      if (!recentReqs.empty) {
+        const lastCreated = recentReqs.docs[0].data().createdAtMs || 0;
+        if (now - lastCreated < EMAIL_RESEND_COOLDOWN_MS) {
+          const waitSec = Math.ceil((EMAIL_RESEND_COOLDOWN_MS - (now - lastCreated)) / 1000);
+          res.setHeader("Retry-After", String(waitSec));
+          sendJson(
+            res,
+            {
+              success: false,
+              error: `Please wait ${waitSec}s before requesting another verification email.`,
+              retryAfter: waitSec,
+            },
+            429
+          );
+          return;
+        }
+      }
+    } catch (cdErr) {
+      console.warn("[Dev Server] Cooldown check note:", cdErr);
+    }
+  }
+
+  // Generate secure token and hash it (raw token is never stored in DB)
+  const rawToken = crypto.randomBytes(32).toString("hex");
+  const tokenHash = hashToken(rawToken);
   const requestId = `req_${uid}_${now}`;
   const expiresAt = now + EMAIL_CHANGE_TTL_MS;
 
-  devRequestStore.set(requestId, {
-    requestId,
-    userId: uid,
-    oldEmail: currentAuthEmail,
-    newEmail,
-    rawToken,
-    expiresAt,
-    createdAt: now,
-    status: "pending",
-  });
+  if (firestore) {
+    try {
+      // Invalidate any existing pending requests for this user
+      const existingPending = await firestore
+        .collection("emailChangeRequests")
+        .where("userId", "==", uid)
+        .where("status", "==", "pending")
+        .get();
+
+      const batch = firestore.batch();
+      existingPending.forEach((doc) => {
+        batch.update(doc.ref, { status: "superseded", supersededAt: new Date().toISOString() });
+      });
+
+      // Save new request with hashed token
+      const newReqRef = firestore.collection("emailChangeRequests").doc(requestId);
+      batch.set(newReqRef, {
+        requestId,
+        userId: uid,
+        oldEmail: currentAuthEmail,
+        newEmail,
+        tokenHash,
+        expiresAt,
+        expiresAtIso: new Date(expiresAt).toISOString(),
+        createdAt: new Date().toISOString(),
+        createdAtMs: now,
+        status: "pending",
+      });
+
+      await batch.commit();
+    } catch (saveErr) {
+      console.error("[Dev Server] Failed to save emailChangeRequest to Firestore:", saveErr);
+    }
+  }
 
   const resendApiKey = process.env.RESEND_API_KEY;
   const host = req.headers["host"] || "localhost:3000";
@@ -167,69 +226,8 @@ export async function handleDevEmailChangeResend(
   req: IncomingMessage,
   res: ServerResponse
 ) {
-  if (req.method === "OPTIONS") {
-    sendJson(res, {}, 204);
-    return;
-  }
-  if (req.method !== "POST") {
-    sendJson(res, { error: "Method not allowed. Use POST." }, 405);
-    return;
-  }
-
-  const body = await parseBody(req);
-  const pendingEmail = (body.pendingEmail || "").trim().toLowerCase();
-  const uid = body.uid || "dev_user";
-
-  const now = Date.now();
-  const lastRequest = devUserCooldownStore.get(uid) || 0;
-  if (now - lastRequest < EMAIL_RESEND_COOLDOWN_MS) {
-    const waitSec = Math.ceil((EMAIL_RESEND_COOLDOWN_MS - (now - lastRequest)) / 1000);
-    res.setHeader("Retry-After", String(waitSec));
-    sendJson(
-      res,
-      {
-        success: false,
-        error: `Please wait ${waitSec}s before requesting another verification email.`,
-        retryAfter: waitSec,
-      },
-      429
-    );
-    return;
-  }
-
-  devUserCooldownStore.set(uid, now);
-
-  const rawToken = Math.random().toString(36).substring(2) + Math.random().toString(36).substring(2);
-  const requestId = `req_${uid}_${now}`;
-  const expiresAt = now + EMAIL_CHANGE_TTL_MS;
-
-  devRequestStore.set(requestId, {
-    requestId,
-    userId: uid,
-    oldEmail: "",
-    newEmail: pendingEmail,
-    rawToken,
-    expiresAt,
-    createdAt: now,
-    status: "pending",
-  });
-
-  const host = req.headers["host"] || "localhost:3000";
-  const protocol = host.includes("localhost") ? "http" : "https";
-  const origin = `${protocol}://${host}`;
-  const verificationLink = `${origin}/verify-handler?mode=verifyAndChangeEmail&reqId=${requestId}&uid=${uid}&token=${rawToken}`;
-
-  console.log(`[Dev Server] Resent verification link: ${verificationLink}`);
-
-  sendJson(res, {
-    success: true,
-    requestId,
-    expiresAt,
-    newEmail: pendingEmail,
-    nextAllowedAt: now + EMAIL_RESEND_COOLDOWN_MS,
-    devVerificationLink: verificationLink,
-    message: "New verification email dispatched. Link is valid for 5 minutes.",
-  });
+  // Resend uses identical logic with cooldown check and newly minted token
+  return handleDevEmailChangeRequest(req, res);
 }
 
 export async function handleDevEmailChangeVerify(
@@ -247,61 +245,131 @@ export async function handleDevEmailChangeVerify(
 
   const body = await parseBody(req);
   const reqId = (body.reqId || body.requestId || "").trim();
-  const token = (body.token || "").trim();
+  const rawToken = (body.token || body.rawToken || "").trim();
   const uid = (body.uid || "").trim();
 
-  const stored = devRequestStore.get(reqId);
-  if (!stored) {
-    // If not in dev store, let client know it might need Firestore verification or was completed
+  const app = getFirebaseAdminApp();
+  const firestore = app ? getFirestore(app) : null;
+  const now = Date.now();
+
+  if (!firestore) {
+    sendJson(res, { error: "Database service unavailable." }, 500);
+    return;
+  }
+
+  try {
+    const reqDoc = await firestore.collection("emailChangeRequests").doc(reqId).get();
+    if (!reqDoc.exists) {
+      sendJson(res, { error: "Invalid or expired verification request." }, 404);
+      return;
+    }
+
+    const reqData = reqDoc.data()!;
+    if (reqData.status !== "pending") {
+      if (reqData.status === "verified") {
+        sendJson(res, {
+          success: true,
+          verified: true,
+          completed: true,
+          uid: reqData.userId,
+          newEmail: reqData.newEmail,
+          message: "Email change already completed.",
+        });
+        return;
+      }
+      sendJson(res, { error: `This verification link is no longer valid (${reqData.status}).` }, 400);
+      return;
+    }
+
+    if (reqData.expiresAt < now) {
+      await reqDoc.ref.update({ status: "expired" });
+      sendJson(res, { error: "This verification link has expired. Please request a new one." }, 410);
+      return;
+    }
+
+    // Verify token hash
+    const expectedHash = hashToken(rawToken);
+    if (reqData.tokenHash !== expectedHash) {
+      sendJson(res, { error: "Invalid verification token." }, 403);
+      return;
+    }
+
+    const targetUid = reqData.userId;
+    const oldEmail = reqData.oldEmail || "";
+    const newEmail = reqData.newEmail;
+
+    // 1. Update Firebase Auth user
+    let customToken = "";
+    try {
+      const auth = getAuth(app);
+      await auth.updateUser(targetUid, {
+        email: newEmail,
+        emailVerified: true,
+      });
+      customToken = await auth.createCustomToken(targetUid);
+    } catch (authErr: any) {
+      console.warn("[Dev Server] Auth updateUser warning:", authErr.message);
+    }
+
+    // 2. Update Firestore documents atomically
+    const batch = firestore.batch();
+
+    // Mark request verified
+    batch.update(reqDoc.ref, {
+      status: "verified",
+      verifiedAt: new Date().toISOString(),
+    });
+
+    // Update /users/{uid}
+    const userDocRef = firestore.collection("users").doc(targetUid);
+    batch.set(
+      userDocRef,
+      {
+        email: newEmail,
+        emailVerified: true,
+        updatedAt: new Date().toISOString(),
+      },
+      { merge: true }
+    );
+
+    // Update /emailIndex
+    if (oldEmail) {
+      batch.delete(firestore.collection("emailIndex").doc(oldEmail.toLowerCase()));
+    }
+    batch.set(firestore.collection("emailIndex").doc(newEmail.toLowerCase()), {
+      uid: targetUid,
+      email: newEmail,
+      updatedAt: new Date().toISOString(),
+    });
+
+    // Add /users/{uid}/email_history
+    const historyRef = userDocRef.collection("email_history").doc();
+    batch.set(historyRef, {
+      oldEmail,
+      newEmail,
+      timestamp: new Date().toISOString(),
+      requestId: reqId,
+      verifiedVia: "server_dev_verify",
+    });
+
+    await batch.commit();
+
+    console.log(`[Dev Server] Verified and updated email for ${targetUid} -> ${newEmail}`);
+
     sendJson(res, {
       success: true,
       verified: true,
-      uid,
-      message: "Verification processed.",
+      completed: true,
+      uid: targetUid,
+      oldEmail,
+      newEmail,
+      customToken,
+      message: "New email address verified and updated successfully!",
     });
-    return;
+  } catch (err: any) {
+    console.error("[Dev Server] Verification error:", err);
+    sendJson(res, { error: err?.message || "Failed to process verification." }, 500);
   }
-
-  const now = Date.now();
-  if (stored.expiresAt < now) {
-    sendJson(res, { error: "This verification link has expired. Please request a new one." }, 410);
-    return;
-  }
-
-  if (stored.rawToken !== token) {
-    sendJson(res, { error: "Invalid verification token." }, 403);
-    return;
-  }
-
-  // Update Firebase Auth if Admin SDK is connected
-  let customToken = "";
-  const app = getFirebaseAdminApp();
-  if (app && stored.userId) {
-    try {
-      await getAuth(app).updateUser(stored.userId, {
-        email: stored.newEmail,
-        emailVerified: true,
-      });
-      console.log(`[Dev Server] Updated Firebase Auth for ${stored.userId} to ${stored.newEmail}`);
-      customToken = await getAuth(app).createCustomToken(stored.userId);
-      console.log(`[Dev Server] Minted customToken for ${stored.userId}`);
-    } catch (e: any) {
-      console.warn("[Dev Server] updateUser notice:", e.message);
-    }
-  }
-
-  stored.status = "completed";
-
-  sendJson(res, {
-    success: true,
-    verified: true,
-    completed: true,
-    uid: stored.userId,
-    oldEmail: stored.oldEmail,
-    newEmail: stored.newEmail,
-    customToken,
-    message: "New email address verified and updated successfully!",
-  });
 }
 
 export async function handleDevEmailChangeSessionRefresh(
@@ -319,7 +387,6 @@ export async function handleDevEmailChangeSessionRefresh(
 
   const body = await parseBody(req);
   const uid = (body.uid || "").trim();
-  const reqId = (body.reqId || body.requestId || "").trim();
 
   if (!uid) {
     sendJson(res, { error: "Missing required parameter: uid." }, 400);
@@ -334,14 +401,9 @@ export async function handleDevEmailChangeSessionRefresh(
 
   try {
     const customToken = await getAuth(app).createCustomToken(uid);
-    let newEmail = "";
-    if (reqId && devRequestStore.has(reqId)) {
-      newEmail = devRequestStore.get(reqId)!.newEmail;
-    }
     sendJson(res, {
       success: true,
       uid,
-      newEmail,
       customToken,
       message: "Fresh session custom token generated successfully.",
     });
@@ -366,11 +428,17 @@ export async function handleDevEmailChangeCancel(
 
   const body = await parseBody(req);
   const reqId = (body.reqId || body.requestId || "").trim();
-  const uid = (body.uid || "").trim();
 
-  if (reqId && devRequestStore.has(reqId)) {
-    const item = devRequestStore.get(reqId)!;
-    item.status = "cancelled";
+  const app = getFirebaseAdminApp();
+  const firestore = app ? getFirestore(app) : null;
+
+  if (firestore && reqId) {
+    try {
+      await firestore.collection("emailChangeRequests").doc(reqId).update({
+        status: "cancelled",
+        cancelledAt: new Date().toISOString(),
+      });
+    } catch {}
   }
 
   sendJson(res, {
@@ -378,4 +446,3 @@ export async function handleDevEmailChangeCancel(
     message: "Email change cancelled.",
   });
 }
-
