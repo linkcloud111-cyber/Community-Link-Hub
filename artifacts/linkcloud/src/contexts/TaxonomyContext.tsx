@@ -2,7 +2,13 @@ import React, { createContext, useContext, useEffect, useState } from "react";
 import { collection, onSnapshot } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { Category, PlatformItem, ContentTypeItem, LanguageItem } from "@/lib/types";
-import { seedDefaultTaxonomies, slugify } from "@/lib/firestore";
+import { slugify } from "@/lib/firestore";
+import {
+  DEFAULT_CATEGORIES,
+  DEFAULT_PLATFORMS,
+  DEFAULT_CONTENT_TYPES,
+  DEFAULT_LANGUAGES,
+} from "@/lib/default-taxonomies";
 import {
   getCategoryVisual,
   getPlatformVisual,
@@ -27,14 +33,12 @@ interface TaxonomyContextType {
 
 const TaxonomyContext = createContext<TaxonomyContextType | undefined>(undefined);
 
-let taxonomySeedTriggered = false;
-
 export function TaxonomyProvider({ children }: { children: React.ReactNode }) {
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [platforms, setPlatforms] = useState<PlatformItem[]>([]);
-  const [contentTypes, setContentTypes] = useState<ContentTypeItem[]>([]);
-  const [languages, setLanguages] = useState<LanguageItem[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [categories, setCategories] = useState<Category[]>(DEFAULT_CATEGORIES);
+  const [platforms, setPlatforms] = useState<PlatformItem[]>(DEFAULT_PLATFORMS);
+  const [contentTypes, setContentTypes] = useState<ContentTypeItem[]>(DEFAULT_CONTENT_TYPES);
+  const [languages, setLanguages] = useState<LanguageItem[]>(DEFAULT_LANGUAGES);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     if (!db || typeof db !== "object" || !("app" in db)) {
@@ -42,21 +46,12 @@ export function TaxonomyProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    // Auto-seed on startup if any taxonomy collection is empty
-    if (!taxonomySeedTriggered) {
-      taxonomySeedTriggered = true;
-      seedDefaultTaxonomies().catch((err) => console.warn("Auto seed on startup error:", err));
-    }
-
-    let isSeeding = false;
-
     // Real-time listener for Categories
     const unsubCats = onSnapshot(
       collection(db, "categories"),
       (snap) => {
-        if (snap.empty && !isSeeding) {
-          isSeeding = true;
-          seedDefaultTaxonomies().then(() => { isSeeding = false; }).catch(() => { isSeeding = false; });
+        if (snap.empty) {
+          setCategories((prev) => (prev.length > 0 ? prev : DEFAULT_CATEGORIES));
           return;
         }
         const list: Category[] = snap.docs.map((d) => {
@@ -96,9 +91,8 @@ export function TaxonomyProvider({ children }: { children: React.ReactNode }) {
     const unsubPlats = onSnapshot(
       collection(db, "platforms"),
       (snap) => {
-        if (snap.empty && !isSeeding) {
-          isSeeding = true;
-          seedDefaultTaxonomies().then(() => { isSeeding = false; }).catch(() => { isSeeding = false; });
+        if (snap.empty) {
+          setPlatforms((prev) => (prev.length > 0 ? prev : DEFAULT_PLATFORMS));
           return;
         }
         const list: PlatformItem[] = snap.docs.map((d) => {
@@ -137,9 +131,8 @@ export function TaxonomyProvider({ children }: { children: React.ReactNode }) {
     const unsubCts = onSnapshot(
       collection(db, "contentTypes"),
       (snap) => {
-        if (snap.empty && !isSeeding) {
-          isSeeding = true;
-          seedDefaultTaxonomies().then(() => { isSeeding = false; }).catch(() => { isSeeding = false; });
+        if (snap.empty) {
+          setContentTypes((prev) => (prev.length > 0 ? prev : DEFAULT_CONTENT_TYPES));
           return;
         }
         const list: ContentTypeItem[] = snap.docs.map((d) => {
@@ -174,9 +167,9 @@ export function TaxonomyProvider({ children }: { children: React.ReactNode }) {
     const unsubLangs = onSnapshot(
       collection(db, "languages"),
       (snap) => {
-        if (snap.empty && !isSeeding) {
-          isSeeding = true;
-          seedDefaultTaxonomies().then(() => { isSeeding = false; }).catch(() => { isSeeding = false; });
+        if (snap.empty) {
+          setLanguages((prev) => (prev.length > 0 ? prev : DEFAULT_LANGUAGES));
+          setLoading(false);
           return;
         }
         const list: LanguageItem[] = snap.docs.map((d) => {

@@ -553,3 +553,218 @@ export async function handleAdminMigrationDryRunRequest(
     sendJson(res, { error: err?.message || "Failed to perform migration dry-run." }, 500);
   }
 }
+
+export async function handleAdminCleanupUnverifiedRequest(
+  req: IncomingMessage,
+  res: ServerResponse
+): Promise<void> {
+  if (req.method === "OPTIONS") {
+    res.writeHead(204, {
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "POST, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Cron-Secret",
+    });
+    res.end();
+    return;
+  }
+
+  if (req.method !== "POST") {
+    sendJson(res, { error: "Method not allowed" }, 405);
+    return;
+  }
+
+  try {
+    const authHeader = req.headers.authorization;
+    const cronSecretHeader = req.headers["x-cron-secret"];
+    const envCronSecret = process.env.CRON_SECRET || process.env.CLEANUP_CRON_SECRET || "";
+
+    const isCron = Boolean(
+      envCronSecret &&
+      (cronSecretHeader === envCronSecret || authHeader === `Bearer ${envCronSecret}`)
+    );
+
+    let callerActor = "scheduler_cron";
+    if (!isCron) {
+      const auth = await authenticateAdminRequest(req);
+      if (!auth.authenticated) {
+        sendJson(res, { error: auth.error || "Webmaster authentication required" }, 403);
+        return;
+      }
+      callerActor = auth.user?.email || "webmaster";
+    }
+
+    const app = getFirebaseAdminApp()!;
+    const auth = getAuth(app);
+    const firestore = getFirestore(app);
+    const now = Date.now();
+    const FOUR_HOURS_MS = 4 * 60 * 60 * 1000;
+    const cutoffTime = now - FOUR_HOURS_MS;
+    const cutoffIso = new Date(cutoffTime).toISOString();
+
+    const candidateUids = new Map<string, { uid: string; email: string; phone?: string; createdAt: string }>();
+
+    // 1. Check pendingRegistrations
+    try {
+      const pendingSnap = await firestore.collection("pendingRegistrations").get();
+      pendingSnap.forEach((doc) => {
+        const d = doc.data();
+        candidateUids.set(doc.id, {
+          uid: doc.id,
+          email: (d.email || "").trim().toLowerCase(),
+          phone: d.phone || "",
+          createdAt: d.registrationCreatedAt || d.createdAt || "",
+        });
+      });
+    } catch (e) {
+      console.warn("[Admin API] pendingRegistrations read note:", e);
+    }
+
+    // 2. Check users collection
+    try {
+      const usersSnap = await firestore.collection("users").where("status", "==", "pending_verification").get();
+      usersSnap.forEach((doc) => {
+        if (!candidateUids.has(doc.id)) {
+          const d = doc.data();
+          if (d.role !== "webmaster") {
+            candidateUids.set(doc.id, {
+              uid: doc.id,
+              email: (d.email || "").trim().toLowerCase(),
+              phone: d.phone || "",
+              createdAt: d.registrationCreatedAt || d.createdAt || "",
+            });
+          }
+        }
+      });
+    } catch (e) {
+      console.warn("[Admin API] users query note:", e);
+    }
+
+    let cleanedCount = 0;
+    let skippedVerifiedCount = 0;
+    let skippedRecentCount = 0;
+    let skippedProtectedCount = 0;
+    const results: any[] = [];
+
+    for (const [uid, candidate] of candidateUids.entries()) {
+      // Protected Check: NEVER touch Webmaster
+      const webmasterDoc = await firestore.collection("webmaster").doc(uid).get();
+      if (webmasterDoc.exists && webmasterDoc.data()?.role === "webmaster") {
+        skippedProtectedCount++;
+        results.push({ uid, status: "SKIPPED_WEBMASTER" });
+        continue;
+      }
+
+      const userDocSnap = await firestore.collection("users").doc(uid).get();
+      const userData = userDocSnap.data();
+      if (userData?.role === "webmaster") {
+        skippedProtectedCount++;
+        results.push({ uid, status: "SKIPPED_WEBMASTER_ROLE" });
+        continue;
+      }
+
+      // Check registration timestamp
+      const regTimestampStr = candidate.createdAt || userData?.registrationCreatedAt || userData?.createdAt;
+      const regTimeMs = regTimestampStr ? new Date(regTimestampStr).getTime() : 0;
+
+      // Authoritative Firebase Auth check
+      let authUser: any = null;
+      try {
+        authUser = await auth.getUser(uid);
+      } catch {
+        // user may not exist in auth
+      }
+
+      const authCreatedMs = authUser?.metadata?.creationTime
+        ? new Date(authUser.metadata.creationTime).getTime()
+        : 0;
+      const effectiveCreationMs = regTimeMs || authCreatedMs;
+
+      // Younger than 4 hours -> SKIP
+      if (effectiveCreationMs > 0 && effectiveCreationMs > cutoffTime) {
+        skippedRecentCount++;
+        results.push({
+          uid,
+          email: candidate.email,
+          status: "SKIPPED_TOO_RECENT",
+          ageMinutes: Math.round((now - effectiveCreationMs) / (60 * 1000)),
+        });
+        continue;
+      }
+
+      // If verified in either Auth or Firestore -> SKIP
+      if (authUser?.emailVerified === true || userData?.emailVerified === true || userData?.status === "active") {
+        skippedVerifiedCount++;
+        await firestore.collection("pendingRegistrations").doc(uid).delete().catch(() => {});
+        results.push({ uid, email: candidate.email, status: "SKIPPED_VERIFIED" });
+        continue;
+      }
+
+      // If Google provider -> SKIP
+      if (authUser?.providerData?.some((p: any) => p.providerId === "google.com")) {
+        skippedProtectedCount++;
+        results.push({ uid, email: candidate.email, status: "SKIPPED_GOOGLE_ACCOUNT" });
+        continue;
+      }
+
+      // Confirmed eligible for complete cleanup
+      const cleanEmail = (candidate.email || userData?.email || "").toLowerCase();
+      const cleanPhone = candidate.phone || userData?.phone || "";
+
+      // 1. Delete from Auth
+      if (authUser) {
+        await auth.deleteUser(uid).catch((err: any) => {
+          console.warn(`[Admin API] Auth delete notice for ${uid}:`, err.message);
+        });
+      }
+
+      // 2. Batch delete Firestore records
+      const batch = firestore.batch();
+      batch.delete(firestore.collection("users").doc(uid));
+      batch.delete(firestore.collection("userProfiles").doc(uid));
+      if (cleanEmail) {
+        batch.delete(firestore.collection("emailIndex").doc(cleanEmail));
+      }
+      if (cleanPhone) {
+        batch.delete(firestore.collection("mobileIndex").doc(cleanPhone));
+      }
+      batch.delete(firestore.collection("accountUidRegistry").doc(uid));
+      batch.delete(firestore.collection("pendingRegistrations").doc(uid));
+
+      // Monotonic UID counter is NOT decremented
+      const auditRef = firestore.collection("auditLogs").doc();
+      batch.set(auditRef, {
+        action: "UNVERIFIED_PROVISIONAL_EXPIRED_CLEANUP",
+        targetUid: uid,
+        actorUid: callerActor,
+        details: {
+          email: cleanEmail,
+          accountUid: uid,
+          registeredAt: regTimestampStr,
+          cleanedAt: new Date().toISOString(),
+          reason: "Unverified provisional registration expired after 4-hour threshold",
+        },
+        timestamp: new Date().toISOString(),
+      });
+
+      await batch.commit();
+
+      cleanedCount++;
+      results.push({ uid, email: cleanEmail, status: "CLEANED_SUCCESSFULLY" });
+    }
+
+    sendJson(res, {
+      success: true,
+      message: `Cleanup completed. Evaluated: ${candidateUids.size}, Cleaned: ${cleanedCount}`,
+      cutoffIso,
+      totalCandidates: candidateUids.size,
+      cleanedCount,
+      skippedVerifiedCount,
+      skippedRecentCount,
+      skippedProtectedCount,
+      results,
+    });
+  } catch (err: any) {
+    console.error("[Admin API] Cleanup error:", err);
+    sendJson(res, { error: err?.message || "Failed to execute cleanup." }, 500);
+  }
+}

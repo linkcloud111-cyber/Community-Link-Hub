@@ -123,3 +123,34 @@ export async function firestoreDeleteDoc(path: string, env: Env): Promise<void> 
     throw new Error(`Firestore DELETE ${path} failed: ${res.status} ${text}`);
   }
 }
+
+export async function firestoreListCollection(
+  collectionPath: string,
+  env: Env,
+  pageSize = 100
+): Promise<Array<{ id: string; [key: string]: any }>> {
+  const projectId = getProjectId(env);
+  const serviceAccount = getServiceAccount(env);
+  const headers: Record<string, string> = {};
+
+  if (serviceAccount) {
+    const token = await getGoogleAccessToken(serviceAccount);
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+
+  const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/${collectionPath}?pageSize=${pageSize}`;
+  const res = await fetch(url, { headers });
+  if (res.status === 404) return [];
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Firestore LIST ${collectionPath} failed: ${res.status} ${text}`);
+  }
+
+  const data: any = await res.json();
+  if (!data.documents || !Array.isArray(data.documents)) return [];
+  return data.documents.map((docData: any) => {
+    const id = docData.name ? docData.name.split("/").pop() : "";
+    return { id, ...fromFirestoreFields(docData.fields) };
+  });
+}
+

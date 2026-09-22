@@ -26,6 +26,9 @@ import type {
   PlatformItem,
   ContentTypeItem,
   LanguageItem,
+  LocationState,
+  LocationDistrict,
+  LocationCity,
   Report,
   ContactMessage,
   Complaint,
@@ -36,6 +39,50 @@ import type {
   DeletionRequest,
   AccountStatus,
 } from "./types";
+import { INDIA_STATES } from "./india-data";
+import {
+  DEFAULT_CATEGORIES,
+  DEFAULT_PLATFORMS,
+  DEFAULT_CONTENT_TYPES,
+  DEFAULT_LANGUAGES,
+  DEFAULT_LOCATION_STATES,
+  DEFAULT_LOCATION_DISTRICTS,
+} from "./default-taxonomies";
+
+export {
+  DEFAULT_CATEGORIES,
+  DEFAULT_PLATFORMS,
+  DEFAULT_CONTENT_TYPES,
+  DEFAULT_LANGUAGES,
+  DEFAULT_LOCATION_STATES,
+  DEFAULT_LOCATION_DISTRICTS,
+};
+
+async function isCurrentUserWebmaster(): Promise<boolean> {
+  try {
+    if (!auth?.currentUser || !db || typeof db !== "object" || !("app" in db)) {
+      return false;
+    }
+    const uid = auth.currentUser.uid;
+    const wmSnap = await getDoc(doc(db, "webmaster", uid));
+    if (wmSnap.exists()) {
+      const data = wmSnap.data();
+      if (data?.active === true || data?.role === "webmaster" || data?.status === "active") {
+        return true;
+      }
+    }
+    const userSnap = await getDoc(doc(db, "users", uid));
+    if (userSnap.exists()) {
+      const data = userSnap.data();
+      if (data?.role === "webmaster" && data?.status === "active") {
+        return true;
+      }
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -1821,24 +1868,7 @@ export async function getCategories(onlyActive = false): Promise<Category[]> {
     });
 
     if (list.length === 0) {
-      await seedDefaultTaxonomies();
-      const retrySnap = await getDocs(collection(db, "categories"));
-      list = retrySnap.docs.map((d) => {
-        const data = d.data();
-        return {
-          id: d.id,
-          name: data.name || "",
-          slug: data.slug || slugify(data.name || ""),
-          icon: data.icon || "Folder",
-          color: data.color || "#3b82f6",
-          status: data.status || (data.enabled === false ? "disabled" : "active"),
-          enabled: data.enabled !== false && data.status !== "disabled",
-          displayOrder: data.displayOrder ?? data.order ?? 0,
-          groupCount: data.groupCount ?? 0,
-          createdAt: data.createdAt,
-          updatedAt: data.updatedAt,
-        } as Category;
-      });
+      list = DEFAULT_CATEGORIES;
     }
 
     if (onlyActive) {
@@ -2279,29 +2309,7 @@ export async function getCustomPlatforms(onlyActive = false): Promise<PlatformIt
     });
 
     if (list.length === 0) {
-      await seedDefaultTaxonomies();
-      const retrySnap = await getDocs(collection(db, "platforms"));
-      list = retrySnap.docs.map((d) => {
-        const data = d.data();
-        return {
-          id: d.id,
-          name: data.name || "",
-          slug: data.slug || slugify(data.name || ""),
-          icon: data.icon || "Share2",
-          color: data.color || "#22c55e",
-          badgeColor: data.badgeColor || "",
-          iconUrl: data.iconUrl || "",
-          status: data.status || (data.enabled === false ? "disabled" : "active"),
-          enabled: data.enabled !== false && data.status !== "disabled",
-          displayOrder: data.displayOrder ?? data.order ?? 0,
-          order: data.order ?? data.displayOrder ?? 0,
-          invitePattern: data.invitePattern || "",
-          helpText: data.helpText || "",
-          errorText: data.errorText || "",
-          createdAt: data.createdAt,
-          updatedAt: data.updatedAt,
-        } as PlatformItem;
-      });
+      list = DEFAULT_PLATFORMS;
     }
 
     if (onlyActive) {
@@ -2395,26 +2403,7 @@ export async function getCustomContentTypes(onlyActive = false): Promise<Content
     });
 
     if (list.length === 0) {
-      await seedDefaultTaxonomies();
-      const retrySnap = await getDocs(collection(db, "contentTypes"));
-      list = retrySnap.docs.map((d) => {
-        const data = d.data();
-        return {
-          id: d.id,
-          name: data.name || "",
-          slug: data.slug || slugify(data.name || ""),
-          icon: data.icon || "",
-          color: data.color || data.themeColor || "",
-          themeColor: data.themeColor || data.color || "",
-          categoryId: data.categoryId || "",
-          status: data.status || (data.enabled === false ? "disabled" : "active"),
-          enabled: data.enabled !== false && data.status !== "disabled",
-          displayOrder: data.displayOrder ?? data.order ?? 0,
-          order: data.order ?? data.displayOrder ?? 0,
-          createdAt: data.createdAt,
-          updatedAt: data.updatedAt,
-        } as ContentTypeItem;
-      });
+      list = DEFAULT_CONTENT_TYPES;
     }
 
     if (onlyActive) {
@@ -2502,26 +2491,7 @@ export async function getCustomLanguages(onlyActive = false): Promise<LanguageIt
     });
 
     if (list.length === 0) {
-      await seedDefaultTaxonomies();
-      const retrySnap = await getDocs(collection(db, "languages"));
-      list = retrySnap.docs.map((d) => {
-        const data = d.data();
-        return {
-          id: d.id,
-          name: data.name || "",
-          slug: data.slug || slugify(data.name || ""),
-          code: data.code || "",
-          icon: data.icon || "",
-          color: data.color || data.themeColor || "",
-          themeColor: data.themeColor || data.color || "",
-          status: data.status || (data.enabled === false ? "disabled" : "active"),
-          enabled: data.enabled !== false && data.status !== "disabled",
-          displayOrder: data.displayOrder ?? data.order ?? 0,
-          order: data.order ?? data.displayOrder ?? 0,
-          createdAt: data.createdAt,
-          updatedAt: data.updatedAt,
-        } as LanguageItem;
-      });
+      list = DEFAULT_LANGUAGES;
     }
 
     if (onlyActive) {
@@ -2772,6 +2742,12 @@ export async function seedDefaultTaxonomies(): Promise<{ categories: number; pla
     try {
       if (!db || typeof db !== "object" || !("app" in db)) {
         console.warn("[SEED ERROR] Firestore db is not initialized.");
+        return { categories: 0, platforms: 0, contentTypes: 0, languages: 0 };
+      }
+
+      const isWebmaster = await isCurrentUserWebmaster();
+      if (!isWebmaster) {
+        console.log("[SEED] Current user is not a Webmaster. Skipping client-side taxonomy seeding.");
         return { categories: 0, platforms: 0, contentTypes: 0, languages: 0 };
       }
 
@@ -3622,9 +3598,6 @@ export async function logVisitorHit(): Promise<void> {
 
 // ─── Location Management System (States, Districts, Cities) ───────────────────
 
-import { INDIA_STATES } from "./india-data";
-import type { LocationState, LocationDistrict, LocationCity } from "./types";
-
 export interface SeedLocationsResult {
   statesAdded: number;
   districtsAdded: number;
@@ -3639,6 +3612,7 @@ let locationSeedingPromise: Promise<SeedLocationsResult> | null = null;
 /**
  * Idempotently seeds default India locations (28 States + 8 UTs + all official districts) into Firestore.
  * Only inserts missing records; never overwrites existing Webmaster edits.
+ * Restricted to authenticated Webmasters to prevent permission errors.
  */
 export async function seedDefaultLocations(): Promise<SeedLocationsResult> {
   if (locationSeedingPromise) {
@@ -3647,126 +3621,139 @@ export async function seedDefaultLocations(): Promise<SeedLocationsResult> {
 
   locationSeedingPromise = (async () => {
     console.log("[LOCATION SEED] Starting...");
-  let statesAdded = 0;
-  let districtsAdded = 0;
-  let skipped = 0;
-  let errors = 0;
+    const isWebmaster = await isCurrentUserWebmaster();
+    if (!isWebmaster) {
+      console.log("[LOCATION SEED] Current user is not a Webmaster. Skipping client-side location seeding.");
+      return {
+        statesAdded: 0,
+        districtsAdded: 0,
+        skipped: 0,
+        errors: 0,
+        success: true,
+        message: "Location records are read-only for this session.",
+      };
+    }
 
-  const UT_NAMES = new Set([
-    "Andaman and Nicobar Islands",
-    "Chandigarh",
-    "Dadra and Nagar Haveli and Daman and Diu",
-    "Delhi",
-    "Jammu and Kashmir",
-    "Ladakh",
-    "Lakshadweep",
-    "Puducherry",
-  ]);
+    let statesAdded = 0;
+    let districtsAdded = 0;
+    let skipped = 0;
+    let errors = 0;
 
-  try {
-    const statesSnap = await getDocs(collection(db, "states"));
-    const existingStateIds = new Set(statesSnap.docs.map((d) => d.id));
+    const UT_NAMES = new Set([
+      "Andaman and Nicobar Islands",
+      "Chandigarh",
+      "Dadra and Nagar Haveli and Daman and Diu",
+      "Delhi",
+      "Jammu and Kashmir",
+      "Ladakh",
+      "Lakshadweep",
+      "Puducherry",
+    ]);
 
-    const districtsSnap = await getDocs(collection(db, "districts"));
-    const existingDistrictIds = new Set(districtsSnap.docs.map((d) => d.id));
+    try {
+      const statesSnap = await getDocs(collection(db, "states"));
+      const existingStateIds = new Set(statesSnap.docs.map((d) => d.id));
 
-    console.log(`[LOCATION SYNC] States found: ${statesSnap.size}`);
-    console.log(`[LOCATION SYNC] Districts found: ${districtsSnap.size}`);
+      const districtsSnap = await getDocs(collection(db, "districts"));
+      const existingDistrictIds = new Set(districtsSnap.docs.map((d) => d.id));
 
-    let batch = writeBatch(db);
-    let count = 0;
-    let batchNumber = 1;
+      console.log(`[LOCATION SYNC] States found: ${statesSnap.size}`);
+      console.log(`[LOCATION SYNC] Districts found: ${districtsSnap.size}`);
 
-    const commitBatchIfNeeded = async (force = false) => {
-      if ((count >= 400 || force) && count > 0) {
-        console.log(`[LOCATION SEED] Writing batch ${batchNumber}...`);
-        await batch.commit();
-        batchNumber++;
-        batch = writeBatch(db);
-        count = 0;
-      }
-    };
+      let batch = writeBatch(db);
+      let count = 0;
+      let batchNumber = 1;
 
-    let stateOrder = 0;
-    for (const st of INDIA_STATES) {
-      stateOrder++;
-      const stateId = st.name.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-");
-      const isUT = UT_NAMES.has(st.name);
+      const commitBatchIfNeeded = async (force = false) => {
+        if ((count >= 400 || force) && count > 0) {
+          console.log(`[LOCATION SEED] Writing batch ${batchNumber}...`);
+          await batch.commit();
+          batchNumber++;
+          batch = writeBatch(db);
+          count = 0;
+        }
+      };
 
-      // 1. Seed State if missing
-      if (!existingStateIds.has(stateId)) {
-        console.log(`[LOCATION SEED ADD] State: ${st.name}`);
-        const stateRef = doc(db, "states", stateId);
-        batch.set(stateRef, {
-          id: stateId,
-          name: st.name.trim(),
-          slug: stateId,
-          type: isUT ? "ut" : "state",
-          country: "India",
-          enabled: true,
-          status: "active",
-          displayOrder: stateOrder,
-          createdBy: "system",
-          updatedBy: "system",
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-        });
-        count++;
-        statesAdded++;
-        existingStateIds.add(stateId);
-        await commitBatchIfNeeded();
-      } else {
-        skipped++;
-      }
+      let stateOrder = 0;
+      for (const st of INDIA_STATES) {
+        stateOrder++;
+        const stateId = st.name.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-");
+        const isUT = UT_NAMES.has(st.name);
 
-      // 2. Seed Districts if missing
-      let districtOrder = 0;
-      for (const distName of st.districts) {
-        districtOrder++;
-        const distId = `${st.name}-${distName}`.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-");
-        if (!existingDistrictIds.has(distId)) {
-          console.log(`[LOCATION SEED ADD] District: ${distName} (${st.name})`);
-          const distRef = doc(db, "districts", distId);
-          batch.set(distRef, {
-            id: distId,
-            stateId: stateId,
-            stateName: st.name.trim(),
-            name: distName.trim(),
-            slug: distName.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-"),
+        // 1. Seed State if missing
+        if (!existingStateIds.has(stateId)) {
+          console.log(`[LOCATION SEED ADD] State: ${st.name}`);
+          const stateRef = doc(db, "states", stateId);
+          batch.set(stateRef, {
+            id: stateId,
+            name: st.name.trim(),
+            slug: stateId,
+            type: isUT ? "ut" : "state",
             country: "India",
             enabled: true,
             status: "active",
-            displayOrder: districtOrder,
+            displayOrder: stateOrder,
             createdBy: "system",
             updatedBy: "system",
             createdAt: serverTimestamp(),
             updatedAt: serverTimestamp(),
           });
           count++;
-          districtsAdded++;
-          existingDistrictIds.add(distId);
+          statesAdded++;
+          existingStateIds.add(stateId);
           await commitBatchIfNeeded();
         } else {
           skipped++;
         }
+
+        // 2. Seed Districts if missing
+        let districtOrder = 0;
+        for (const distName of st.districts) {
+          districtOrder++;
+          const distId = `${st.name}-${distName}`.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-");
+          if (!existingDistrictIds.has(distId)) {
+            console.log(`[LOCATION SEED ADD] District: ${distName} (${st.name})`);
+            const distRef = doc(db, "districts", distId);
+            batch.set(distRef, {
+              id: distId,
+              stateId: stateId,
+              stateName: st.name.trim(),
+              name: distName.trim(),
+              slug: distName.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-"),
+              country: "India",
+              enabled: true,
+              status: "active",
+              displayOrder: districtOrder,
+              createdBy: "system",
+              updatedBy: "system",
+              createdAt: serverTimestamp(),
+              updatedAt: serverTimestamp(),
+            });
+            count++;
+            districtsAdded++;
+            existingDistrictIds.add(distId);
+            await commitBatchIfNeeded();
+          } else {
+            skipped++;
+          }
+        }
       }
-    }
 
-    if (count > 0) {
-      await commitBatchIfNeeded(true);
-    }
+      if (count > 0) {
+        await commitBatchIfNeeded(true);
+      }
 
-    if (statesAdded === 0 && districtsAdded === 0) {
-      console.log("[LOCATION SEED] Database already synchronized. Nothing to add.");
-    }
+      if (statesAdded === 0 && districtsAdded === 0) {
+        console.log("[LOCATION SEED] Database already synchronized. Nothing to add.");
+      }
 
-    console.log(`[LOCATION SYNC] States found: ${existingStateIds.size}`);
-    console.log(`[LOCATION SYNC] Districts found: ${existingDistrictIds.size}`);
-    console.log(`[LOCATION SYNC] States added: ${statesAdded}`);
-    console.log(`[LOCATION SYNC] Districts added: ${districtsAdded}`);
-    console.log(`[LOCATION SYNC] Duplicates skipped: ${skipped}`);
-    console.log(`[LOCATION SYNC] Errors: ${errors}`);
-    console.log("[LOCATION SEED] Completed successfully.");
+      console.log(`[LOCATION SYNC] States found: ${existingStateIds.size}`);
+      console.log(`[LOCATION SYNC] Districts found: ${existingDistrictIds.size}`);
+      console.log(`[LOCATION SYNC] States added: ${statesAdded}`);
+      console.log(`[LOCATION SYNC] Districts added: ${districtsAdded}`);
+      console.log(`[LOCATION SYNC] Duplicates skipped: ${skipped}`);
+      console.log(`[LOCATION SYNC] Errors: ${errors}`);
+      console.log("[LOCATION SEED] Completed successfully.");
 
       return {
         statesAdded,
@@ -3780,6 +3767,17 @@ export async function seedDefaultLocations(): Promise<SeedLocationsResult> {
             : "India location database is already synchronized.",
       };
     } catch (err: any) {
+      if (err?.code === "permission-denied" || err?.message?.includes("permissions")) {
+        console.warn("[LOCATION SEED NOTICE] Insufficient permissions to write locations to Firestore. Skipping.");
+        return {
+          statesAdded,
+          districtsAdded,
+          skipped,
+          errors: 0,
+          success: true,
+          message: "Location records are read-only for this session.",
+        };
+      }
       console.error("[LOCATION SEED ERROR]", err);
       return {
         statesAdded,
@@ -3799,14 +3797,15 @@ export async function seedDefaultLocations(): Promise<SeedLocationsResult> {
 
 /**
  * Fetch all States from Firestore 'states' collection.
- * Triggers seedDefaultLocations if empty.
+ * Uses DEFAULT_LOCATION_STATES fallback if Firestore returns empty.
  */
 export async function getAllLocationStates(includeDisabled = false): Promise<LocationState[]> {
   try {
-    let snap = await getDocs(collection(db, "states"));
+    const snap = await getDocs(collection(db, "states"));
     if (snap.empty) {
-      await seedDefaultLocations();
-      snap = await getDocs(collection(db, "states"));
+      return includeDisabled
+        ? DEFAULT_LOCATION_STATES
+        : DEFAULT_LOCATION_STATES.filter((s) => s.enabled !== false && s.status !== "disabled");
     }
 
     const items: LocationState[] = [];
@@ -3824,21 +3823,15 @@ export async function getAllLocationStates(includeDisabled = false): Promise<Loc
     return includeDisabled ? items : items.filter((s) => s.enabled !== false && s.status !== "disabled");
   } catch (err) {
     console.warn("Error fetching states from Firestore:", err);
-    return INDIA_STATES.map((s, idx) => ({
-      id: s.name.toLowerCase().replace(/[^a-z0-9]+/g, "-"),
-      name: s.name,
-      slug: s.name.toLowerCase().replace(/[^a-z0-9]+/g, "-"),
-      country: "India",
-      enabled: true,
-      status: "active",
-      displayOrder: idx + 1,
-    }));
+    return includeDisabled
+      ? DEFAULT_LOCATION_STATES
+      : DEFAULT_LOCATION_STATES.filter((s) => s.enabled !== false && s.status !== "disabled");
   }
 }
 
 /**
  * Fetch Districts for a given State from Firestore 'districts' collection.
- * Auto-seeds districts if none exist in Firestore for that state.
+ * Uses static in-memory fallback without attempting unauthorized writes.
  */
 export async function getDistrictsForStateFirestore(
   stateName: string,
@@ -3850,28 +3843,23 @@ export async function getDistrictsForStateFirestore(
     const snap = await getDocs(q);
 
     if (snap.empty) {
-      const stateObj = INDIA_STATES.find((s) => s.name === stateName);
+      const stateObj = INDIA_STATES.find((s) => s.name.toLowerCase().trim() === stateName.toLowerCase().trim());
       if (stateObj) {
-        const seeded: LocationDistrict[] = [];
-        for (const distName of stateObj.districts) {
-          const id = `${stateName}-${distName}`.toLowerCase().replace(/[^a-z0-9]+/g, "-");
-          const docRef = doc(db, "districts", id);
-          const data: LocationDistrict = {
-            id,
-            stateName,
-            name: distName,
-            slug: distName.toLowerCase().replace(/[^a-z0-9]+/g, "-"),
-            enabled: true,
-          };
-          await setDoc(docRef, {
-            ...data,
-            createdAt: serverTimestamp(),
-            updatedAt: serverTimestamp(),
-          });
-          seeded.push(data);
-        }
-        return includeDisabled ? seeded : seeded.filter((d) => d.enabled);
+        const defaultDistricts: LocationDistrict[] = stateObj.districts.map((distName, idx) => ({
+          id: `${stateName}-${distName}`.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-"),
+          stateName: stateObj.name,
+          name: distName.trim(),
+          slug: distName.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-"),
+          country: "India",
+          enabled: true,
+          status: "active",
+          displayOrder: idx + 1,
+        }));
+        return includeDisabled
+          ? defaultDistricts
+          : defaultDistricts.filter((d) => d.enabled !== false && d.status !== "disabled");
       }
+      return [];
     }
 
     const items: LocationDistrict[] = [];
@@ -3883,15 +3871,21 @@ export async function getDistrictsForStateFirestore(
     return includeDisabled ? items : items.filter((d) => d.enabled);
   } catch (err) {
     console.warn("Error fetching districts from Firestore:", err);
-    const stateObj = INDIA_STATES.find((s) => s.name === stateName);
+    const stateObj = INDIA_STATES.find((s) => s.name.toLowerCase().trim() === stateName.toLowerCase().trim());
     if (!stateObj) return [];
-    return stateObj.districts.map((d) => ({
+    const defaultDistricts: LocationDistrict[] = stateObj.districts.map((d, idx) => ({
       id: `${stateName}-${d}`.toLowerCase().replace(/[^a-z0-9]+/g, "-"),
-      stateName,
-      name: d,
+      stateName: stateObj.name,
+      name: d.trim(),
       slug: d.toLowerCase().replace(/[^a-z0-9]+/g, "-"),
+      country: "India",
       enabled: true,
+      status: "active",
+      displayOrder: idx + 1,
     }));
+    return includeDisabled
+      ? defaultDistricts
+      : defaultDistricts.filter((d) => d.enabled !== false && d.status !== "disabled");
   }
 }
 

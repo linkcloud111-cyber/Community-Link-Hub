@@ -420,10 +420,16 @@ export async function signInUserWithGoogle(): Promise<User> {
       }
 
       await firebaseSignOut(auth);
-      throw new Error(resData?.error || "Failed to provision canonical Google user session. Please try again.");
+      throw new Error(resData?.error || "Please register first. This Google account is not registered with LinkCloud.");
     }
   } catch (err: any) {
-    if (err.message && (err.message.startsWith("This is a Webmaster account") || err.message.startsWith("Your LinkCloud account") || err.message.startsWith("Account not found"))) {
+    if (
+      err.message &&
+      (err.message.includes("register first") ||
+        err.message.startsWith("This is a Webmaster account") ||
+        err.message.startsWith("Your LinkCloud account") ||
+        err.message.startsWith("Account not found"))
+    ) {
       throw err;
     }
     throw new Error(formatAuthError(err));

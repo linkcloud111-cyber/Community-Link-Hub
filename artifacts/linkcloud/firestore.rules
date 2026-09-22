@@ -267,14 +267,24 @@ service cloud.firestore {
       allow write: if isWebmaster();
     }
 
+    // ─── Pending Registrations ───
+    // Ephemeral staging records for 4-hour cleanup tracking. Server-managed, read restricted to Webmaster.
+    match /pendingRegistrations/{uid} {
+      allow read: if isWebmaster() || isUser(uid);
+      allow write: if false;
+    }
+
     // ─── Audit Logs ───
+    // Tamper-proof security audit log: Append-only by Webmaster or authenticated actors; update and delete are strictly forbidden.
     match /audit_logs/{logId} {
-      allow read, update, delete: if isWebmaster();
+      allow read: if isWebmaster();
       allow create: if isWebmaster() || (isSignedIn() && incoming().actorUid == request.auth.uid);
+      allow update, delete: if false;
     }
     match /auditLogs/{logId} {
-      allow read, update, delete: if isWebmaster();
+      allow read: if isWebmaster();
       allow create: if isWebmaster() || (isSignedIn() && incoming().actorUid == request.auth.uid);
+      allow update, delete: if false;
     }
 
     // ─── Site Settings ───

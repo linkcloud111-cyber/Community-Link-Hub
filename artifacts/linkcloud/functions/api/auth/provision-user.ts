@@ -170,8 +170,23 @@ export async function onRequestPost(context: {
       role: "user",
       status: "pending_verification",
       groupCount: 0,
+      registrationCreatedAt: nowIso,
       createdAt: nowIso,
       updatedAt: nowIso,
+    },
+    env,
+    false
+  );
+
+  await firestoreSetDoc(
+    `pendingRegistrations/${candidateUid}`,
+    {
+      uid: candidateUid,
+      email: cleanEmail,
+      phone: cleanPhone,
+      registrationCreatedAt: nowIso,
+      expiresAt: new Date(Date.now() + 4 * 60 * 60 * 1000).toISOString(),
+      status: "pending_verification",
     },
     env,
     false

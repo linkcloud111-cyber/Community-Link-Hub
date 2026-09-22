@@ -274,10 +274,37 @@ export default function Login() {
 
       setLoading(true);
 
+      // Server-side check: Verify if Gmail address is registered in LinkCloud
+      let regStatus: { registered: boolean; verified?: boolean } = { registered: false };
+      try {
+        const checkRes = await fetch("/api/auth/check-registration", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: gmailCheckResult.cleanEmail }),
+        });
+        if (checkRes.ok) {
+          regStatus = await checkRes.json();
+        } else {
+          const isReg = await checkIsEmailRegistered(gmailCheckResult.cleanEmail);
+          regStatus = { registered: isReg, verified: false };
+        }
+      } catch {
+        const isReg = await checkIsEmailRegistered(gmailCheckResult.cleanEmail);
+        regStatus = { registered: isReg, verified: false };
+      }
+
+      // Case A — Gmail is not registered in LinkCloud
+      if (!regStatus.registered) {
+        setCustomEmailError("Please register first. This Gmail is not registered with LinkCloud.");
+        toast.error("Please register first. This Gmail is not registered with LinkCloud.");
+        setLoading(false);
+        return;
+      }
+
       try {
         await setAuthRememberMe(rememberMe);
 
-        // ALWAYS authenticate directly with Firebase Authentication as source of truth
+        // Authenticate with Firebase Authentication as source of truth
         const u = await loginUser(gmailCheckResult.cleanEmail, password);
         clearFailedLoginAttempts(gmailCheckResult.cleanEmail);
 
@@ -287,11 +314,13 @@ export default function Login() {
           window.localStorage.setItem("user_email", gmailCheckResult.cleanEmail);
         }
 
+        // Case D — Gmail is registered, verified and password is correct
         if (u.emailVerified) {
           toast.success("Login successful.");
           setLocation("/dashboard");
         } else {
-          toast.info("Please verify your email address to access LinkCloud.");
+          // Case B — Gmail is registered but not verified
+          toast.info("Please verify your Gmail address before signing in.");
           setLocation("/verify-email");
         }
       } catch (error: any) {
@@ -321,68 +350,12 @@ export default function Login() {
           setLoading(false);
           return;
         }
-        if (errCode === "auth/user-not-found" || errMsg.includes("user-not-found")) {
-          setCustomEmailError("Incorrect Gmail address.");
-          toast.error("Incorrect Gmail address.");
-          if (!password || password.length < 8) {
-            setCustomPasswordError("Incorrect password.");
-          }
-          setLoading(false);
-          return;
-        }
-        if (errCode === "auth/wrong-password" || errMsg.includes("wrong-password")) {
-          setCustomEmailError(null);
-          setCustomPasswordError("Incorrect password.");
-          toast.error("Incorrect password.");
-          recordFailedLoginAttempt(gmailCheckResult.cleanEmail);
-          setLoading(false);
-          return;
-        }
 
-        if (errCode === "auth/invalid-credential" || errMsg.includes("invalid-credential")) {
-          let isRegistered = false;
-          try {
-            isRegistered = await checkIsEmailRegistered(gmailCheckResult.cleanEmail);
-          } catch (e) {
-            console.warn("Error checking email registration:", e);
-          }
-
-          if (isRegistered) {
-            setCustomEmailError(null);
-            setCustomPasswordError("Incorrect password.");
-            toast.error("Incorrect password.");
-            recordFailedLoginAttempt(gmailCheckResult.cleanEmail);
-          } else {
-            setCustomEmailError("Incorrect Gmail address or password.");
-            toast.error("Incorrect Gmail address or password.");
-            if (!password || password.length < 8) {
-              setCustomPasswordError("Incorrect password.");
-            }
-          }
-          setLoading(false);
-          return;
-        }
-
-        // Handle auth/invalid-credential or other errors by checking email registration
-        let isRegistered = false;
-        try {
-          isRegistered = await checkIsEmailRegistered(gmailCheckResult.cleanEmail);
-        } catch (e) {
-          console.warn("Error checking email registration:", e);
-        }
-
-        if (isRegistered) {
-          setCustomEmailError(null);
-          setCustomPasswordError("Incorrect password.");
-          toast.error("Incorrect password.");
-          recordFailedLoginAttempt(gmailCheckResult.cleanEmail);
-        } else {
-          setCustomEmailError("Incorrect Gmail address.");
-          toast.error("Incorrect Gmail address.");
-          if (!password || password.length < 8) {
-            setCustomPasswordError("Incorrect password.");
-          }
-        }
+        // Case C — Gmail is registered, but password is incorrect
+        setCustomEmailError(null);
+        setCustomPasswordError("Incorrect password.");
+        toast.error("Incorrect password.");
+        recordFailedLoginAttempt(gmailCheckResult.cleanEmail);
       } finally {
         setLoading(false);
       }

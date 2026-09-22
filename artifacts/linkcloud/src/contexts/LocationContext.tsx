@@ -2,7 +2,10 @@ import React, { createContext, useContext, useEffect, useState } from "react";
 import { collection, onSnapshot } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { LocationState, LocationDistrict, LocationCity } from "@/lib/types";
-import { seedDefaultLocations } from "@/lib/firestore";
+import {
+  DEFAULT_LOCATION_STATES,
+  DEFAULT_LOCATION_DISTRICTS,
+} from "@/lib/default-taxonomies";
 
 interface LocationSearchResult {
   type: "state" | "district" | "city";
@@ -30,13 +33,11 @@ interface LocationContextType {
 
 const LocationContext = createContext<LocationContextType | undefined>(undefined);
 
-let locationSeedTriggered = false;
-
 export function LocationProvider({ children }: { children: React.ReactNode }) {
-  const [states, setStates] = useState<LocationState[]>([]);
-  const [districts, setDistricts] = useState<LocationDistrict[]>([]);
+  const [states, setStates] = useState<LocationState[]>(DEFAULT_LOCATION_STATES);
+  const [districts, setDistricts] = useState<LocationDistrict[]>(DEFAULT_LOCATION_DISTRICTS);
   const [cities, setCities] = useState<LocationCity[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     if (!db || typeof db !== "object" || !("app" in db)) {
@@ -44,21 +45,12 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    // Trigger auto-seed on startup only once
-    if (!locationSeedTriggered) {
-      locationSeedTriggered = true;
-      seedDefaultLocations().catch((err) => console.warn("Auto seed locations error:", err));
-    }
-
-    let isSeeding = false;
-
     // 1. Real-time Listener for States
     const unsubStates = onSnapshot(
       collection(db, "states"),
       (snap) => {
-        if (snap.empty && !isSeeding) {
-          isSeeding = true;
-          seedDefaultLocations().then(() => { isSeeding = false; }).catch(() => { isSeeding = false; });
+        if (snap.empty) {
+          setStates((prev) => (prev.length > 0 ? prev : DEFAULT_LOCATION_STATES));
           return;
         }
         const list: LocationState[] = snap.docs.map((d) => {

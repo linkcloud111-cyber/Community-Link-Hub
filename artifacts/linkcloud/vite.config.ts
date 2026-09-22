@@ -15,6 +15,7 @@ function adminApiPlugin(): Plugin {
         handleAdminUserDeleteRequest,
         handleAdminStatsRequest,
         handleAdminMigrationDryRunRequest,
+        handleAdminCleanupUnverifiedRequest,
       } = await server.ssrLoadModule('/src/server/admin-api.ts');
       const {
         handleDevEmailChangeRequest,
@@ -27,6 +28,7 @@ function adminApiPlugin(): Plugin {
         handleAuthProvisionUser,
         handleAuthProvisionGoogleUser,
         handleAuthProvisionPhoneUser,
+        handleAuthCheckRegistration,
       } = await server.ssrLoadModule('/src/server/auth-api.ts');
 
       server.middlewares.use((req, res, next) => {
@@ -42,6 +44,12 @@ function adminApiPlugin(): Plugin {
         }
         if (url === '/api/admin/migration/dry-run') {
           return handleAdminMigrationDryRunRequest(req, res);
+        }
+        if (url === '/api/admin/cleanup-unverified') {
+          return handleAdminCleanupUnverifiedRequest(req, res);
+        }
+        if (url === '/api/auth/check-registration') {
+          return handleAuthCheckRegistration(req, res);
         }
         if (url === '/api/auth/provision-user') {
           return handleAuthProvisionUser(req, res);

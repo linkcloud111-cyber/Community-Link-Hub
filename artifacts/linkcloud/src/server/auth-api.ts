@@ -227,8 +227,20 @@ export async function handleAuthProvisionUser(
       role: "user",
       status: "pending_verification",
       groupCount: 0,
+      registrationCreatedAt: nowIso,
       createdAt: nowIso,
       updatedAt: nowIso,
+    });
+
+    // /pendingRegistrations/{canonicalUid}
+    const pendingRegRef = firestore.collection("pendingRegistrations").doc(canonicalUid);
+    batch.set(pendingRegRef, {
+      uid: canonicalUid,
+      email: cleanEmail,
+      phone: cleanPhone,
+      registrationCreatedAt: nowIso,
+      expiresAt: new Date(Date.now() + 4 * 60 * 60 * 1000).toISOString(),
+      status: "pending_verification",
     });
 
     // /emailIndex/{email}
@@ -364,98 +376,17 @@ export async function handleAuthProvisionGoogleUser(
       }
     }
 
-    // Allocate canonical sequential UID
-    const canonicalUid = await allocateNextSequentialUid();
-    const nowIso = new Date().toISOString();
-
-    // Clean up temporary popup user if different from canonical UID first,
-    // so that the email is released and can be bound to the canonical UID in Firebase Auth
-    if (decoded.uid && decoded.uid !== canonicalUid) {
-      try {
-        await auth.deleteUser(decoded.uid);
-      } catch (delErr: any) {
-        console.warn("[Auth API] Temporary popup user cleanup note:", delErr.message);
-      }
-    }
-
-    // Create user in Firebase Auth with canonical UID
-    try {
-      await auth.createUser({
-        uid: canonicalUid,
-        email: googleEmail,
-        displayName: googleName,
-        photoURL: googlePicture,
-        emailVerified: true,
-        disabled: false,
-      });
-    } catch (createErr: any) {
-      console.warn("[Auth API] Google createUser note:", createErr.message);
-    }
-
-    const batch = firestore.batch();
-
-    // Create /users/{canonicalUid}
-    const userDocRef = firestore.collection("users").doc(canonicalUid);
-    batch.set(userDocRef, {
-      uid: canonicalUid,
-      accountUid: canonicalUid,
-      displayName: googleName,
-      email: googleEmail,
-      phone: "",
-      photoURL: googlePicture,
-      emailVerified: true,
-      phoneVerified: false,
-      role: "user",
-      status: "active",
-      groupCount: 0,
-      createdAt: nowIso,
-      updatedAt: nowIso,
-    });
-
-    // /emailIndex/{email}
-    batch.set(emailIndexRef, {
-      uid: canonicalUid,
-      email: googleEmail,
-      createdAt: nowIso,
-    });
-
-    // Update /accountUidRegistry/{canonicalUid}
-    const registryRef = firestore.collection("accountUidRegistry").doc(canonicalUid);
-    batch.set(
-      registryRef,
+    // Registration-First Rule: If Google identity is not registered in LinkCloud, reject
+    sendJson(
+      res,
       {
-        accountUid: canonicalUid,
-        firebaseUid: canonicalUid,
-        status: "active",
-        activatedAt: nowIso,
+        success: false,
+        error: "Please register first. This Google account is not registered with LinkCloud.",
+        code: "ACCOUNT_NOT_REGISTERED",
       },
-      { merge: true }
+      403
     );
-
-    // Audit log
-    const auditLogRef = firestore.collection("auditLogs").doc();
-    batch.set(auditLogRef, {
-      action: "USER_PROVISIONED_GOOGLE",
-      targetUid: canonicalUid,
-      actorUid: "system",
-      details: { email: googleEmail },
-      timestamp: nowIso,
-    });
-
-    await batch.commit();
-
-    const customToken = await auth.createCustomToken(canonicalUid, {
-      accountUid: canonicalUid,
-      role: "user",
-    });
-
-    sendJson(res, {
-      success: true,
-      uid: canonicalUid,
-      accountUid: canonicalUid,
-      customToken,
-      isNew: true,
-    });
+    return;
   } catch (err: any) {
     console.error("[Auth API] Google provision error:", err);
     sendJson(res, { success: false, error: err?.message || "Failed to provision Google account." }, 500);
@@ -613,6 +544,98 @@ export async function handleAuthProvisionPhoneUser(
   } catch (err: any) {
     console.error("[Auth API] Phone provision error:", err);
     sendJson(res, { success: false, error: err?.message || "Failed to provision phone account." }, 500);
+  }
+}
+
+interface RateLimitRecord {
+  count: number;
+  resetAt: number;
+}
+const devRateLimitMap = new Map<string, RateLimitRecord>();
+const DEV_RATE_LIMIT_WINDOW_MS = 60 * 1000;
+const DEV_MAX_REQUESTS_PER_WINDOW = 20;
+
+function isDevRateLimited(ip: string): boolean {
+  const now = Date.now();
+  const record = devRateLimitMap.get(ip);
+  if (!record || record.resetAt <= now) {
+    devRateLimitMap.set(ip, { count: 1, resetAt: now + DEV_RATE_LIMIT_WINDOW_MS });
+    if (devRateLimitMap.size > 1000) {
+      for (const [key, val] of devRateLimitMap.entries()) {
+        if (val.resetAt <= now) devRateLimitMap.delete(key);
+      }
+    }
+    return false;
+  }
+  record.count++;
+  return record.count > DEV_MAX_REQUESTS_PER_WINDOW;
+}
+
+export async function handleAuthCheckRegistration(
+  req: IncomingMessage,
+  res: ServerResponse
+): Promise<void> {
+  if (req.method === "OPTIONS") {
+    res.writeHead(204, {
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "POST, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type, Authorization",
+    });
+    res.end();
+    return;
+  }
+
+  if (req.method !== "POST") {
+    sendJson(res, { error: "Method not allowed" }, 405);
+    return;
+  }
+
+  const clientIp = (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() || req.socket?.remoteAddress || "local";
+  if (isDevRateLimited(clientIp)) {
+    sendJson(res, { error: "Too many registration checks. Please try again later." }, 429);
+    return;
+  }
+
+  try {
+    const body = await parseBody(req);
+    const email = typeof body?.email === "string" ? body.email.trim().toLowerCase() : "";
+    if (!email || !email.endsWith("@gmail.com")) {
+      sendJson(res, { error: "Please provide a valid Gmail address." }, 400);
+      return;
+    }
+
+    const app = getFirebaseAdminApp();
+    if (!app) {
+      sendJson(res, { error: "Firebase Admin not initialized" }, 500);
+      return;
+    }
+    const firestore = getFirestore(app);
+
+    const emailIndexRef = firestore.collection("emailIndex").doc(email);
+    const emailIndexSnap = await emailIndexRef.get();
+
+    if (!emailIndexSnap.exists) {
+      sendJson(res, { registered: false, verified: false });
+      return;
+    }
+
+    const indexData = emailIndexSnap.data();
+    if (!indexData?.uid || indexData.status === "deleted") {
+      sendJson(res, { registered: false, verified: false });
+      return;
+    }
+
+    const userSnap = await firestore.collection("users").doc(indexData.uid).get();
+    const userData = userSnap.data();
+    const isVerified = Boolean(userData?.emailVerified === true || userData?.status === "active");
+
+    sendJson(res, {
+      registered: true,
+      verified: isVerified,
+    });
+  } catch (err: any) {
+    console.warn("[Auth API] check registration notice:", err);
+    sendJson(res, { error: "Failed to check registration status" }, 500);
   }
 }
 
