@@ -1,4 +1,5 @@
 import { getServiceAccount, type Env } from "./_common";
+export { getServiceAccount };
 
 // Cache Firebase Admin OAuth2 access token to avoid round-trips
 let cachedAccessToken: { token: string; expiresAt: number } | null = null;
