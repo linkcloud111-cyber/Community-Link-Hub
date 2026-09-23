@@ -574,23 +574,44 @@ export async function handleAdminCleanupUnverifiedRequest(
   }
 
   try {
-    const authHeader = req.headers.authorization;
-    const cronSecretHeader = req.headers["x-cron-secret"];
-    const envCronSecret = process.env.CRON_SECRET || process.env.CLEANUP_CRON_SECRET || "";
-
-    const isCron = Boolean(
-      envCronSecret &&
-      (cronSecretHeader === envCronSecret || authHeader === `Bearer ${envCronSecret}`)
-    );
+    const authHeader = (req.headers.authorization || "").trim();
+    const cronSecretHeader = (
+      (Array.isArray(req.headers["x-cron-secret"])
+        ? req.headers["x-cron-secret"][0]
+        : req.headers["x-cron-secret"]) || ""
+    ).trim();
+    const envCronSecret = (process.env.CRON_SECRET || process.env.CLEANUP_CRON_SECRET || "").trim();
 
     let callerActor = "scheduler_cron";
-    if (!isCron) {
-      const auth = await authenticateAdminRequest(req);
-      if (!auth.authenticated) {
-        sendJson(res, { error: auth.error || "Webmaster authentication required" }, 403);
+
+    if (cronSecretHeader) {
+      if (!envCronSecret) {
+        sendJson(res, { error: "Server configuration error: CRON_SECRET missing" }, 500);
         return;
       }
-      callerActor = auth.user?.email || "webmaster";
+
+      if (cronSecretHeader !== envCronSecret) {
+        sendJson(res, { error: "Unauthorized: Invalid Cron secret" }, 401);
+        return;
+      }
+
+      callerActor = "scheduler_cron";
+    } else {
+      if (!authHeader) {
+        sendJson(res, { error: "Unauthorized: Requires Webmaster role or valid Cron secret" }, 401);
+        return;
+      }
+
+      if (envCronSecret && authHeader === `Bearer ${envCronSecret}`) {
+        callerActor = "scheduler_cron";
+      } else {
+        const auth = await authenticateAdminRequest(req);
+        if (!auth.authenticated) {
+          sendJson(res, { error: auth.error || "Webmaster authentication required" }, 403);
+          return;
+        }
+        callerActor = auth.user?.email || "webmaster";
+      }
     }
 
     const app = getFirebaseAdminApp()!;

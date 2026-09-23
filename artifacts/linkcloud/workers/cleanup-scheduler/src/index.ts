@@ -48,8 +48,7 @@ export default {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            "X-Cron-Secret": env.CRON_SECRET,
-            "Authorization": `Bearer ${env.CRON_SECRET}`,
+            "X-Cron-Secret": env.CRON_SECRET.trim(),
             "User-Agent": "LinkCloud-Cloudflare-Cron-Scheduler/1.0",
           },
         });

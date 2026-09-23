@@ -5,6 +5,8 @@ export interface Env {
   VITE_FIREBASE_PROJECT_ID?: string;
   APP_URL?: string;
   VITE_APP_URL?: string;
+  CRON_SECRET?: string;
+  CLEANUP_CRON_SECRET?: string;
 }
 
 export function jsonResponse(data: any, status = 200, extraHeaders: Record<string, string> = {}): Response {

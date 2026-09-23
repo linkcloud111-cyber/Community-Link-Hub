@@ -83,22 +83,42 @@ export async function onRequestPost(context: {
   const { request, env } = context;
 
   // Verify caller: either Cron Secret or active Webmaster authentication
-  const cronSecretHeader = request.headers.get("X-Cron-Secret") || "";
-  const authHeader = request.headers.get("Authorization") || "";
-  const envCronSecret = (env as any).CRON_SECRET || (env as any).CLEANUP_CRON_SECRET || "";
-
-  const isCronAuthorized = Boolean(
-    envCronSecret &&
-    (cronSecretHeader === envCronSecret || authHeader === `Bearer ${envCronSecret}`)
-  );
+  const cronSecretHeader = (request.headers.get("X-Cron-Secret") || "").trim();
+  const authHeader = (request.headers.get("Authorization") || "").trim();
+  const envCronSecret = ((env.CRON_SECRET || env.CLEANUP_CRON_SECRET || "") as string).trim();
 
   let callerActor = "scheduler_cron";
-  if (!isCronAuthorized) {
-    const webmasterCheck = await requireWebmasterAuth(request, env);
-    if (!webmasterCheck.valid) {
+
+  if (cronSecretHeader) {
+    // Caller is explicitly identifying as an automated Cron Scheduler
+    if (!envCronSecret) {
+      console.error("[Cleanup Auth Error] CRON_SECRET is not configured in environment bindings.");
+      return errorResponse("Server configuration error: CRON_SECRET missing", 500);
+    }
+
+    if (cronSecretHeader !== envCronSecret) {
+      console.warn("[Cleanup Auth Warning] Invalid Cron secret received.");
+      return errorResponse("Unauthorized: Invalid Cron secret", 401);
+    }
+
+    // Valid Cron secret verified
+    callerActor = "scheduler_cron";
+  } else {
+    // No Cron header provided. Authenticate as Webmaster using standard Firebase Bearer token.
+    if (!authHeader) {
       return errorResponse("Unauthorized: Requires Webmaster role or valid Cron secret", 401);
     }
-    callerActor = webmasterCheck.email || "webmaster";
+
+    // Check if the bearer token happens to match the cron secret (fallback for direct curl with bearer)
+    if (envCronSecret && authHeader === `Bearer ${envCronSecret}`) {
+      callerActor = "scheduler_cron";
+    } else {
+      const webmasterCheck = await requireWebmasterAuth(request, env);
+      if (!webmasterCheck.valid) {
+        return errorResponse("Unauthorized: Requires Webmaster role or valid Cron secret", 401);
+      }
+      callerActor = webmasterCheck.email || "webmaster";
+    }
   }
 
   const now = Date.now();
