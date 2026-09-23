@@ -200,10 +200,14 @@ export async function handleAdminUserStatusRequest(
   try {
     // Check if target user is also a webmaster
     const targetWebmasterDoc = await firestore.collection("webmaster").doc(targetUid).get();
-    if (targetWebmasterDoc.exists && targetWebmasterDoc.data()?.role === "webmaster") {
+    const targetUserDoc = await firestore.collection("users").doc(targetUid).get();
+    if (
+      (targetWebmasterDoc.exists && (targetWebmasterDoc.data()?.role === "webmaster" || targetWebmasterDoc.data()?.active === true)) ||
+      (targetUserDoc.exists && targetUserDoc.data()?.role === "webmaster")
+    ) {
       sendJson(
         res,
-        { error: "Self-Protection: You cannot alter the status of a protected Webmaster account." },
+        { error: "Security Protection: You cannot alter the status of a protected Webmaster account." },
         403
       );
       return;
@@ -312,10 +316,14 @@ export async function handleAdminUserDeleteRequest(
   try {
     // Check if target is a webmaster
     const targetWebmasterDoc = await firestore.collection("webmaster").doc(targetUid).get();
-    if (targetWebmasterDoc.exists && targetWebmasterDoc.data()?.role === "webmaster") {
+    const targetUserDoc = await firestore.collection("users").doc(targetUid).get();
+    if (
+      (targetWebmasterDoc.exists && (targetWebmasterDoc.data()?.role === "webmaster" || targetWebmasterDoc.data()?.active === true)) ||
+      (targetUserDoc.exists && targetUserDoc.data()?.role === "webmaster")
+    ) {
       sendJson(
         res,
-        { error: "Self-Protection: You cannot delete a protected Webmaster account." },
+        { error: "Security Protection: Webmaster accounts cannot be deleted through the user management API." },
         403
       );
       return;

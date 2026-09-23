@@ -42,14 +42,19 @@ export async function onRequestPost(context: {
     return errorResponse("Missing or invalid 'uid' parameter", 400);
   }
 
-  // Self-protection
+  // Strict Webmaster Protection: Webmaster accounts cannot be deleted via the user management API
   if (targetUid === callerUid) {
     return errorResponse("Self-Protection: You cannot delete your active Webmaster account.", 403);
   }
 
   const targetWebmasterDoc = await firestoreGetDoc(`webmaster/${targetUid}`, env);
-  if (targetWebmasterDoc && targetWebmasterDoc.role === "webmaster") {
-    return errorResponse("Self-Protection: You cannot delete a protected Webmaster account.", 403);
+  const targetUserDoc = await firestoreGetDoc(`users/${targetUid}`, env);
+
+  if (
+    (targetWebmasterDoc && (targetWebmasterDoc.role === "webmaster" || targetWebmasterDoc.active === true)) ||
+    (targetUserDoc && targetUserDoc.role === "webmaster")
+  ) {
+    return errorResponse("Security Protection: Webmaster accounts cannot be deleted through the user management API.", 403);
   }
 
   const nowIso = new Date().toISOString();

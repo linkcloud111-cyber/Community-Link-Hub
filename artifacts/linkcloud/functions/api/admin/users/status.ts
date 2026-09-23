@@ -42,18 +42,23 @@ export async function onRequestPost(context: {
     return errorResponse("Missing or invalid 'uid' parameter", 400);
   }
 
-  // Self-protection
+  // Strict Webmaster Protection: Webmaster status cannot be altered via normal user management
   if (
     targetUid === callerUid &&
-    (status === "suspended" || status === "banned" || status === "deleted")
+    (status === "suspended" || status === "banned" || status === "deleted" || status === "inactive")
   ) {
-    return errorResponse("Self-Protection: You cannot suspend or ban your active Webmaster account.", 403);
+    return errorResponse("Self-Protection: You cannot suspend, ban, or deactivate your active Webmaster account.", 403);
   }
 
   // Check target user isn't webmaster
   const targetWebmasterDoc = await firestoreGetDoc(`webmaster/${targetUid}`, env);
-  if (targetWebmasterDoc && targetWebmasterDoc.role === "webmaster") {
-    return errorResponse("Self-Protection: You cannot alter the status of a protected Webmaster account.", 403);
+  const targetUserDoc = await firestoreGetDoc(`users/${targetUid}`, env);
+
+  if (
+    (targetWebmasterDoc && (targetWebmasterDoc.role === "webmaster" || targetWebmasterDoc.active === true)) ||
+    (targetUserDoc && targetUserDoc.role === "webmaster")
+  ) {
+    return errorResponse("Security Protection: You cannot alter the status of a protected Webmaster account.", 403);
   }
 
   const shouldDisable = status === "suspended" || status === "banned";
