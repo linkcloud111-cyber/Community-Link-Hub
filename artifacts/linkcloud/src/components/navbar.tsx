@@ -11,6 +11,7 @@ import {
   LogOut,
   LayoutDashboard,
   Shield,
+  ShieldCheck,
   Cloud,
   X,
   Plus,
@@ -175,12 +176,24 @@ export default function Navbar() {
                       <div className="absolute right-0 mt-2 w-64 max-w-[calc(100vw-2rem)] rounded-2xl border border-border bg-card/95 backdrop-blur-xl shadow-2xl z-50 overflow-hidden">
                         {/* Profile Header Snippet */}
                         <div className="p-3 border-b border-border bg-muted/30">
-                          <p className="text-xs font-bold text-foreground truncate">
-                            {profile?.displayName || user.displayName || "User"}
-                          </p>
+                          <div className="flex items-center justify-between gap-1">
+                            <p className="text-xs font-bold text-foreground truncate">
+                              {profile?.displayName || user.displayName || "User"}
+                            </p>
+                            {isWebmaster && (
+                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-primary/10 text-primary border border-primary/20 shrink-0">
+                                <ShieldCheck className="w-3 h-3" /> Webmaster
+                              </span>
+                            )}
+                          </div>
                           <p className="text-[11px] text-muted-foreground truncate">
                             {profile?.email || user.email}
                           </p>
+                          {profile?.accountUid && (
+                            <p className="text-[10px] text-muted-foreground/80 font-mono mt-0.5 truncate">
+                              UID: {profile.accountUid}
+                            </p>
+                          )}
                         </div>
 
                         <div className="p-2 space-y-0.5 max-h-[70vh] overflow-y-auto">
@@ -261,6 +274,12 @@ export default function Navbar() {
                                 className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm hover:bg-primary/10 hover:text-primary transition-colors text-left"
                               >
                                 <Settings className="w-4 h-4" /> Profile Settings
+                              </button>
+                              <button
+                                onClick={() => navigateAndClose("/dashboard?tab=change-password")}
+                                className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm hover:bg-primary/10 hover:text-primary transition-colors text-left"
+                              >
+                                <KeyRound className="w-4 h-4" /> Change Password
                               </button>
                               <button
                                 onClick={() => navigateAndClose("/dashboard?tab=security")}

@@ -74,7 +74,7 @@ export default function AdminOverview() {
           <div className="flex items-center gap-2 text-xs font-bold text-primary uppercase tracking-widest mb-1">
             <ShieldCheck className="w-4 h-4" /> Single Webmaster Console
           </div>
-          <h1 className="text-3xl font-extrabold tracking-tight">Web Administrator Dashboard</h1>
+          <h1 className="text-3xl font-extrabold tracking-tight">Webmaster Console Dashboard</h1>
           <p className="text-sm text-muted-foreground mt-0.5">
             Full platform authority over users, groups, taxonomy, locations, & site health.
           </p>

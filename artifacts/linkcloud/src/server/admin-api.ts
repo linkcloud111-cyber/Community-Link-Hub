@@ -201,10 +201,28 @@ export async function handleAdminUserStatusRequest(
     // Check if target user is also a webmaster
     const targetWebmasterDoc = await firestore.collection("webmaster").doc(targetUid).get();
     const targetUserDoc = await firestore.collection("users").doc(targetUid).get();
-    if (
+    const isTargetWebmaster = Boolean(
       (targetWebmasterDoc.exists && (targetWebmasterDoc.data()?.role === "webmaster" || targetWebmasterDoc.data()?.active === true)) ||
       (targetUserDoc.exists && targetUserDoc.data()?.role === "webmaster")
-    ) {
+    );
+
+    if (isTargetWebmaster) {
+      // Last-Webmaster safeguard check
+      const webmastersSnap = await firestore.collection("webmaster").get();
+      const activeCount = webmastersSnap.docs.filter((d) => {
+        const data = d.data();
+        return data.active !== false && (data.role === "webmaster" || !data.role);
+      }).length;
+
+      if (activeCount <= 1) {
+        sendJson(
+          res,
+          { error: "Forbidden: Cannot deactivate or alter the status of the last remaining active Webmaster account in the system." },
+          403
+        );
+        return;
+      }
+
       sendJson(
         res,
         { error: "Security Protection: You cannot alter the status of a protected Webmaster account." },
@@ -317,10 +335,28 @@ export async function handleAdminUserDeleteRequest(
     // Check if target is a webmaster
     const targetWebmasterDoc = await firestore.collection("webmaster").doc(targetUid).get();
     const targetUserDoc = await firestore.collection("users").doc(targetUid).get();
-    if (
+    const isTargetWebmaster = Boolean(
       (targetWebmasterDoc.exists && (targetWebmasterDoc.data()?.role === "webmaster" || targetWebmasterDoc.data()?.active === true)) ||
       (targetUserDoc.exists && targetUserDoc.data()?.role === "webmaster")
-    ) {
+    );
+
+    if (isTargetWebmaster) {
+      // Last-Webmaster safeguard check
+      const webmastersSnap = await firestore.collection("webmaster").get();
+      const activeCount = webmastersSnap.docs.filter((d) => {
+        const data = d.data();
+        return data.active !== false && (data.role === "webmaster" || !data.role);
+      }).length;
+
+      if (activeCount <= 1) {
+        sendJson(
+          res,
+          { error: "Forbidden: Cannot delete the last remaining active Webmaster account in the system." },
+          403
+        );
+        return;
+      }
+
       sendJson(
         res,
         { error: "Security Protection: Webmaster accounts cannot be deleted through the user management API." },

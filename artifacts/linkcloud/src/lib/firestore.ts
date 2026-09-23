@@ -952,6 +952,14 @@ export async function updateUserStatus(
     throw new Error(errorMsg);
   }
 
+  // Webmaster protection: Cannot suspend, ban, or delete any Webmaster account
+  if (
+    userSnap.data()?.role === "webmaster" &&
+    (status === "suspended" || status === "banned" || status === "deleted")
+  ) {
+    throw new Error("Security Protection: Webmaster administrative accounts cannot be suspended, banned, or deleted.");
+  }
+
   const payload: Record<string, any> = {
     status,
     active: status === "active",
@@ -1247,6 +1255,15 @@ export async function performPermanentUserDeletion(params: {
   const userRef = await resolveUserDocRef(targetUid);
   const userSnap = await getDoc(userRef);
   const userData = userSnap.exists() ? userSnap.data() : null;
+
+  // Webmaster protection: Never permanently delete a Webmaster account
+  if (userData?.role === "webmaster") {
+    throw new Error("Security Protection: Webmaster administrative accounts cannot be deleted through user management.");
+  }
+  const wmSnap = await getDoc(doc(db, "webmaster", targetUid)).catch(() => null);
+  if (wmSnap && wmSnap.exists()) {
+    throw new Error("Security Protection: Webmaster administrative accounts cannot be deleted through user management.");
+  }
 
   const email = normalizeEmail(userData?.email || "");
   const phone = normalizePhone(userData?.phone || "");
@@ -1577,6 +1594,10 @@ export async function requestAccountDeletion(
   reason: string
 ): Promise<void> {
   const userProfile = await getUserProfile(uid);
+
+  if (userProfile?.role === "webmaster") {
+    throw new Error("Webmaster administrative accounts cannot submit deletion requests.");
+  }
 
   // Check if active deletion request already exists
   if (userProfile?.deletionRequested || userProfile?.deletionStatus === "pending") {

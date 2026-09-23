@@ -323,28 +323,43 @@ export function AccountSecuritySection({
           </div>
         </div>
 
-        {/* STATE 1: NONE or CANCELLED */}
-        {(currentDeletionState === "NONE" || currentDeletionState === "CANCELLED") && (
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/80 dark:border-slate-700/60">
-            <div className="space-y-1">
-              <p className="text-sm font-semibold text-slate-800 dark:text-slate-200">
-                You haven't submitted an account deletion request.
+        {/* Webmaster Protection Notice */}
+        {profile?.role === "webmaster" ? (
+          <div className="flex items-center gap-3 p-4 rounded-xl bg-purple-50 dark:bg-purple-950/30 border border-purple-200 dark:border-purple-800/60">
+            <ShieldCheck className="w-5 h-5 text-purple-600 dark:text-purple-400 flex-shrink-0" />
+            <div className="space-y-0.5">
+              <p className="text-sm font-bold text-purple-900 dark:text-purple-200">
+                Master Webmaster Security Protection Active
               </p>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                Submitting a deletion request will notify the Webmaster to permanently purge your private account data.
+              <p className="text-xs text-purple-700 dark:text-purple-300">
+                This is the primary administrative account for LinkCloud. Account self-deletion is restricted to ensure continuous platform governance.
               </p>
             </div>
-
-            <button
-              id="open-deletion-modal-btn"
-              onClick={() => setDeletionModalOpen(true)}
-              className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold text-rose-700 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-900/60 border border-rose-200 dark:border-rose-800 transition flex-shrink-0"
-            >
-              <Trash2 className="w-4 h-4" />
-              <span>Request Account Deletion</span>
-            </button>
           </div>
-        )}
+        ) : (
+          <>
+            {/* STATE 1: NONE or CANCELLED */}
+            {(currentDeletionState === "NONE" || currentDeletionState === "CANCELLED") && (
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/80 dark:border-slate-700/60">
+                <div className="space-y-1">
+                  <p className="text-sm font-semibold text-slate-800 dark:text-slate-200">
+                    You haven't submitted an account deletion request.
+                  </p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    Submitting a deletion request will notify the Webmaster to permanently purge your private account data.
+                  </p>
+                </div>
+
+                <button
+                  id="open-deletion-modal-btn"
+                  onClick={() => setDeletionModalOpen(true)}
+                  className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold text-rose-700 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-900/60 border border-rose-200 dark:border-rose-800 transition flex-shrink-0"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  <span>Request Account Deletion</span>
+                </button>
+              </div>
+            )}
 
         {/* STATE 2: PENDING */}
         {currentDeletionState === "PENDING" && (
@@ -471,6 +486,8 @@ export function AccountSecuritySection({
               </button>
             </div>
           </div>
+        )}
+          </>
         )}
       </div>
 

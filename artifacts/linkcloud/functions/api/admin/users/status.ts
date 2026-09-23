@@ -1,6 +1,6 @@
 import { jsonResponse, errorResponse, type Env } from "../../email-change/_common";
 import { getServiceAccount, getGoogleAccessToken } from "../../email-change/_firebase-admin";
-import { firestoreGetDoc, firestoreSetDoc } from "../../email-change/_firestore";
+import { firestoreGetDoc, firestoreSetDoc, firestoreListCollection } from "../../email-change/_firestore";
 import { requireWebmasterAuth } from "../_admin-common";
 
 export async function onRequestOptions(): Promise<Response> {
@@ -54,10 +54,22 @@ export async function onRequestPost(context: {
   const targetWebmasterDoc = await firestoreGetDoc(`webmaster/${targetUid}`, env);
   const targetUserDoc = await firestoreGetDoc(`users/${targetUid}`, env);
 
-  if (
+  const isTargetWebmaster = Boolean(
     (targetWebmasterDoc && (targetWebmasterDoc.role === "webmaster" || targetWebmasterDoc.active === true)) ||
     (targetUserDoc && targetUserDoc.role === "webmaster")
-  ) {
+  );
+
+  if (isTargetWebmaster) {
+    // Last-Webmaster safeguard check
+    const activeWebmasters = await firestoreListCollection("webmaster", env, 50);
+    const activeCount = activeWebmasters.filter(
+      (doc) => doc.active !== false && (doc.role === "webmaster" || !doc.role)
+    ).length;
+
+    if (activeCount <= 1) {
+      return errorResponse("Forbidden: Cannot deactivate or alter the status of the last remaining active Webmaster account in the system.", 403);
+    }
+
     return errorResponse("Security Protection: You cannot alter the status of a protected Webmaster account.", 403);
   }
 
