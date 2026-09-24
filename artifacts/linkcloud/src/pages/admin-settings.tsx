@@ -858,7 +858,7 @@ export default function AdminSettings() {
 
                                 {/* Display Mode */}
                                 <span className="px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-muted text-muted-foreground border border-border">
-                                  {item.displayMode === "ticker" ? "Ticker (Marquee)" : "Banner (Static)"}
+                                  {item.displayMode === "ticker" || (item.displayMode as string) === "scrolling" ? "Ticker (Marquee)" : "Banner (Static)"}
                                 </span>
 
                                 {/* Priority */}

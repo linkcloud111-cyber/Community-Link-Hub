@@ -34,7 +34,7 @@ function validateAnnouncement(body: any): { valid: boolean; error?: string; clea
   const validTypes = ["info", "announcement", "important", "warning", "maintenance", "success"];
   const type = validTypes.includes(body.type) ? body.type : "announcement";
 
-  const validDisplayModes = ["banner", "ticker"];
+  const validDisplayModes = ["banner", "ticker", "static", "scrolling"];
   const displayMode = validDisplayModes.includes(body.displayMode) ? body.displayMode : "banner";
 
   const priority = typeof body.priority === "number" && !isNaN(body.priority)

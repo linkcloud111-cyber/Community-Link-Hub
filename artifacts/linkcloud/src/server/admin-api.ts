@@ -1069,7 +1069,7 @@ function validateAnnouncementPayload(body: any): { valid: boolean; error?: strin
   const validTypes = ["info", "announcement", "important", "warning", "maintenance", "success"];
   const type = validTypes.includes(body.type) ? body.type : "announcement";
 
-  const validDisplayModes = ["banner", "ticker"];
+  const validDisplayModes = ["banner", "ticker", "static", "scrolling"];
   const displayMode = validDisplayModes.includes(body.displayMode) ? body.displayMode : "banner";
 
   const priority = typeof body.priority === "number" && !isNaN(body.priority)
@@ -1089,15 +1089,26 @@ function validateAnnouncementPayload(body: any): { valid: boolean; error?: strin
     if (actionUrl.length > 300) {
       return { valid: false, error: "Action URL cannot exceed 300 characters." };
     }
-    const lowerUrl = actionUrl.toLowerCase();
+    const sanitizedUrl = actionUrl.replace(/[\x00-\x1F\x7F\s]+/g, "").toLowerCase();
     if (
-      lowerUrl.startsWith("javascript:") ||
-      lowerUrl.startsWith("data:") ||
-      lowerUrl.startsWith("vbscript:") ||
-      lowerUrl.startsWith("file:")
+      sanitizedUrl.startsWith("javascript:") ||
+      sanitizedUrl.startsWith("data:") ||
+      sanitizedUrl.startsWith("vbscript:") ||
+      sanitizedUrl.startsWith("file:")
     ) {
       return { valid: false, error: "Disallowed protocol in Action URL." };
     }
+    try {
+      const decodedUrl = decodeURIComponent(sanitizedUrl).replace(/[\x00-\x1F\x7F\s]+/g, "").toLowerCase();
+      if (
+        decodedUrl.startsWith("javascript:") ||
+        decodedUrl.startsWith("data:") ||
+        decodedUrl.startsWith("vbscript:") ||
+        decodedUrl.startsWith("file:")
+      ) {
+        return { valid: false, error: "Disallowed protocol in Action URL." };
+      }
+    } catch {}
   }
 
   let startAt = body.startAt ? String(body.startAt).trim() : null;

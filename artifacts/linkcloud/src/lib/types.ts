@@ -539,7 +539,7 @@ export type AnnouncementType =
   | "maintenance"
   | "success";
 
-export type AnnouncementDisplayMode = "banner" | "ticker";
+export type AnnouncementDisplayMode = "banner" | "ticker" | "static" | "scrolling";
 
 export interface Announcement {
   id: string;

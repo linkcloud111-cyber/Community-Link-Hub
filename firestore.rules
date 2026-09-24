@@ -293,6 +293,12 @@ service cloud.firestore {
       allow write: if isWebmaster();
     }
 
+    // ─── Website-Wide Announcements ───
+    match /announcements/{announcementId} {
+      allow read: if true;
+      allow write: if isWebmaster();
+    }
+
     // ─── FAQs ───
     match /faqs/{faqId} {
       allow read: if true;

@@ -126,11 +126,20 @@ export function usePageSEO({
       const defaultKeywords =
         settings?.metaKeywords ||
         "WhatsApp groups, Telegram channels, Discord servers, India group links";
+      const detectedOrigin =
+        typeof window !== "undefined" &&
+        window.location.origin &&
+        !window.location.origin.includes("localhost")
+          ? window.location.origin
+          : "https://community-link-hub.pages.dev";
+      const configuredCanonical = settings?.canonicalUrl?.trim();
       const canonicalBase = (
-        settings?.canonicalUrl || "https://linkcloud.in"
+        configuredCanonical && configuredCanonical !== "https://linkcloud.in"
+          ? configuredCanonical
+          : detectedOrigin
       ).replace(/\/$/, "");
       const defaultOgImage =
-        settings?.ogImage || "https://linkcloud.in/og-banner.png";
+        settings?.ogImage || `${canonicalBase}/og-banner.png`;
       const defaultTwitterImage =
         settings?.twitterCardImage || defaultOgImage;
 

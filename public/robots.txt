@@ -12,4 +12,4 @@ Disallow: /login
 Disallow: /register
 Disallow: /reset-password
 
-Sitemap: https://linkcloud.in/sitemap.xml
+Sitemap: https://community-link-hub.pages.dev/sitemap.xml

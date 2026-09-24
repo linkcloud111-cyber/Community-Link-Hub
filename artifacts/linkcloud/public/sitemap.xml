@@ -1,57 +1,57 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
-    <loc>https://linkcloud.in/</loc>
+    <loc>https://community-link-hub.pages.dev/</loc>
     <changefreq>daily</changefreq>
     <priority>1.0</priority>
   </url>
   <url>
-    <loc>https://linkcloud.in/groups</loc>
+    <loc>https://community-link-hub.pages.dev/groups</loc>
     <changefreq>hourly</changefreq>
     <priority>0.9</priority>
   </url>
   <url>
-    <loc>https://linkcloud.in/about</loc>
+    <loc>https://community-link-hub.pages.dev/about</loc>
     <changefreq>monthly</changefreq>
     <priority>0.7</priority>
   </url>
   <url>
-    <loc>https://linkcloud.in/contact</loc>
+    <loc>https://community-link-hub.pages.dev/contact</loc>
     <changefreq>monthly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://linkcloud.in/complaint</loc>
+    <loc>https://community-link-hub.pages.dev/complaint</loc>
     <changefreq>monthly</changefreq>
     <priority>0.5</priority>
   </url>
   <url>
-    <loc>https://linkcloud.in/faq</loc>
+    <loc>https://community-link-hub.pages.dev/faq</loc>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://linkcloud.in/help</loc>
+    <loc>https://community-link-hub.pages.dev/help</loc>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://linkcloud.in/terms</loc>
+    <loc>https://community-link-hub.pages.dev/terms</loc>
     <changefreq>monthly</changefreq>
     <priority>0.4</priority>
   </url>
   <url>
-    <loc>https://linkcloud.in/privacy</loc>
+    <loc>https://community-link-hub.pages.dev/privacy</loc>
     <changefreq>monthly</changefreq>
     <priority>0.4</priority>
   </url>
   <url>
-    <loc>https://linkcloud.in/dmca</loc>
+    <loc>https://community-link-hub.pages.dev/dmca</loc>
     <changefreq>monthly</changefreq>
     <priority>0.4</priority>
   </url>
   <url>
-    <loc>https://linkcloud.in/disclaimer</loc>
+    <loc>https://community-link-hub.pages.dev/disclaimer</loc>
     <changefreq>monthly</changefreq>
     <priority>0.4</priority>
   </url>

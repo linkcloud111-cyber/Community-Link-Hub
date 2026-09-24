@@ -17,18 +17,31 @@ import {
 import { subscribeActiveAnnouncements } from "@/lib/firestore";
 import type { Announcement, AnnouncementType } from "@/lib/types";
 
-// Safe URL validator: blocks javascript:, data:, vbscript:, file:
+// Safe URL validator: blocks javascript:, data:, vbscript:, file: with obfuscation hardening
 export function isSafeActionUrl(url?: string): boolean {
   if (!url) return false;
-  const trimmed = url.trim().toLowerCase();
+  // Strip whitespace, tabs, newlines, and control chars
+  const sanitized = url.replace(/[\x00-\x1F\x7F\s]+/g, "").toLowerCase();
   if (
-    trimmed.startsWith("javascript:") ||
-    trimmed.startsWith("data:") ||
-    trimmed.startsWith("vbscript:") ||
-    trimmed.startsWith("file:")
+    sanitized.startsWith("javascript:") ||
+    sanitized.startsWith("data:") ||
+    sanitized.startsWith("vbscript:") ||
+    sanitized.startsWith("file:")
   ) {
     return false;
   }
+  // Check URL-decoded variant for encoded scheme attacks
+  try {
+    const decoded = decodeURIComponent(sanitized).replace(/[\x00-\x1F\x7F\s]+/g, "").toLowerCase();
+    if (
+      decoded.startsWith("javascript:") ||
+      decoded.startsWith("data:") ||
+      decoded.startsWith("vbscript:") ||
+      decoded.startsWith("file:")
+    ) {
+      return false;
+    }
+  } catch {}
   return true;
 }
 
@@ -226,7 +239,7 @@ export default function AnnouncementBanner({
   const currentAnnouncement = visibleItems[currentIndex] || visibleItems[0];
   const theme = ANNOUNCEMENT_THEMES[currentAnnouncement.type] || ANNOUNCEMENT_THEMES.announcement;
   const IconComponent = theme.icon;
-  const isTicker = currentAnnouncement.displayMode === "ticker";
+  const isTicker = currentAnnouncement.displayMode === "ticker" || (currentAnnouncement.displayMode as string) === "scrolling";
 
   // URL Safety
   const safeUrl = isSafeActionUrl(currentAnnouncement.actionUrl)
