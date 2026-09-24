@@ -1,15 +1,27 @@
 import { useState, useEffect } from "react";
-import { getStaticPages } from "@/lib/firestore";
+import { getSiteSettings, getStaticPages } from "@/lib/firestore";
+import { usePageSEO } from "@/lib/page-meta";
 
 export default function TermsPage() {
   const [customContent, setCustomContent] = useState<string | null>(null);
 
+  usePageSEO({
+    title: "Terms and Conditions",
+    subtitle: "User Agreement & Rules",
+    description: "Review the LinkCloud terms of service, platform rules, and community listing policies.",
+    canonicalPath: "/terms",
+  });
+
   useEffect(() => {
-    getStaticPages().then((pages) => {
-      if (pages?.terms) {
-        setCustomContent(pages.terms);
-      }
-    }).catch(console.error);
+    Promise.all([getSiteSettings(), getStaticPages()])
+      .then(([settings, pages]) => {
+        if (settings?.termsContent && settings.termsContent.trim().length > 0) {
+          setCustomContent(settings.termsContent);
+        } else if (pages?.terms) {
+          setCustomContent(pages.terms);
+        }
+      })
+      .catch(console.error);
   }, []);
 
   return (

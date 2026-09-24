@@ -131,6 +131,11 @@ export default function Footer() {
                   DMCA
                 </Link>
               </li>
+              <li>
+                <Link href="/disclaimer" className="hover:text-primary transition-colors">
+                  Disclaimer
+                </Link>
+              </li>
             </ul>
           </div>
 

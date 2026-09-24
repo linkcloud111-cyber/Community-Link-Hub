@@ -1,17 +1,29 @@
 import { useState, useEffect } from "react";
 import { Link } from "wouter";
 import { AlertTriangle, Send } from "lucide-react";
-import { getStaticPages } from "@/lib/firestore";
+import { getSiteSettings, getStaticPages } from "@/lib/firestore";
+import { usePageSEO } from "@/lib/page-meta";
 
 export default function DMCAPage() {
   const [customContent, setCustomContent] = useState<string | null>(null);
 
+  usePageSEO({
+    title: "DMCA Copyright Policy",
+    subtitle: "Notice and Takedown Procedure",
+    description: "Submit a copyright infringement notice or DMCA takedown request to LinkCloud.",
+    canonicalPath: "/dmca",
+  });
+
   useEffect(() => {
-    getStaticPages().then((pages) => {
-      if (pages?.dmca) {
-        setCustomContent(pages.dmca);
-      }
-    }).catch(console.error);
+    Promise.all([getSiteSettings(), getStaticPages()])
+      .then(([settings, pages]) => {
+        if (settings?.dmcaContent && settings.dmcaContent.trim().length > 0) {
+          setCustomContent(settings.dmcaContent);
+        } else if (pages?.dmca) {
+          setCustomContent(pages.dmca);
+        }
+      })
+      .catch(console.error);
   }, []);
 
   return (

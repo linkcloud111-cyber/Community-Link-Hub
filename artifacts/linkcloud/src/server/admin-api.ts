@@ -833,3 +833,635 @@ export async function handleAdminCleanupUnverifiedRequest(
     sendJson(res, { error: err?.message || "Failed to execute cleanup." }, 500);
   }
 }
+
+/**
+ * GET /api/admin/settings
+ * Retrieves public or administrative site settings
+ */
+export async function handleAdminSettingsGetRequest(
+  req: IncomingMessage,
+  res: ServerResponse
+) {
+  if (req.method === "OPTIONS") {
+    sendJson(res, {}, 204);
+    return;
+  }
+  if (req.method !== "GET") {
+    sendJson(res, { error: "Method not allowed. Use GET." }, 405);
+    return;
+  }
+
+  const app = getFirebaseAdminApp();
+  if (!app) {
+    sendJson(res, { error: "Firestore service unavailable." }, 503);
+    return;
+  }
+
+  try {
+    const firestore = getFirestore(app);
+    const snap = await firestore.collection("settings").doc("site").get();
+    if (!snap.exists) {
+      sendJson(res, { success: true, settings: null });
+      return;
+    }
+    sendJson(res, { success: true, settings: snap.data() });
+  } catch (err: any) {
+    console.warn("[Admin API] Settings fetch error:", err?.message || err);
+    sendJson(res, { error: "Failed to retrieve settings." }, 500);
+  }
+}
+
+/**
+ * POST /api/admin/settings
+ * Updates site settings with strict validation, Webmaster authentication, and audit logging
+ */
+export async function handleAdminSettingsUpdateRequest(
+  req: IncomingMessage,
+  res: ServerResponse
+) {
+  if (req.method === "OPTIONS") {
+    sendJson(res, {}, 204);
+    return;
+  }
+  if (req.method !== "POST" && req.method !== "PUT") {
+    sendJson(res, { error: "Method not allowed. Use POST or PUT." }, 405);
+    return;
+  }
+
+  // 1. Verify Webmaster authorization
+  const authResult = await verifyWebmasterToken(req);
+  if (!authResult.valid) {
+    sendJson(res, { error: authResult.error }, authResult.statusCode || 401);
+    return;
+  }
+
+  // 2. Parse body
+  const body = await parseBody(req);
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    sendJson(res, { error: "Malformed payload: Expected JSON object." }, 400);
+    return;
+  }
+
+  // 3. Prevent Privilege Escalation & Unauthorized field injection
+  const forbiddenKeys = [
+    "role",
+    "roles",
+    "uid",
+    "accountUid",
+    "isAdmin",
+    "isWebmaster",
+    "permissions",
+    "password",
+    "salt",
+    "token",
+  ];
+  for (const key of forbiddenKeys) {
+    if (key in body) {
+      delete body[key];
+    }
+  }
+
+  // 4. Validate Structured Data (JSON-LD) if present
+  if (typeof body.structuredDataJson === "string" && body.structuredDataJson.trim().length > 0) {
+    try {
+      JSON.parse(body.structuredDataJson);
+    } catch (parseErr: any) {
+      sendJson(
+        res,
+        {
+          error: `Invalid JSON syntax in structuredDataJson: ${parseErr.message}`,
+        },
+        400
+      );
+      return;
+    }
+  }
+
+  // 5. Sanitize & Validate URLs to prevent script injection (javascript: or data: schemes)
+  const urlFields = [
+    "canonicalUrl",
+    "ogImage",
+    "twitterCardImage",
+    "siteLogo",
+    "favicon",
+    "homepageBanner",
+    "footerLogo",
+    "googleMapUrl",
+    "facebookUrl",
+    "instagramUrl",
+    "telegramUrl",
+    "whatsappUrl",
+    "youtubeUrl",
+    "linkedinUrl",
+    "twitterUrl",
+    "redditUrl",
+    "githubUrl",
+  ];
+
+  for (const field of urlFields) {
+    if (typeof body[field] === "string" && body[field].trim().length > 0) {
+      const val = body[field].trim().toLowerCase();
+      if (val.startsWith("javascript:") || val.startsWith("data:") || val.startsWith("vbscript:")) {
+        sendJson(res, { error: `Disallowed URL protocol in field '${field}'.` }, 400);
+        return;
+      }
+    }
+  }
+
+  // 6. Validate Canonical URL format
+  if (typeof body.canonicalUrl === "string" && body.canonicalUrl.trim().length > 0) {
+    const trimmedCanonical = body.canonicalUrl.trim();
+    if (!trimmedCanonical.startsWith("http://") && !trimmedCanonical.startsWith("https://")) {
+      sendJson(res, { error: "Canonical URL must start with http:// or https://" }, 400);
+      return;
+    }
+  }
+
+  // 7. Enforce string length bounds
+  if (typeof body.metaTitle === "string" && body.metaTitle.length > 200) {
+    sendJson(res, { error: "Meta Title cannot exceed 200 characters." }, 400);
+    return;
+  }
+  if (typeof body.metaDescription === "string" && body.metaDescription.length > 500) {
+    sendJson(res, { error: "Meta Description cannot exceed 500 characters." }, 400);
+    return;
+  }
+
+  const app = getFirebaseAdminApp();
+  if (!app) {
+    sendJson(res, { error: "Firestore service unavailable." }, 503);
+    return;
+  }
+
+  try {
+    const firestore = getFirestore(app);
+    const nowIso = new Date().toISOString();
+
+    const updatePayload = {
+      ...body,
+      updatedAt: nowIso,
+      updatedByUid: authResult.uid,
+      updatedByEmail: authResult.email,
+    };
+
+    // Atomic batch write: settings/site, settings/staticPages sync, and audit_logs
+    const batch = firestore.batch();
+
+    // 1. settings/site
+    const siteSettingsRef = firestore.collection("settings").doc("site");
+    batch.set(siteSettingsRef, updatePayload, { merge: true });
+
+    // 2. settings/staticPages (keep legal copy in sync)
+    const staticPagesRef = firestore.collection("settings").doc("staticPages");
+    const staticSync: Record<string, any> = { updatedAt: nowIso };
+    if (typeof body.privacyPolicyContent === "string") staticSync.privacy = body.privacyPolicyContent;
+    if (typeof body.termsContent === "string") staticSync.terms = body.termsContent;
+    if (typeof body.dmcaContent === "string") staticSync.dmca = body.dmcaContent;
+    if (typeof body.disclaimerContent === "string") staticSync.disclaimer = body.disclaimerContent;
+    batch.set(staticPagesRef, staticSync, { merge: true });
+
+    // 3. Append tamper-proof audit log
+    const auditRef = firestore.collection("audit_logs").doc();
+    batch.set(auditRef, {
+      action: "Settings Changed",
+      details: "Updated platform settings & SEO configuration via Webmaster API",
+      actorUid: authResult.uid || "webmaster",
+      actorEmail: authResult.email || "webmaster@linkcloud.in",
+      timestamp: nowIso,
+    });
+
+    await batch.commit();
+
+    sendJson(res, {
+      success: true,
+      message: "Webmaster settings saved successfully.",
+      updatedAt: nowIso,
+    });
+  } catch (err: any) {
+    console.error("[Admin API] Failed to save settings:", err);
+    sendJson(res, { error: err?.message || "Failed to persist settings." }, 500);
+  }
+}
+
+// ─── Website-Wide Announcements API Handlers ──────────────────────────────────
+
+function validateAnnouncementPayload(body: any): { valid: boolean; error?: string; cleaned?: any } {
+  if (!body || typeof body !== "object") {
+    return { valid: false, error: "Malformed payload: Expected JSON object." };
+  }
+
+  const title = typeof body.title === "string" ? body.title.trim() : "";
+  if (!title) {
+    return { valid: false, error: "Announcement title is required." };
+  }
+  if (title.length > 100) {
+    return { valid: false, error: "Announcement title cannot exceed 100 characters." };
+  }
+
+  const message = typeof body.message === "string" ? body.message.trim() : "";
+  if (!message) {
+    return { valid: false, error: "Announcement message is required." };
+  }
+  if (message.length > 500) {
+    return { valid: false, error: "Announcement message cannot exceed 500 characters." };
+  }
+
+  const validTypes = ["info", "announcement", "important", "warning", "maintenance", "success"];
+  const type = validTypes.includes(body.type) ? body.type : "announcement";
+
+  const validDisplayModes = ["banner", "ticker"];
+  const displayMode = validDisplayModes.includes(body.displayMode) ? body.displayMode : "banner";
+
+  const priority = typeof body.priority === "number" && !isNaN(body.priority)
+    ? Math.max(1, Math.min(100, Math.floor(body.priority)))
+    : 10;
+
+  const enabled = body.enabled !== false;
+  const dismissible = body.dismissible !== false;
+
+  let actionLabel = typeof body.actionLabel === "string" ? body.actionLabel.trim() : undefined;
+  if (actionLabel && actionLabel.length > 50) {
+    return { valid: false, error: "Action button label cannot exceed 50 characters." };
+  }
+
+  let actionUrl = typeof body.actionUrl === "string" ? body.actionUrl.trim() : undefined;
+  if (actionUrl) {
+    if (actionUrl.length > 300) {
+      return { valid: false, error: "Action URL cannot exceed 300 characters." };
+    }
+    const lowerUrl = actionUrl.toLowerCase();
+    if (
+      lowerUrl.startsWith("javascript:") ||
+      lowerUrl.startsWith("data:") ||
+      lowerUrl.startsWith("vbscript:") ||
+      lowerUrl.startsWith("file:")
+    ) {
+      return { valid: false, error: "Disallowed protocol in Action URL." };
+    }
+  }
+
+  let startAt = body.startAt ? String(body.startAt).trim() : null;
+  let endAt = body.endAt ? String(body.endAt).trim() : null;
+
+  if (startAt) {
+    const startTime = new Date(startAt).getTime();
+    if (isNaN(startTime)) {
+      return { valid: false, error: "Invalid startAt date format." };
+    }
+  }
+
+  if (endAt) {
+    const endTime = new Date(endAt).getTime();
+    if (isNaN(endTime)) {
+      return { valid: false, error: "Invalid endAt date format." };
+    }
+    if (startAt) {
+      const startTime = new Date(startAt).getTime();
+      if (endTime <= startTime) {
+        return { valid: false, error: "Schedule end date must be after start date." };
+      }
+    }
+  }
+
+  return {
+    valid: true,
+    cleaned: {
+      title,
+      message,
+      type,
+      displayMode,
+      priority,
+      enabled,
+      dismissible,
+      actionLabel: actionLabel || null,
+      actionUrl: actionUrl || null,
+      startAt: startAt || null,
+      endAt: endAt || null,
+    },
+  };
+}
+
+/**
+ * GET /api/announcements
+ * Public endpoint for retrieving currently active announcements
+ */
+export async function handleAnnouncementsGetRequest(
+  req: IncomingMessage,
+  res: ServerResponse
+) {
+  if (req.method === "OPTIONS") {
+    sendJson(res, {}, 204);
+    return;
+  }
+  if (req.method !== "GET") {
+    sendJson(res, { error: "Method not allowed. Use GET." }, 405);
+    return;
+  }
+
+  const app = getFirebaseAdminApp();
+  if (!app) {
+    sendJson(res, { error: "Firestore unavailable." }, 503);
+    return;
+  }
+
+  try {
+    const firestore = getFirestore(app);
+    const snap = await firestore
+      .collection("announcements")
+      .where("enabled", "==", true)
+      .get();
+
+    const now = Date.now();
+    const announcements: any[] = [];
+
+    snap.forEach((doc) => {
+      const data = doc.data();
+      const item = {
+        id: doc.id,
+        ...data,
+      };
+
+      if (item.startAt) {
+        const start = new Date(item.startAt).getTime();
+        if (!isNaN(start) && start > now) return;
+      }
+      if (item.endAt) {
+        const end = new Date(item.endAt).getTime();
+        if (!isNaN(end) && end < now) return;
+      }
+
+      announcements.push(item);
+    });
+
+    announcements.sort((a, b) => {
+      const pDiff = (b.priority ?? 10) - (a.priority ?? 10);
+      if (pDiff !== 0) return pDiff;
+      const tA = a.startAt ? new Date(a.startAt).getTime() : 0;
+      const tB = b.startAt ? new Date(b.startAt).getTime() : 0;
+      if (tB !== tA) return tB - tA;
+      return String(a.id).localeCompare(String(b.id));
+    });
+
+    sendJson(res, { success: true, announcements });
+  } catch (err: any) {
+    console.error("[Admin API] Failed to fetch announcements:", err);
+    sendJson(res, { error: "Failed to retrieve announcements." }, 500);
+  }
+}
+
+/**
+ * GET /api/admin/announcements
+ * Webmaster endpoint to list ALL announcements (including disabled/expired)
+ */
+export async function handleAdminAnnouncementsListRequest(
+  req: IncomingMessage,
+  res: ServerResponse
+) {
+  if (req.method === "OPTIONS") {
+    sendJson(res, {}, 204);
+    return;
+  }
+
+  const auth = await verifyWebmasterToken(req);
+  if (!auth.valid) {
+    sendJson(res, { error: auth.error }, auth.statusCode || 401);
+    return;
+  }
+
+  const app = getFirebaseAdminApp();
+  if (!app) {
+    sendJson(res, { error: "Firestore unavailable." }, 503);
+    return;
+  }
+
+  try {
+    const firestore = getFirestore(app);
+    const snap = await firestore.collection("announcements").get();
+    const items: any[] = [];
+    snap.forEach((doc) => {
+      items.push({ id: doc.id, ...doc.data() });
+    });
+
+    items.sort((a, b) => {
+      const pDiff = (b.priority ?? 10) - (a.priority ?? 10);
+      if (pDiff !== 0) return pDiff;
+      return String(a.id).localeCompare(String(b.id));
+    });
+
+    sendJson(res, { success: true, announcements: items });
+  } catch (err: any) {
+    console.error("[Admin API] Announcements list error:", err);
+    sendJson(res, { error: "Failed to list announcements." }, 500);
+  }
+}
+
+/**
+ * POST /api/admin/announcements
+ * Webmaster creates a new announcement
+ */
+export async function handleAdminAnnouncementCreateRequest(
+  req: IncomingMessage,
+  res: ServerResponse
+) {
+  if (req.method === "OPTIONS") {
+    sendJson(res, {}, 204);
+    return;
+  }
+
+  const auth = await verifyWebmasterToken(req);
+  if (!auth.valid) {
+    sendJson(res, { error: auth.error }, auth.statusCode || 401);
+    return;
+  }
+
+  const body = await parseBody(req);
+  const validation = validateAnnouncementPayload(body);
+  if (!validation.valid) {
+    sendJson(res, { error: validation.error }, 400);
+    return;
+  }
+
+  const app = getFirebaseAdminApp();
+  if (!app) {
+    sendJson(res, { error: "Firestore unavailable." }, 503);
+    return;
+  }
+
+  try {
+    const firestore = getFirestore(app);
+    const nowIso = new Date().toISOString();
+    const cleaned = validation.cleaned!;
+
+    const docData = {
+      ...cleaned,
+      createdAt: nowIso,
+      updatedAt: nowIso,
+      createdBy: auth.uid || "webmaster",
+      updatedBy: auth.uid || "webmaster",
+    };
+
+    const docRef = await firestore.collection("announcements").add(docData);
+
+    // Audit log
+    await firestore.collection("audit_logs").add({
+      action: "Announcement Created",
+      details: `Created site-wide announcement: "${cleaned.title}" [${cleaned.type}, ${cleaned.displayMode}, priority ${cleaned.priority}]`,
+      actorUid: auth.uid || "webmaster",
+      actorEmail: auth.email || "webmaster@linkcloud.in",
+      timestamp: nowIso,
+    });
+
+    sendJson(res, {
+      success: true,
+      message: "Announcement created successfully.",
+      id: docRef.id,
+      announcement: { id: docRef.id, ...docData },
+    });
+  } catch (err: any) {
+    console.error("[Admin API] Create announcement error:", err);
+    sendJson(res, { error: err?.message || "Failed to create announcement." }, 500);
+  }
+}
+
+/**
+ * PUT/PATCH /api/admin/announcements
+ * Webmaster updates an existing announcement
+ */
+export async function handleAdminAnnouncementUpdateRequest(
+  req: IncomingMessage,
+  res: ServerResponse
+) {
+  if (req.method === "OPTIONS") {
+    sendJson(res, {}, 204);
+    return;
+  }
+
+  const auth = await verifyWebmasterToken(req);
+  if (!auth.valid) {
+    sendJson(res, { error: auth.error }, auth.statusCode || 401);
+    return;
+  }
+
+  const body = await parseBody(req);
+  const id = body.id || (req.url?.includes("id=") ? new URLSearchParams(req.url.split("?")[1]).get("id") : null);
+  if (!id || typeof id !== "string") {
+    sendJson(res, { error: "Announcement ID is required." }, 400);
+    return;
+  }
+
+  const validation = validateAnnouncementPayload(body);
+  if (!validation.valid) {
+    sendJson(res, { error: validation.error }, 400);
+    return;
+  }
+
+  const app = getFirebaseAdminApp();
+  if (!app) {
+    sendJson(res, { error: "Firestore unavailable." }, 503);
+    return;
+  }
+
+  try {
+    const firestore = getFirestore(app);
+    const docRef = firestore.collection("announcements").doc(id);
+    const existing = await docRef.get();
+    if (!existing.exists) {
+      sendJson(res, { error: "Announcement not found." }, 404);
+      return;
+    }
+
+    const nowIso = new Date().toISOString();
+    const cleaned = validation.cleaned!;
+
+    const updateData = {
+      ...cleaned,
+      updatedAt: nowIso,
+      updatedBy: auth.uid || "webmaster",
+    };
+
+    await docRef.set(updateData, { merge: true });
+
+    // Audit log
+    await firestore.collection("audit_logs").add({
+      action: "Announcement Updated",
+      details: `Updated site-wide announcement "${cleaned.title}" (ID: ${id})`,
+      actorUid: auth.uid || "webmaster",
+      actorEmail: auth.email || "webmaster@linkcloud.in",
+      timestamp: nowIso,
+    });
+
+    sendJson(res, {
+      success: true,
+      message: "Announcement updated successfully.",
+      announcement: { id, ...updateData },
+    });
+  } catch (err: any) {
+    console.error("[Admin API] Update announcement error:", err);
+    sendJson(res, { error: err?.message || "Failed to update announcement." }, 500);
+  }
+}
+
+/**
+ * DELETE /api/admin/announcements
+ * Webmaster deletes an announcement
+ */
+export async function handleAdminAnnouncementDeleteRequest(
+  req: IncomingMessage,
+  res: ServerResponse
+) {
+  if (req.method === "OPTIONS") {
+    sendJson(res, {}, 204);
+    return;
+  }
+
+  const auth = await verifyWebmasterToken(req);
+  if (!auth.valid) {
+    sendJson(res, { error: auth.error }, auth.statusCode || 401);
+    return;
+  }
+
+  const body = await parseBody(req);
+  const id = body.id || (req.url?.includes("id=") ? new URLSearchParams(req.url.split("?")[1]).get("id") : null);
+  if (!id || typeof id !== "string") {
+    sendJson(res, { error: "Announcement ID is required for deletion." }, 400);
+    return;
+  }
+
+  const app = getFirebaseAdminApp();
+  if (!app) {
+    sendJson(res, { error: "Firestore unavailable." }, 503);
+    return;
+  }
+
+  try {
+    const firestore = getFirestore(app);
+    const docRef = firestore.collection("announcements").doc(id);
+    const existing = await docRef.get();
+    if (!existing.exists) {
+      sendJson(res, { error: "Announcement not found." }, 404);
+      return;
+    }
+
+    const title = existing.data()?.title || id;
+    await docRef.delete();
+
+    // Audit log
+    await firestore.collection("audit_logs").add({
+      action: "Announcement Deleted",
+      details: `Deleted site-wide announcement "${title}" (ID: ${id})`,
+      actorUid: auth.uid || "webmaster",
+      actorEmail: auth.email || "webmaster@linkcloud.in",
+      timestamp: new Date().toISOString(),
+    });
+
+    sendJson(res, {
+      success: true,
+      message: "Announcement deleted successfully.",
+    });
+  } catch (err: any) {
+    console.error("[Admin API] Delete announcement error:", err);
+    sendJson(res, { error: err?.message || "Failed to delete announcement." }, 500);
+  }
+}
+
+

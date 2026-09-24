@@ -12,11 +12,30 @@ import {
   getHelpArticles,
   addHelpArticle,
   deleteHelpArticle,
+  getAnnouncements,
+  createAnnouncement,
+  updateAnnouncement,
+  deleteAnnouncement,
+  toggleAnnouncementEnabled,
 } from "@/lib/firestore";
-import type { SiteSettings, FAQItem, AuditLog, SearchAnalytics, HelpArticle } from "@/lib/types";
+import type {
+  SiteSettings,
+  FAQItem,
+  AuditLog,
+  SearchAnalytics,
+  HelpArticle,
+  Announcement,
+  AnnouncementType,
+  AnnouncementDisplayMode,
+} from "@/lib/types";
+import { clearSiteSettingsCache } from "@/lib/page-meta";
 import AdminNav from "@/components/admin-nav";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { useAuth } from "@/contexts/AuthContext";
+import AnnouncementBanner, {
+  isSafeActionUrl,
+  ANNOUNCEMENT_THEMES,
+} from "@/components/announcement-banner";
 import { toast } from "sonner";
 import {
   Loader2,
@@ -49,11 +68,19 @@ import {
   ExternalLink,
   Code2,
   Filter,
+  Megaphone,
+  Calendar,
+  Clock,
+  Smartphone,
+  Monitor,
+  AlertTriangle,
+  X,
 } from "lucide-react";
 
 type SettingsTab =
   | "general"
   | "homepage"
+  | "announcements"
   | "aboutHelp"
   | "faq"
   | "contactSocial"
@@ -165,6 +192,26 @@ export default function AdminSettings() {
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [searchAnalytics, setSearchAnalytics] = useState<SearchAnalytics[]>([]);
 
+  // Announcements State
+  const [announcements, setAnnouncements] = useState<Announcement[]>([]);
+  const [announcementModalOpen, setAnnouncementModalOpen] = useState(false);
+  const [editingAnnouncement, setEditingAnnouncement] = useState<Announcement | null>(null);
+  const [announcementForm, setAnnouncementForm] = useState<Omit<Announcement, "id">>({
+    title: "",
+    message: "",
+    type: "announcement",
+    displayMode: "banner",
+    priority: 10,
+    enabled: true,
+    dismissible: true,
+    actionLabel: "",
+    actionUrl: "",
+    startAt: null,
+    endAt: null,
+  });
+  const [previewDevice, setPreviewDevice] = useState<"desktop" | "mobile">("desktop");
+  const [announcementSaving, setAnnouncementSaving] = useState(false);
+
   // FAQ Modal / Input
   const [faqModalOpen, setFaqModalOpen] = useState(false);
   const [editingFaq, setEditingFaq] = useState<FAQItem | null>(null);
@@ -181,13 +228,15 @@ export default function AdminSettings() {
       getHelpArticles(),
       getAuditLogs(30),
       getSearchAnalytics(),
+      getAnnouncements(false),
     ])
-      .then(([siteData, faqData, articleData, auditData, searchData]) => {
+      .then(([siteData, faqData, articleData, auditData, searchData, annData]) => {
         if (siteData) setSettings((prev) => ({ ...prev, ...siteData }));
         if (faqData) setFaqs(faqData);
         if (articleData) setHelpArticles(articleData);
         if (auditData) setAuditLogs(auditData);
         if (searchData) setSearchAnalytics(searchData);
+        if (annData) setAnnouncements(annData);
       })
       .catch((err) => {
         console.error(err);
@@ -200,14 +249,38 @@ export default function AdminSettings() {
     if (e) e.preventDefault();
     setSaving(true);
     try {
-      await updateSiteSettings(settings);
-      await logAuditEvent(
-        "Settings Changed",
-        `Updated webmaster configuration section (${tab})`,
-        user?.email || "webmaster@linkcloud.in",
-        user?.uid || "webmaster"
-      );
-      toast.success("Webmaster configuration saved to Firestore");
+      let savedViaApi = false;
+      if (user) {
+        try {
+          const idToken = await user.getIdToken();
+          const res = await fetch("/api/admin/settings", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${idToken}`,
+            },
+            body: JSON.stringify(settings),
+          });
+          if (res.ok) {
+            savedViaApi = true;
+          }
+        } catch {
+          // fallback to client-side Firestore write
+        }
+      }
+
+      if (!savedViaApi) {
+        await updateSiteSettings(settings);
+        await logAuditEvent(
+          "Settings Changed",
+          `Updated webmaster configuration section (${tab})`,
+          user?.email || "webmaster@linkcloud.in",
+          user?.uid || "webmaster"
+        );
+      }
+
+      clearSiteSettingsCache();
+      toast.success("Webmaster configuration saved successfully");
       // Refresh audit logs
       const updatedLogs = await getAuditLogs(30);
       setAuditLogs(updatedLogs);
@@ -239,7 +312,7 @@ export default function AdminSettings() {
     }
   };
 
-  const [deleteConfirm, setDeleteConfirm] = useState<{ id: string; type: "faq" | "article" } | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState<{ id: string; type: "faq" | "article" | "announcement" } | null>(null);
 
   const handleDeleteFaq = (id: string) => {
     setDeleteConfirm({ id, type: "faq" });
@@ -264,6 +337,169 @@ export default function AdminSettings() {
     setDeleteConfirm({ id, type: "article" });
   };
 
+  // Announcement Handlers
+  const handleOpenCreateAnnouncement = () => {
+    setEditingAnnouncement(null);
+    setAnnouncementForm({
+      title: "",
+      message: "",
+      type: "announcement",
+      displayMode: "banner",
+      priority: 10,
+      enabled: true,
+      dismissible: true,
+      actionLabel: "",
+      actionUrl: "",
+      startAt: null,
+      endAt: null,
+    });
+    setAnnouncementModalOpen(true);
+  };
+
+  const handleOpenEditAnnouncement = (item: Announcement) => {
+    setEditingAnnouncement(item);
+    setAnnouncementForm({
+      title: item.title,
+      message: item.message,
+      type: item.type,
+      displayMode: item.displayMode,
+      priority: item.priority,
+      enabled: item.enabled,
+      dismissible: item.dismissible,
+      actionLabel: item.actionLabel || "",
+      actionUrl: item.actionUrl || "",
+      startAt: item.startAt || null,
+      endAt: item.endAt || null,
+    });
+    setAnnouncementModalOpen(true);
+  };
+
+  const handleSaveAnnouncement = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!announcementForm.title.trim()) {
+      toast.error("Announcement title is required.");
+      return;
+    }
+    if (announcementForm.title.length > 100) {
+      toast.error("Announcement title cannot exceed 100 characters.");
+      return;
+    }
+    if (!announcementForm.message.trim()) {
+      toast.error("Announcement message is required.");
+      return;
+    }
+    if (announcementForm.message.length > 500) {
+      toast.error("Announcement message cannot exceed 500 characters.");
+      return;
+    }
+    if (announcementForm.actionUrl && !isSafeActionUrl(announcementForm.actionUrl)) {
+      toast.error("Action URL has a disallowed protocol (javascript:/data:).");
+      return;
+    }
+    if (announcementForm.startAt && announcementForm.endAt) {
+      if (new Date(announcementForm.endAt).getTime() <= new Date(announcementForm.startAt).getTime()) {
+        toast.error("Schedule end time must be after start time.");
+        return;
+      }
+    }
+
+    setAnnouncementSaving(true);
+    try {
+      let savedViaApi = false;
+      if (user) {
+        try {
+          const idToken = await user.getIdToken();
+          const payload = {
+            ...(editingAnnouncement ? { id: editingAnnouncement.id } : {}),
+            ...announcementForm,
+          };
+          const res = await fetch("/api/admin/announcements", {
+            method: editingAnnouncement ? "PUT" : "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${idToken}`,
+            },
+            body: JSON.stringify(payload),
+          });
+          if (res.ok) {
+            savedViaApi = true;
+          }
+        } catch {
+          // fallback to client-side Firestore
+        }
+      }
+
+      if (!savedViaApi) {
+        if (editingAnnouncement) {
+          await updateAnnouncement(
+            editingAnnouncement.id,
+            announcementForm,
+            user?.email || "webmaster@linkcloud.in",
+            user?.uid || "webmaster"
+          );
+        } else {
+          await createAnnouncement(
+            announcementForm,
+            user?.email || "webmaster@linkcloud.in",
+            user?.uid || "webmaster"
+          );
+        }
+      }
+
+      toast.success(editingAnnouncement ? "Announcement updated successfully" : "Announcement created successfully");
+      setAnnouncementModalOpen(false);
+      setEditingAnnouncement(null);
+      const freshList = await getAnnouncements(false);
+      setAnnouncements(freshList);
+    } catch (err: any) {
+      console.error("Failed to save announcement:", err);
+      toast.error(err?.message || "Failed to save announcement.");
+    } finally {
+      setAnnouncementSaving(false);
+    }
+  };
+
+  const handleToggleAnnouncement = async (item: Announcement) => {
+    const newEnabled = !item.enabled;
+    setAnnouncements((prev) =>
+      prev.map((a) => (a.id === item.id ? { ...a, enabled: newEnabled } : a))
+    );
+    try {
+      let savedViaApi = false;
+      if (user) {
+        try {
+          const idToken = await user.getIdToken();
+          const res = await fetch("/api/admin/announcements", {
+            method: "PUT",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${idToken}`,
+            },
+            body: JSON.stringify({ id: item.id, ...item, enabled: newEnabled }),
+          });
+          if (res.ok) savedViaApi = true;
+        } catch {}
+      }
+      if (!savedViaApi) {
+        await toggleAnnouncementEnabled(
+          item.id,
+          newEnabled,
+          user?.email || "webmaster@linkcloud.in",
+          user?.uid || "webmaster"
+        );
+      }
+      toast.success(`Announcement ${newEnabled ? "enabled" : "disabled"}`);
+    } catch {
+      toast.error("Failed to update announcement status");
+      const fresh = await getAnnouncements(false);
+      setAnnouncements(fresh);
+    }
+  };
+
+  const handleDeleteAnnouncement = (item: Announcement) => {
+    setDeleteConfirm({ id: item.id, type: "announcement" });
+  };
+
   const confirmDeleteAction = async () => {
     if (!deleteConfirm) return;
     const { id, type } = deleteConfirm;
@@ -272,10 +508,31 @@ export default function AdminSettings() {
         await deleteFAQ(id);
         toast.success("FAQ deleted");
         setFaqs(faqs.filter((f) => f.id !== id));
-      } else {
+      } else if (type === "article") {
         await deleteHelpArticle(id);
         toast.success("Help article deleted");
         setHelpArticles(helpArticles.filter((a) => a.id !== id));
+      } else if (type === "announcement") {
+        let deletedViaApi = false;
+        if (user) {
+          try {
+            const idToken = await user.getIdToken();
+            const res = await fetch(`/api/admin/announcements?id=${id}`, {
+              method: "DELETE",
+              headers: { Authorization: `Bearer ${idToken}` },
+            });
+            if (res.ok) deletedViaApi = true;
+          } catch {}
+        }
+        if (!deletedViaApi) {
+          await deleteAnnouncement(
+            id,
+            user?.email || "webmaster@linkcloud.in",
+            user?.uid || "webmaster"
+          );
+        }
+        toast.success("Announcement deleted");
+        setAnnouncements(announcements.filter((a) => a.id !== id));
       }
       setDeleteConfirm(null);
     } catch {
@@ -315,6 +572,7 @@ export default function AdminSettings() {
       <div className="flex items-center gap-2 border-b border-border pb-3 overflow-x-auto scrollbar-none">
         <TabButton active={tab === "general"} onClick={() => setTab("general")} icon={Globe} label="Branding & Info" />
         <TabButton active={tab === "homepage"} onClick={() => setTab("homepage")} icon={Layout} label="Homepage Layout" />
+        <TabButton active={tab === "announcements"} onClick={() => setTab("announcements")} icon={Megaphone} label="Announcements" />
         <TabButton active={tab === "aboutHelp"} onClick={() => setTab("aboutHelp")} icon={Info} label="About & Help" />
         <TabButton active={tab === "faq"} onClick={() => setTab("faq")} icon={HelpCircle} label="FAQ Management" />
         <TabButton active={tab === "contactSocial"} onClick={() => setTab("contactSocial")} icon={Phone} label="Contact & Social" />
@@ -531,6 +789,182 @@ export default function AdminSettings() {
                   enabled={settings.newsletterSectionEnabled}
                   onToggle={() => setSettings((s) => ({ ...s, newsletterSectionEnabled: !s.newsletterSectionEnabled }))}
                 />
+              </div>
+            </div>
+          )}
+
+          {/* TAB 2.5: WEBSITE-WIDE ANNOUNCEMENT SYSTEM */}
+          {tab === "announcements" && (
+            <div className="space-y-6">
+              <div className="bg-card border border-border rounded-3xl p-6 shadow-sm">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-border pb-4">
+                  <div>
+                    <h2 className="font-bold text-base flex items-center gap-2">
+                      <Megaphone className="w-5 h-5 text-primary" /> Website-Wide Announcements & Banners
+                    </h2>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Broadcast global updates, news, maintenance notices, and call-to-actions across the entire platform.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleOpenCreateAnnouncement}
+                    className="px-4 py-2 bg-primary text-primary-foreground font-bold text-xs rounded-xl flex items-center gap-1.5 shadow-sm hover:bg-primary/90 transition-all self-start sm:self-auto"
+                  >
+                    <Plus className="w-4 h-4" /> New Announcement
+                  </button>
+                </div>
+
+                {/* Announcement Cards List */}
+                <div className="mt-6 space-y-4">
+                  {announcements.length === 0 ? (
+                    <div className="text-center py-12 border border-dashed border-border rounded-2xl bg-muted/20">
+                      <Megaphone className="w-10 h-10 text-muted-foreground mx-auto mb-3 opacity-40" />
+                      <p className="text-sm font-semibold text-foreground">No announcements configured yet</p>
+                      <p className="text-xs text-muted-foreground max-w-sm mx-auto mt-1 mb-4">
+                        Add your first announcement to display a real-time banner or scrolling ticker across LinkCloud.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={handleOpenCreateAnnouncement}
+                        className="px-4 py-2 bg-primary text-primary-foreground text-xs font-bold rounded-xl shadow-sm hover:bg-primary/90 transition-all"
+                      >
+                        Create First Announcement
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 gap-4">
+                      {announcements.map((item) => {
+                        const now = Date.now();
+                        const isScheduled = item.startAt && new Date(item.startAt).getTime() > now;
+                        const isExpired = item.endAt && new Date(item.endAt).getTime() < now;
+                        const theme = ANNOUNCEMENT_THEMES[item.type] || ANNOUNCEMENT_THEMES.announcement;
+
+                        return (
+                          <div
+                            key={item.id}
+                            className={`border rounded-2xl p-4 sm:p-5 bg-card/60 hover:border-primary/40 transition-all space-y-3 ${
+                              !item.enabled ? "opacity-60 bg-muted/20 border-border" : "border-border shadow-sm"
+                            }`}
+                          >
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <div className="flex flex-wrap items-center gap-2">
+                                {/* Type Badge */}
+                                <span
+                                  className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${theme.badge}`}
+                                >
+                                  {item.type}
+                                </span>
+
+                                {/* Display Mode */}
+                                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-muted text-muted-foreground border border-border">
+                                  {item.displayMode === "ticker" ? "Ticker (Marquee)" : "Banner (Static)"}
+                                </span>
+
+                                {/* Priority */}
+                                <span className="px-2 py-0.5 rounded-md text-[10px] font-mono bg-muted/60 text-muted-foreground">
+                                  Priority: {item.priority ?? 10}
+                                </span>
+
+                                {/* Status */}
+                                {!item.enabled ? (
+                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-muted text-muted-foreground">
+                                    Disabled
+                                  </span>
+                                ) : isScheduled ? (
+                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-500/10 text-blue-500 border border-blue-500/20">
+                                    Scheduled
+                                  </span>
+                                ) : isExpired ? (
+                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-500/10 text-rose-500 border border-rose-500/20">
+                                    Expired
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                                    Active Now
+                                  </span>
+                                )}
+                              </div>
+
+                              {/* Controls */}
+                              <div className="flex items-center gap-2 ml-auto">
+                                <button
+                                  type="button"
+                                  onClick={() => handleToggleAnnouncement(item)}
+                                  className={`px-3 py-1 rounded-lg text-xs font-bold transition-all border ${
+                                    item.enabled
+                                      ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/30 hover:bg-emerald-500/20"
+                                      : "bg-muted text-muted-foreground border-border hover:bg-muted/80"
+                                  }`}
+                                  title={item.enabled ? "Click to Disable" : "Click to Enable"}
+                                >
+                                  {item.enabled ? "Enabled" : "Disabled"}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenEditAnnouncement(item)}
+                                  className="p-1.5 rounded-lg bg-muted text-muted-foreground hover:text-foreground hover:bg-muted/80 transition-all"
+                                  title="Edit Announcement"
+                                >
+                                  <Edit2 className="w-4 h-4" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteAnnouncement(item)}
+                                  className="p-1.5 rounded-lg bg-destructive/10 text-destructive hover:bg-destructive/20 transition-all"
+                                  title="Delete Announcement"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </div>
+                            </div>
+
+                            {/* Title & Message */}
+                            <div>
+                              <h3 className="font-bold text-sm text-foreground">{item.title}</h3>
+                              <p className="text-xs text-muted-foreground mt-1 line-clamp-2 leading-relaxed">
+                                {item.message}
+                              </p>
+                            </div>
+
+                            {/* Schedule & Action Metadata */}
+                            <div className="flex flex-wrap items-center gap-x-6 gap-y-2 pt-2 border-t border-border/40 text-[11px] text-muted-foreground">
+                              <div className="flex items-center gap-1.5">
+                                <Calendar className="w-3.5 h-3.5 text-primary" />
+                                {item.startAt || item.endAt ? (
+                                  <span>
+                                    {item.startAt ? `From ${new Date(item.startAt).toLocaleString()}` : "Immediate start"}
+                                    {item.endAt ? ` until ${new Date(item.endAt).toLocaleString()}` : " (No end date)"}
+                                  </span>
+                                ) : (
+                                  <span>Always active (No schedule limits)</span>
+                                )}
+                              </div>
+
+                              {item.actionUrl && (
+                                <div className="flex items-center gap-1.5">
+                                  <ExternalLink className="w-3.5 h-3.5 text-primary" />
+                                  <span className="font-mono truncate max-w-xs">
+                                    {item.actionLabel || "Action"}: {item.actionUrl}
+                                  </span>
+                                </div>
+                              )}
+
+                              <div>
+                                {item.dismissible !== false ? (
+                                  <span className="text-emerald-500 font-medium">✓ Dismissible by visitors</span>
+                                ) : (
+                                  <span className="text-amber-500 font-medium">⚠ Sticky (Non-dismissible)</span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           )}
@@ -994,6 +1428,24 @@ export default function AdminSettings() {
                   danger
                   onToggle={() => setSettings((s) => ({ ...s, maintenanceMode: !s.maintenanceMode }))}
                 />
+                {settings.maintenanceMode && (
+                  <div className="col-span-full bg-amber-500/10 border border-amber-500/30 rounded-2xl p-4 space-y-2">
+                    <label className="text-xs font-semibold text-amber-500 uppercase tracking-wider flex items-center gap-1.5">
+                      <AlertTriangle className="w-3.5 h-3.5" /> Custom Public Maintenance Notice
+                    </label>
+                    <textarea
+                      value={settings.maintenanceMessage || ""}
+                      onChange={(e) => setSettings((s) => ({ ...s, maintenanceMessage: e.target.value }))}
+                      placeholder="LinkCloud is currently undergoing scheduled system upgrades and database optimization. We will be back online shortly!"
+                      className="w-full bg-background border border-border rounded-xl px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-amber-500/40 resize-none h-20"
+                      maxLength={300}
+                    />
+                    <div className="flex justify-between items-center text-[11px] text-muted-foreground">
+                      <span>Displayed to public visitors on the maintenance landing page.</span>
+                      <span>{(settings.maintenanceMessage || "").length} / 300</span>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -1611,12 +2063,319 @@ export default function AdminSettings() {
         </div>
       )}
 
+      {/* Announcement Modal with Live Device Preview */}
+      {announcementModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-card border border-border rounded-3xl max-w-2xl w-full p-6 shadow-2xl space-y-5 my-8 max-h-[92vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-border pb-3">
+              <h3 className="font-bold text-base flex items-center gap-2">
+                <Megaphone className="w-5 h-5 text-primary" />
+                {editingAnnouncement ? "Edit Announcement" : "Create New Announcement"}
+              </h3>
+              <button
+                type="button"
+                onClick={() => setAnnouncementModalOpen(false)}
+                className="p-1 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Live Interactive Preview Box */}
+            <div className="border border-border/80 rounded-2xl p-4 bg-muted/20 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5 text-xs font-bold text-muted-foreground uppercase tracking-wider">
+                  <Eye className="w-4 h-4 text-primary" /> Live Interactive Preview
+                </div>
+                <div className="flex items-center gap-1 bg-muted p-1 rounded-xl border border-border text-xs">
+                  <button
+                    type="button"
+                    onClick={() => setPreviewDevice("desktop")}
+                    className={`flex items-center gap-1 px-2.5 py-1 rounded-lg font-medium transition-all ${
+                      previewDevice === "desktop"
+                        ? "bg-card text-foreground shadow-sm"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    <Monitor className="w-3.5 h-3.5" /> Desktop
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPreviewDevice("mobile")}
+                    className={`flex items-center gap-1 px-2.5 py-1 rounded-lg font-medium transition-all ${
+                      previewDevice === "mobile"
+                        ? "bg-card text-foreground shadow-sm"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    <Smartphone className="w-3.5 h-3.5" /> Mobile (375px)
+                  </button>
+                </div>
+              </div>
+
+              <div
+                className={`transition-all duration-300 mx-auto overflow-hidden rounded-xl border border-border bg-card ${
+                  previewDevice === "mobile" ? "max-w-[375px] shadow-lg" : "w-full"
+                }`}
+              >
+                <AnnouncementBanner
+                  previewItem={{
+                    id: "preview_banner",
+                    title: announcementForm.title.trim() || "Announcement Headline",
+                    message:
+                      announcementForm.message.trim() ||
+                      "This is how your live announcement banner will look to all visitors across India.",
+                    type: announcementForm.type,
+                    displayMode: announcementForm.displayMode,
+                    priority: announcementForm.priority,
+                    enabled: announcementForm.enabled,
+                    dismissible: announcementForm.dismissible,
+                    actionLabel: announcementForm.actionLabel?.trim() || undefined,
+                    actionUrl: announcementForm.actionUrl?.trim() || undefined,
+                    startAt: announcementForm.startAt || undefined,
+                    endAt: announcementForm.endAt || undefined,
+                  }}
+                  previewMode={previewDevice}
+                />
+              </div>
+            </div>
+
+            <form onSubmit={handleSaveAnnouncement} className="space-y-4">
+              {/* Title Input */}
+              <div>
+                <div className="flex justify-between items-center mb-1">
+                  <label className={labelClass}>Headline / Title *</label>
+                  <span className="text-[10px] text-muted-foreground font-mono">
+                    {announcementForm.title.length} / 100
+                  </span>
+                </div>
+                <input
+                  value={announcementForm.title}
+                  onChange={(e) => setAnnouncementForm((a) => ({ ...a, title: e.target.value }))}
+                  placeholder="e.g. New WhatsApp Community Added for Developers"
+                  maxLength={100}
+                  className={inputClass}
+                  required
+                />
+              </div>
+
+              {/* Message Input */}
+              <div>
+                <div className="flex justify-between items-center mb-1">
+                  <label className={labelClass}>Message Body *</label>
+                  <span className="text-[10px] text-muted-foreground font-mono">
+                    {announcementForm.message.length} / 500
+                  </span>
+                </div>
+                <textarea
+                  value={announcementForm.message}
+                  onChange={(e) => setAnnouncementForm((a) => ({ ...a, message: e.target.value }))}
+                  placeholder="Provide clear details, update notes, or guidance for LinkCloud members..."
+                  maxLength={500}
+                  rows={3}
+                  className="w-full p-3 bg-muted/30 border border-border rounded-xl text-xs outline-none focus:ring-2 focus:ring-primary resize-none font-mono"
+                  required
+                />
+              </div>
+
+              {/* Type & Display Mode */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className={labelClass}>Category Theme / Type</label>
+                  <select
+                    value={announcementForm.type}
+                    onChange={(e) =>
+                      setAnnouncementForm((a) => ({ ...a, type: e.target.value as AnnouncementType }))
+                    }
+                    className="w-full p-2.5 bg-muted/30 border border-border rounded-xl text-xs outline-none focus:ring-2 focus:ring-primary font-mono"
+                  >
+                    <option value="announcement">Announcement (Indigo)</option>
+                    <option value="info">Info / Tip (Blue)</option>
+                    <option value="important">Important (Purple)</option>
+                    <option value="warning">Notice / Warning (Yellow)</option>
+                    <option value="maintenance">Maintenance (Amber)</option>
+                    <option value="success">Success / Highlight (Emerald)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className={labelClass}>Display Presentation</label>
+                  <select
+                    value={announcementForm.displayMode}
+                    onChange={(e) =>
+                      setAnnouncementForm((a) => ({
+                        ...a,
+                        displayMode: e.target.value as AnnouncementDisplayMode,
+                      }))
+                    }
+                    className="w-full p-2.5 bg-muted/30 border border-border rounded-xl text-xs outline-none focus:ring-2 focus:ring-primary font-mono"
+                  >
+                    <option value="banner">Static Banner (Top full-width card)</option>
+                    <option value="ticker">Scrolling Ticker (Continuous marquee)</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Priority & Toggles */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 items-center">
+                <div>
+                  <label className={labelClass}>Display Priority (1–100)</label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={100}
+                    value={announcementForm.priority}
+                    onChange={(e) =>
+                      setAnnouncementForm((a) => ({
+                        ...a,
+                        priority: parseInt(e.target.value) || 10,
+                      }))
+                    }
+                    className={inputClass}
+                  />
+                  <span className="text-[10px] text-muted-foreground mt-0.5 block">Higher = shown first</span>
+                </div>
+
+                <div className="pt-2 sm:pt-0">
+                  <label className="flex items-center gap-2 cursor-pointer text-xs font-semibold">
+                    <input
+                      type="checkbox"
+                      checked={announcementForm.enabled}
+                      onChange={(e) => setAnnouncementForm((a) => ({ ...a, enabled: e.target.checked }))}
+                      className="w-4 h-4 rounded text-primary focus:ring-primary"
+                    />
+                    <span>Active / Enabled</span>
+                  </label>
+                  <span className="text-[10px] text-muted-foreground mt-0.5 block">Turn on/off immediately</span>
+                </div>
+
+                <div className="pt-2 sm:pt-0">
+                  <label className="flex items-center gap-2 cursor-pointer text-xs font-semibold">
+                    <input
+                      type="checkbox"
+                      checked={announcementForm.dismissible}
+                      onChange={(e) =>
+                        setAnnouncementForm((a) => ({ ...a, dismissible: e.target.checked }))
+                      }
+                      className="w-4 h-4 rounded text-primary focus:ring-primary"
+                    />
+                    <span>Allow Dismissal</span>
+                  </label>
+                  <span className="text-[10px] text-muted-foreground mt-0.5 block">Show (X) button to close</span>
+                </div>
+              </div>
+
+              {/* Action Button & Link URL */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className={labelClass}>Action Button Label (Optional)</label>
+                  <input
+                    value={announcementForm.actionLabel || ""}
+                    onChange={(e) => setAnnouncementForm((a) => ({ ...a, actionLabel: e.target.value }))}
+                    placeholder="e.g. Explore Groups, Read Guidelines"
+                    maxLength={50}
+                    className={inputClass}
+                  />
+                </div>
+
+                <div>
+                  <label className={labelClass}>Action Link URL (Optional)</label>
+                  <input
+                    value={announcementForm.actionUrl || ""}
+                    onChange={(e) => setAnnouncementForm((a) => ({ ...a, actionUrl: e.target.value }))}
+                    placeholder="e.g. /groups, /faq, https://t.me/..."
+                    maxLength={300}
+                    className={inputClass}
+                  />
+                  {announcementForm.actionUrl && !isSafeActionUrl(announcementForm.actionUrl) && (
+                    <span className="text-[10px] text-destructive font-semibold flex items-center gap-1 mt-1">
+                      <AlertTriangle className="w-3 h-3" /> Disallowed URL protocol detected
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* Schedule Start & End */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className={labelClass}>Schedule Start (Optional)</label>
+                  <input
+                    type="datetime-local"
+                    value={announcementForm.startAt ? announcementForm.startAt.slice(0, 16) : ""}
+                    onChange={(e) =>
+                      setAnnouncementForm((a) => ({
+                        ...a,
+                        startAt: e.target.value ? new Date(e.target.value).toISOString() : null,
+                      }))
+                    }
+                    className={inputClass}
+                  />
+                  <span className="text-[10px] text-muted-foreground mt-0.5 block">
+                    Leave blank to activate immediately
+                  </span>
+                </div>
+
+                <div>
+                  <label className={labelClass}>Schedule Expiry (Optional)</label>
+                  <input
+                    type="datetime-local"
+                    value={announcementForm.endAt ? announcementForm.endAt.slice(0, 16) : ""}
+                    onChange={(e) =>
+                      setAnnouncementForm((a) => ({
+                        ...a,
+                        endAt: e.target.value ? new Date(e.target.value).toISOString() : null,
+                      }))
+                    }
+                    className={inputClass}
+                  />
+                  <span className="text-[10px] text-muted-foreground mt-0.5 block">
+                    Leave blank for permanent display
+                  </span>
+                </div>
+              </div>
+
+              {/* Modal Actions */}
+              <div className="flex justify-end gap-2 pt-3 border-t border-border">
+                <button
+                  type="button"
+                  onClick={() => setAnnouncementModalOpen(false)}
+                  disabled={announcementSaving}
+                  className="px-4 py-2 bg-muted text-muted-foreground text-xs font-bold rounded-xl hover:bg-muted/80"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={announcementSaving}
+                  className="px-5 py-2 bg-primary text-primary-foreground text-xs font-bold rounded-xl flex items-center gap-2 hover:bg-primary/90 shadow-md"
+                >
+                  {announcementSaving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                  {editingAnnouncement ? "Update Announcement" : "Publish Announcement"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* Delete Record Confirmation Dialog */}
       <ConfirmDialog
         open={!!deleteConfirm}
         onOpenChange={(open) => !open && setDeleteConfirm(null)}
-        title={deleteConfirm?.type === "faq" ? "Delete FAQ" : "Delete Help Article"}
-        description={`Are you sure you want to permanently delete this ${deleteConfirm?.type === "faq" ? "FAQ" : "help article"}? This action cannot be undone.`}
+        title={
+          deleteConfirm?.type === "faq"
+            ? "Delete FAQ"
+            : deleteConfirm?.type === "article"
+            ? "Delete Help Article"
+            : "Delete Announcement"
+        }
+        description={`Are you sure you want to permanently delete this ${
+          deleteConfirm?.type === "faq"
+            ? "FAQ"
+            : deleteConfirm?.type === "article"
+            ? "help article"
+            : "announcement banner"
+        }? This action cannot be undone.`}
         confirmText="Delete"
         cancelText="Cancel"
         variant="destructive"

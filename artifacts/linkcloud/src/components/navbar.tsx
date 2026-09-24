@@ -197,60 +197,76 @@ export default function Navbar() {
                         </div>
 
                         <div className="p-2 space-y-0.5 max-h-[70vh] overflow-y-auto">
-                          <button
-                            onClick={() => navigateAndClose(isWebmaster ? "/webmaster" : "/dashboard")}
-                            className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-semibold hover:bg-primary/10 hover:text-primary transition-colors text-left"
-                          >
-                            <LayoutDashboard className="w-4 h-4 text-primary" /> Dashboard
-                          </button>
-                          <button
-                            onClick={() => navigateAndClose("/submit")}
-                            className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm hover:bg-primary/10 hover:text-primary transition-colors text-left"
-                          >
-                            <Plus className="w-4 h-4" /> Submit Group
-                          </button>
+                          {isWebmaster ? (
+                            <>
+                              <div className="px-3 py-1 text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
+                                Webmaster Control
+                              </div>
+                              <button
+                                onClick={() => navigateAndClose("/webmaster")}
+                                className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-semibold hover:bg-primary/10 hover:text-primary transition-colors text-left"
+                              >
+                                <LayoutDashboard className="w-4 h-4 text-primary" /> Dashboard
+                              </button>
+                              <button
+                                onClick={() => navigateAndClose("/webmaster/groups")}
+                                className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm hover:bg-primary/10 hover:text-primary transition-colors text-left"
+                              >
+                                <LayoutGrid className="w-4 h-4 text-amber-500" /> Groups
+                              </button>
+                              <button
+                                onClick={() => navigateAndClose("/webmaster/users")}
+                                className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm hover:bg-primary/10 hover:text-primary transition-colors text-left"
+                              >
+                                <UsersIcon className="w-4 h-4 text-rose-500" /> Users
+                              </button>
+                              <button
+                                onClick={() => navigateAndClose("/webmaster/categories")}
+                                className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm hover:bg-primary/10 hover:text-primary transition-colors text-left"
+                              >
+                                <FolderTree className="w-4 h-4 text-emerald-500" /> Taxonomy
+                              </button>
+                              <button
+                                onClick={() => navigateAndClose("/webmaster/locations")}
+                                className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm hover:bg-primary/10 hover:text-primary transition-colors text-left"
+                              >
+                                <MapPin className="w-4 h-4 text-cyan-500" /> Locations
+                              </button>
+                              <button
+                                onClick={() => navigateAndClose("/webmaster/reports")}
+                                className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm hover:bg-primary/10 hover:text-primary transition-colors text-left"
+                              >
+                                <ShieldAlert className="w-4 h-4 text-destructive" /> Reports & Links
+                              </button>
+                              <button
+                                onClick={() => navigateAndClose("/webmaster/contacts")}
+                                className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm hover:bg-primary/10 hover:text-primary transition-colors text-left"
+                              >
+                                <MessageSquare className="w-4 h-4 text-blue-500" /> Inbox & Grievances
+                              </button>
+                              <button
+                                onClick={() => navigateAndClose("/webmaster/notifications")}
+                                className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm hover:bg-primary/10 hover:text-primary transition-colors text-left"
+                              >
+                                <Bell className="w-4 h-4 text-indigo-500" /> Broadcasts
+                              </button>
+                              <button
+                                onClick={() => navigateAndClose("/webmaster/settings")}
+                                className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm hover:bg-primary/10 hover:text-primary transition-colors text-left"
+                              >
+                                <Settings className="w-4 h-4 text-violet-500" /> Settings & SEO
+                              </button>
 
-                          {!isWebmaster ? (
-                            <>
+                              <div className="my-1 border-t border-border" />
+                              <div className="px-3 py-1 text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
+                                Account
+                              </div>
                               <button
-                                onClick={() => navigateAndClose("/dashboard?tab=my-groups")}
+                                onClick={() => navigateAndClose("/submit")}
                                 className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm hover:bg-primary/10 hover:text-primary transition-colors text-left"
                               >
-                                <LayoutGrid className="w-4 h-4" /> My Groups
+                                <Plus className="w-4 h-4" /> Submit Group
                               </button>
-                              <button
-                                onClick={() => navigateAndClose("/dashboard?tab=favorites")}
-                                className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm hover:bg-primary/10 hover:text-primary transition-colors text-left"
-                              >
-                                <Heart className="w-4 h-4" /> Favorites
-                              </button>
-                              <button
-                                onClick={() => navigateAndClose("/dashboard?tab=notifications")}
-                                className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm hover:bg-primary/10 hover:text-primary transition-colors text-left"
-                              >
-                                <Bell className="w-4 h-4" /> Notifications
-                              </button>
-                              <button
-                                onClick={() => navigateAndClose("/dashboard?tab=profile")}
-                                className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm hover:bg-primary/10 hover:text-primary transition-colors text-left"
-                              >
-                                <User className="w-4 h-4" /> Profile
-                              </button>
-                              <button
-                                onClick={() => navigateAndClose("/dashboard?tab=settings")}
-                                className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm hover:bg-primary/10 hover:text-primary transition-colors text-left"
-                              >
-                                <Settings className="w-4 h-4" /> Settings
-                              </button>
-                              <button
-                                onClick={() => navigateAndClose("/dashboard?tab=security")}
-                                className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm hover:bg-primary/10 hover:text-primary transition-colors text-left"
-                              >
-                                <KeyRound className="w-4 h-4" /> Account Security
-                              </button>
-                            </>
-                          ) : (
-                            <>
                               <button
                                 onClick={() => navigateAndClose("/dashboard?tab=my-submitted-groups")}
                                 className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm hover:bg-primary/10 hover:text-primary transition-colors text-left"
@@ -286,6 +302,57 @@ export default function Navbar() {
                                 className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm hover:bg-primary/10 hover:text-primary transition-colors text-left"
                               >
                                 <Shield className="w-4 h-4" /> Account Security
+                              </button>
+                            </>
+                          ) : (
+                            <>
+                              <button
+                                onClick={() => navigateAndClose("/dashboard")}
+                                className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-semibold hover:bg-primary/10 hover:text-primary transition-colors text-left"
+                              >
+                                <LayoutDashboard className="w-4 h-4 text-primary" /> Dashboard
+                              </button>
+                              <button
+                                onClick={() => navigateAndClose("/submit")}
+                                className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm hover:bg-primary/10 hover:text-primary transition-colors text-left"
+                              >
+                                <Plus className="w-4 h-4" /> Submit Group
+                              </button>
+                              <button
+                                onClick={() => navigateAndClose("/dashboard?tab=my-groups")}
+                                className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm hover:bg-primary/10 hover:text-primary transition-colors text-left"
+                              >
+                                <LayoutGrid className="w-4 h-4" /> My Groups
+                              </button>
+                              <button
+                                onClick={() => navigateAndClose("/dashboard?tab=favorites")}
+                                className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm hover:bg-primary/10 hover:text-primary transition-colors text-left"
+                              >
+                                <Heart className="w-4 h-4" /> Favorites
+                              </button>
+                              <button
+                                onClick={() => navigateAndClose("/dashboard?tab=notifications")}
+                                className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm hover:bg-primary/10 hover:text-primary transition-colors text-left"
+                              >
+                                <Bell className="w-4 h-4" /> Notifications
+                              </button>
+                              <button
+                                onClick={() => navigateAndClose("/dashboard?tab=profile")}
+                                className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm hover:bg-primary/10 hover:text-primary transition-colors text-left"
+                              >
+                                <User className="w-4 h-4" /> Profile
+                              </button>
+                              <button
+                                onClick={() => navigateAndClose("/dashboard?tab=settings")}
+                                className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm hover:bg-primary/10 hover:text-primary transition-colors text-left"
+                              >
+                                <Settings className="w-4 h-4" /> Settings
+                              </button>
+                              <button
+                                onClick={() => navigateAndClose("/dashboard?tab=security")}
+                                className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm hover:bg-primary/10 hover:text-primary transition-colors text-left"
+                              >
+                                <KeyRound className="w-4 h-4" /> Account Security
                               </button>
                             </>
                           )}
@@ -370,20 +437,126 @@ export default function Navbar() {
                       {user.email}
                     </span>
                   </div>
-                  <button
-                    onClick={() => navigateAndClose(isWebmaster ? "/webmaster/dashboard" : "/dashboard")}
-                    className="w-full text-left block px-4 py-3 text-sm font-semibold rounded-xl hover:bg-muted"
-                  >
-                    Dashboard
-                  </button>
-                  <button
-                    onClick={() => navigateAndClose("/submit")}
-                    className="w-full text-left block px-4 py-3 text-sm font-medium rounded-xl hover:bg-muted"
-                  >
-                    Submit Group
-                  </button>
-                  {!isWebmaster ? (
+                  {isWebmaster ? (
                     <>
+                      <div className="px-4 pt-2 text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
+                        Webmaster Control
+                      </div>
+                      <button
+                        onClick={() => navigateAndClose("/webmaster")}
+                        className="w-full text-left block px-4 py-2.5 text-sm font-semibold rounded-xl hover:bg-muted"
+                      >
+                        Dashboard
+                      </button>
+                      <button
+                        onClick={() => navigateAndClose("/webmaster/groups")}
+                        className="w-full text-left block px-4 py-2.5 text-sm font-medium rounded-xl hover:bg-muted"
+                      >
+                        Groups Moderation
+                      </button>
+                      <button
+                        onClick={() => navigateAndClose("/webmaster/users")}
+                        className="w-full text-left block px-4 py-2.5 text-sm font-medium rounded-xl hover:bg-muted"
+                      >
+                        User Management
+                      </button>
+                      <button
+                        onClick={() => navigateAndClose("/webmaster/categories")}
+                        className="w-full text-left block px-4 py-2.5 text-sm font-medium rounded-xl hover:bg-muted"
+                      >
+                        Taxonomy & Categories
+                      </button>
+                      <button
+                        onClick={() => navigateAndClose("/webmaster/locations")}
+                        className="w-full text-left block px-4 py-2.5 text-sm font-medium rounded-xl hover:bg-muted"
+                      >
+                        Locations & States
+                      </button>
+                      <button
+                        onClick={() => navigateAndClose("/webmaster/reports")}
+                        className="w-full text-left block px-4 py-2.5 text-sm font-medium rounded-xl hover:bg-muted"
+                      >
+                        Reports & Links
+                      </button>
+                      <button
+                        onClick={() => navigateAndClose("/webmaster/contacts")}
+                        className="w-full text-left block px-4 py-2.5 text-sm font-medium rounded-xl hover:bg-muted"
+                      >
+                        Inbox & Grievances
+                      </button>
+                      <button
+                        onClick={() => navigateAndClose("/webmaster/notifications")}
+                        className="w-full text-left block px-4 py-2.5 text-sm font-medium rounded-xl hover:bg-muted"
+                      >
+                        Broadcasts
+                      </button>
+                      <button
+                        onClick={() => navigateAndClose("/webmaster/settings")}
+                        className="w-full text-left block px-4 py-2.5 text-sm font-medium rounded-xl hover:bg-muted"
+                      >
+                        Settings & SEO
+                      </button>
+
+                      <div className="px-4 pt-3 text-[10px] font-bold text-muted-foreground uppercase tracking-wider border-t border-border mt-2">
+                        Account
+                      </div>
+                      <button
+                        onClick={() => navigateAndClose("/submit")}
+                        className="w-full text-left block px-4 py-2.5 text-sm font-medium rounded-xl hover:bg-muted"
+                      >
+                        Submit Group
+                      </button>
+                      <button
+                        onClick={() => navigateAndClose("/dashboard?tab=my-submitted-groups")}
+                        className="w-full text-left block px-4 py-2.5 text-sm font-medium rounded-xl hover:bg-muted"
+                      >
+                        My Submitted Groups
+                      </button>
+                      <button
+                        onClick={() => navigateAndClose("/dashboard?tab=favorites")}
+                        className="w-full text-left block px-4 py-2.5 text-sm font-medium rounded-xl hover:bg-muted"
+                      >
+                        Favorites
+                      </button>
+                      <button
+                        onClick={() => navigateAndClose("/dashboard?tab=my-profile")}
+                        className="w-full text-left block px-4 py-2.5 text-sm font-medium rounded-xl hover:bg-muted"
+                      >
+                        My Profile
+                      </button>
+                      <button
+                        onClick={() => navigateAndClose("/dashboard?tab=profile-settings")}
+                        className="w-full text-left block px-4 py-2.5 text-sm font-medium rounded-xl hover:bg-muted"
+                      >
+                        Profile Settings
+                      </button>
+                      <button
+                        onClick={() => navigateAndClose("/dashboard?tab=change-password")}
+                        className="w-full text-left block px-4 py-2.5 text-sm font-medium rounded-xl hover:bg-muted"
+                      >
+                        Change Password
+                      </button>
+                      <button
+                        onClick={() => navigateAndClose("/dashboard?tab=security")}
+                        className="w-full text-left block px-4 py-2.5 text-sm font-medium rounded-xl hover:bg-muted"
+                      >
+                        Account Security
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        onClick={() => navigateAndClose("/dashboard")}
+                        className="w-full text-left block px-4 py-3 text-sm font-semibold rounded-xl hover:bg-muted"
+                      >
+                        Dashboard
+                      </button>
+                      <button
+                        onClick={() => navigateAndClose("/submit")}
+                        className="w-full text-left block px-4 py-3 text-sm font-medium rounded-xl hover:bg-muted"
+                      >
+                        Submit Group
+                      </button>
                       <button
                         onClick={() => navigateAndClose("/dashboard?tab=my-groups")}
                         className="w-full text-left block px-4 py-3 text-sm font-medium rounded-xl hover:bg-muted"
@@ -413,45 +586,6 @@ export default function Navbar() {
                         className="w-full text-left block px-4 py-3 text-sm font-medium rounded-xl hover:bg-muted"
                       >
                         Change Password
-                      </button>
-                    </>
-                  ) : (
-                    <>
-                      <button
-                        onClick={() => navigateAndClose("/dashboard?tab=my-submitted-groups")}
-                        className="w-full text-left block px-4 py-3 text-sm font-medium rounded-xl hover:bg-muted"
-                      >
-                        My Submitted Groups
-                      </button>
-                      <button
-                        onClick={() => navigateAndClose("/dashboard?tab=favorites")}
-                        className="w-full text-left block px-4 py-3 text-sm font-medium rounded-xl hover:bg-muted"
-                      >
-                        Favorites
-                      </button>
-                      <button
-                        onClick={() => navigateAndClose("/dashboard?tab=my-profile")}
-                        className="w-full text-left block px-4 py-3 text-sm font-medium rounded-xl hover:bg-muted"
-                      >
-                        My Profile
-                      </button>
-                      <button
-                        onClick={() => navigateAndClose("/dashboard?tab=profile-settings")}
-                        className="w-full text-left block px-4 py-3 text-sm font-medium rounded-xl hover:bg-muted"
-                      >
-                        Profile Settings
-                      </button>
-                      <button
-                        onClick={() => navigateAndClose("/dashboard?tab=change-password")}
-                        className="w-full text-left block px-4 py-3 text-sm font-medium rounded-xl hover:bg-muted"
-                      >
-                        Change Password
-                      </button>
-                      <button
-                        onClick={() => navigateAndClose("/dashboard?tab=security")}
-                        className="w-full text-left block px-4 py-3 text-sm font-medium rounded-xl hover:bg-muted"
-                      >
-                        Account Security
                       </button>
                     </>
                   )}

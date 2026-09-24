@@ -16,6 +16,13 @@ function adminApiPlugin(): Plugin {
         handleAdminStatsRequest,
         handleAdminMigrationDryRunRequest,
         handleAdminCleanupUnverifiedRequest,
+        handleAdminSettingsGetRequest,
+        handleAdminSettingsUpdateRequest,
+        handleAnnouncementsGetRequest,
+        handleAdminAnnouncementsListRequest,
+        handleAdminAnnouncementCreateRequest,
+        handleAdminAnnouncementUpdateRequest,
+        handleAdminAnnouncementDeleteRequest,
       } = await server.ssrLoadModule('/src/server/admin-api.ts');
       const {
         handleDevEmailChangeRequest,
@@ -33,6 +40,29 @@ function adminApiPlugin(): Plugin {
 
       server.middlewares.use((req, res, next) => {
         const url = req.url?.split('?')[0];
+        if (url === '/api/announcements') {
+          return handleAnnouncementsGetRequest(req, res);
+        }
+        if (url === '/api/admin/announcements') {
+          if (req.method === 'GET') {
+            return handleAdminAnnouncementsListRequest(req, res);
+          }
+          if (req.method === 'POST') {
+            return handleAdminAnnouncementCreateRequest(req, res);
+          }
+          if (req.method === 'PUT' || req.method === 'PATCH') {
+            return handleAdminAnnouncementUpdateRequest(req, res);
+          }
+          if (req.method === 'DELETE') {
+            return handleAdminAnnouncementDeleteRequest(req, res);
+          }
+        }
+        if (url === '/api/admin/settings') {
+          if (req.method === 'GET') {
+            return handleAdminSettingsGetRequest(req, res);
+          }
+          return handleAdminSettingsUpdateRequest(req, res);
+        }
         if (url === '/api/admin/users/status') {
           return handleAdminUserStatusRequest(req, res);
         }

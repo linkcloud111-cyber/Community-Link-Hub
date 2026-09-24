@@ -41,6 +41,7 @@ import { PlatformBadge, CategoryBadge, ContentTypeBadge, LanguageBadge } from "@
 import { PageBreadcrumb } from "@/components/page-breadcrumb";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
+import { usePageSEO } from "@/lib/page-meta";
 
 export default function GroupDetail() {
   const { id } = useParams();
@@ -53,6 +54,28 @@ export default function GroupDetail() {
   const [favorited, setFavorited] = useState(false);
   const [favLoading, setFavLoading] = useState(false);
   const [accessDenied, setAccessDenied] = useState(false);
+
+  usePageSEO({
+    title: group ? `${group.name} - Join ${group.platform}` : "Community Group Details",
+    subtitle: group ? `${group.category || "Community"} in ${group.location?.state || "India"}` : undefined,
+    description: group?.description ? group.description.slice(0, 160) : "Join verified Indian communities and groups on LinkCloud.",
+    canonicalPath: id ? `/groups/${id}` : "/groups",
+    ogImage: group?.iconUrl || undefined,
+    ogType: "article",
+    noIndex: accessDenied || (group && (group.status !== "approved" || group.hidden)),
+    jsonLd: group ? {
+      "@context": "https://schema.org",
+      "@type": "SocialMediaPosting",
+      headline: group.name,
+      description: group.description,
+      url: `https://linkcloud.in/groups/${group.id}`,
+      publisher: {
+        "@type": "Organization",
+        name: "LinkCloud",
+        url: "https://linkcloud.in",
+      },
+    } : undefined,
+  });
 
   useEffect(() => {
     async function loadData() {

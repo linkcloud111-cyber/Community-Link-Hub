@@ -180,3 +180,30 @@
   color: #fef3c7 !important;
 }
 
+/* Website-Wide Announcement Ticker Animation */
+@keyframes announcement-ticker {
+  0% {
+    transform: translateX(0%);
+  }
+  100% {
+    transform: translateX(-50%);
+  }
+}
+
+.animate-announcement-ticker {
+  display: inline-flex;
+  animation: announcement-ticker 25s linear infinite;
+}
+
+.animate-announcement-ticker:hover {
+  animation-play-state: paused;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-announcement-ticker {
+    animation: none !important;
+    transform: none !important;
+  }
+}
+
+

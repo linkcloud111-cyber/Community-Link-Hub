@@ -35,6 +35,7 @@ import type {
   Notification,
   Favorite,
   SiteSettings,
+  Announcement,
   GroupFilters,
   DeletionRequest,
   AccountStatus,
@@ -3402,6 +3403,232 @@ export async function getSiteSettings(): Promise<SiteSettings> {
 
 export async function updateSiteSettings(settings: Partial<SiteSettings>): Promise<void> {
   await setDoc(doc(db, "settings", "site"), { ...settings, updatedAt: serverTimestamp() }, { merge: true });
+}
+
+// ─── Website-Wide Announcements ───────────────────────────────────────────────
+
+export async function getAnnouncements(onlyActive = false): Promise<Announcement[]> {
+  try {
+    const coll = collection(db, "announcements");
+    let snap;
+    if (onlyActive) {
+      const q = query(coll, where("enabled", "==", true));
+      snap = await getDocs(q);
+    } else {
+      snap = await getDocs(coll);
+    }
+
+    const now = Date.now();
+    const items: Announcement[] = [];
+
+    snap.forEach((d) => {
+      const data = d.data();
+      const item: Announcement = {
+        id: d.id,
+        title: data.title || "",
+        message: data.message || "",
+        type: data.type || "announcement",
+        displayMode: data.displayMode || "banner",
+        priority: typeof data.priority === "number" ? data.priority : 10,
+        enabled: data.enabled !== false,
+        dismissible: data.dismissible !== false,
+        actionLabel: data.actionLabel || undefined,
+        actionUrl: data.actionUrl || undefined,
+        startAt: data.startAt || null,
+        endAt: data.endAt || null,
+        createdAt: data.createdAt,
+        updatedAt: data.updatedAt,
+        createdBy: data.createdBy,
+        updatedBy: data.updatedBy,
+      };
+
+      if (onlyActive) {
+        if (!item.enabled) return;
+        if (item.startAt) {
+          const startTime = new Date(item.startAt).getTime();
+          if (!isNaN(startTime) && startTime > now) return;
+        }
+        if (item.endAt) {
+          const endTime = new Date(item.endAt).getTime();
+          if (!isNaN(endTime) && endTime < now) return;
+        }
+      }
+
+      items.push(item);
+    });
+
+    items.sort((a, b) => {
+      if (b.priority !== a.priority) {
+        return b.priority - a.priority;
+      }
+      const timeA = a.startAt ? new Date(a.startAt).getTime() : (a.createdAt?.toMillis?.() || 0);
+      const timeB = b.startAt ? new Date(b.startAt).getTime() : (b.createdAt?.toMillis?.() || 0);
+      if (timeB !== timeA) {
+        return timeB - timeA;
+      }
+      return a.id.localeCompare(b.id);
+    });
+
+    return items;
+  } catch (err) {
+    console.warn("[Firestore] Error fetching announcements:", err);
+    return [];
+  }
+}
+
+export function subscribeActiveAnnouncements(
+  callback: (items: Announcement[]) => void
+): () => void {
+  try {
+    const coll = collection(db, "announcements");
+    const q = query(coll, where("enabled", "==", true));
+
+    const unsubscribe = onSnapshot(
+      q,
+      (snap) => {
+        const now = Date.now();
+        const items: Announcement[] = [];
+
+        snap.forEach((d) => {
+          const data = d.data();
+          const item: Announcement = {
+            id: d.id,
+            title: data.title || "",
+            message: data.message || "",
+            type: data.type || "announcement",
+            displayMode: data.displayMode || "banner",
+            priority: typeof data.priority === "number" ? data.priority : 10,
+            enabled: data.enabled !== false,
+            dismissible: data.dismissible !== false,
+            actionLabel: data.actionLabel || undefined,
+            actionUrl: data.actionUrl || undefined,
+            startAt: data.startAt || null,
+            endAt: data.endAt || null,
+            createdAt: data.createdAt,
+            updatedAt: data.updatedAt,
+            createdBy: data.createdBy,
+            updatedBy: data.updatedBy,
+          };
+
+          if (item.startAt) {
+            const startTime = new Date(item.startAt).getTime();
+            if (!isNaN(startTime) && startTime > now) return;
+          }
+          if (item.endAt) {
+            const endTime = new Date(item.endAt).getTime();
+            if (!isNaN(endTime) && endTime < now) return;
+          }
+
+          items.push(item);
+        });
+
+        items.sort((a, b) => {
+          if (b.priority !== a.priority) {
+            return b.priority - a.priority;
+          }
+          const timeA = a.startAt ? new Date(a.startAt).getTime() : (a.createdAt?.toMillis?.() || 0);
+          const timeB = b.startAt ? new Date(b.startAt).getTime() : (b.createdAt?.toMillis?.() || 0);
+          if (timeB !== timeA) {
+            return timeB - timeA;
+          }
+          return a.id.localeCompare(b.id);
+        });
+
+        callback(items);
+      },
+      (error) => {
+        console.warn("[Firestore] Realtime active announcements subscription error:", error);
+        callback([]);
+      }
+    );
+
+    return unsubscribe;
+  } catch (err) {
+    console.warn("[Firestore] Failed to establish active announcements listener:", err);
+    callback([]);
+    return () => {};
+  }
+}
+
+export async function createAnnouncement(
+  data: Omit<Announcement, "id">,
+  actorEmail = "webmaster@linkcloud.in",
+  actorUid = "webmaster"
+): Promise<string> {
+  const coll = collection(db, "announcements");
+  const docRef = await addDoc(coll, {
+    ...data,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+    createdBy: actorUid,
+  });
+
+  await logAuditEvent(
+    "Announcement Created",
+    `Created site-wide announcement: "${data.title}" [${data.type}, ${data.displayMode}, priority ${data.priority}]`,
+    actorEmail,
+    actorUid
+  );
+
+  return docRef.id;
+}
+
+export async function updateAnnouncement(
+  id: string,
+  data: Partial<Announcement>,
+  actorEmail = "webmaster@linkcloud.in",
+  actorUid = "webmaster"
+): Promise<void> {
+  const dRef = doc(db, "announcements", id);
+  await updateDoc(dRef, {
+    ...data,
+    updatedAt: serverTimestamp(),
+    updatedBy: actorUid,
+  });
+
+  await logAuditEvent(
+    "Announcement Updated",
+    `Updated site-wide announcement ID: ${id} (${Object.keys(data).join(", ")})`,
+    actorEmail,
+    actorUid
+  );
+}
+
+export async function deleteAnnouncement(
+  id: string,
+  actorEmail = "webmaster@linkcloud.in",
+  actorUid = "webmaster"
+): Promise<void> {
+  const dRef = doc(db, "announcements", id);
+  await deleteDoc(dRef);
+
+  await logAuditEvent(
+    "Announcement Deleted",
+    `Deleted site-wide announcement ID: ${id}`,
+    actorEmail,
+    actorUid
+  );
+}
+
+export async function toggleAnnouncementEnabled(
+  id: string,
+  enabled: boolean,
+  actorEmail = "webmaster@linkcloud.in",
+  actorUid = "webmaster"
+): Promise<void> {
+  const dRef = doc(db, "announcements", id);
+  await updateDoc(dRef, {
+    enabled,
+    updatedAt: serverTimestamp(),
+    updatedBy: actorUid,
+  });
+
+  await logAuditEvent(
+    enabled ? "Announcement Enabled" : "Announcement Disabled",
+    `${enabled ? "Enabled" : "Disabled"} site-wide announcement ID: ${id}`,
+    actorEmail,
+    actorUid
+  );
 }
 
 // ─── Audit Log Helper ─────────────────────────────────────────────────────────

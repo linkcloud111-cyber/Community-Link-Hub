@@ -13,6 +13,8 @@ import React, { lazy, Suspense, Component, type ReactNode } from 'react';
 
 import Navbar from '@/components/navbar';
 import Footer from '@/components/footer';
+import AnnouncementBanner from '@/components/announcement-banner';
+import { useGlobalSEO } from '@/lib/page-meta';
 
 // Core direct imports to avoid dynamic chunk loading failures on primary landing routes
 import Home from '@/pages/home';
@@ -67,6 +69,7 @@ const TermsPage = lazyWithRetry(() => import('@/pages/terms'));
 const DMCAPage = lazyWithRetry(() => import('@/pages/dmca'));
 const ContactPage = lazyWithRetry(() => import('@/pages/contact'));
 const ComplaintPage = lazyWithRetry(() => import('@/pages/complaint'));
+const DisclaimerPage = lazyWithRetry(() => import('@/pages/disclaimer'));
 
 // Error boundary to catch any runtime or chunk loading issues gracefully
 class RouteErrorBoundary extends Component<
@@ -192,6 +195,8 @@ const ProtectedRoute = ({
 };
 
 function Router() {
+  useGlobalSEO();
+
   return (
     <div className="flex flex-col min-h-screen bg-background relative overflow-hidden text-foreground">
       {/* Abstract Background Elements */}
@@ -200,6 +205,7 @@ function Router() {
         <div className="absolute bottom-0 right-1/4 w-[600px] h-[600px] bg-blue-500/20 rounded-full blur-[150px] mix-blend-screen opacity-50 dark:opacity-20" />
       </div>
 
+      <AnnouncementBanner />
       <Navbar />
       <main id="main-content" tabIndex={-1} className="flex-1 w-full max-w-7xl mx-auto px-2 sm:px-6 lg:px-8 py-3 sm:py-8 z-10 min-w-0 outline-none">
         <RouteErrorBoundary>
@@ -226,6 +232,7 @@ function Router() {
               <Route path="/privacy" component={PrivacyPage} />
               <Route path="/terms" component={TermsPage} />
               <Route path="/dmca" component={DMCAPage} />
+              <Route path="/disclaimer" component={DisclaimerPage} />
               <Route path="/contact" component={ContactPage} />
               <Route path="/complaint" component={ComplaintPage} />
 

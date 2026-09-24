@@ -12,6 +12,7 @@ import SkeletonCard from "@/components/skeleton-card";
 import { PlatformIcon } from "@/components/platform-icon";
 import { PageBreadcrumb } from "@/components/page-breadcrumb";
 import { EmptyState } from "@/components/empty-state";
+import { usePageSEO } from "@/lib/page-meta";
 import {
   Search,
   X,
@@ -58,6 +59,13 @@ export default function GroupsPage() {
   const [contentType, setContentType] = useState(queryParams.get("type") || "All");
   const [language, setLanguage] = useState(queryParams.get("lang") || "All");
   const [state, setState] = useState(queryParams.get("state") || "");
+
+  usePageSEO({
+    title: platform !== "All" ? `${platform} Communities & Groups` : "Browse Indian Communities & Groups",
+    subtitle: search ? `Search: "${search}"` : "Verified Directory",
+    description: "Explore thousands of active Indian WhatsApp groups, Telegram channels, and Discord servers. Moderated daily.",
+    canonicalPath: "/groups",
+  });
   const [district, setDistrict] = useState(queryParams.get("district") || "");
   const [city, setCity] = useState(queryParams.get("city") || "");
   const [linkStatus, setLinkStatus] = useState<"all" | "active" | "inactive">("all");

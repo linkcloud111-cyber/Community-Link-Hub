@@ -1,16 +1,28 @@
 import { useState, useEffect } from "react";
 import { Shield } from "lucide-react";
-import { getStaticPages } from "@/lib/firestore";
+import { getSiteSettings, getStaticPages } from "@/lib/firestore";
+import { usePageSEO } from "@/lib/page-meta";
 
 export default function PrivacyPage() {
   const [customContent, setCustomContent] = useState<string | null>(null);
 
+  usePageSEO({
+    title: "Privacy Policy",
+    subtitle: "Data Protection & Privacy Notice",
+    description: "Learn how LinkCloud protects your personal privacy and manages user data.",
+    canonicalPath: "/privacy",
+  });
+
   useEffect(() => {
-    getStaticPages().then((pages) => {
-      if (pages?.privacy) {
-        setCustomContent(pages.privacy);
-      }
-    }).catch(console.error);
+    Promise.all([getSiteSettings(), getStaticPages()])
+      .then(([settings, pages]) => {
+        if (settings?.privacyPolicyContent && settings.privacyPolicyContent.trim().length > 0) {
+          setCustomContent(settings.privacyPolicyContent);
+        } else if (pages?.privacy) {
+          setCustomContent(pages.privacy);
+        }
+      })
+      .catch(console.error);
   }, []);
 
   return (

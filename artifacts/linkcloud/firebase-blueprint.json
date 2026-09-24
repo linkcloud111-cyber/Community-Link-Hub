@@ -180,9 +180,34 @@
         "siteTagline": { "type": "string" },
         "maintenanceMode": { "type": "boolean" }
       }
+    },
+    "Announcement": {
+      "title": "Announcement",
+      "description": "Website-wide public banner or scrolling ticker announcement",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "maxLength": 100 },
+        "message": { "type": "string", "maxLength": 500 },
+        "type": { "type": "string", "enum": ["info", "announcement", "important", "warning", "maintenance", "success"] },
+        "displayMode": { "type": "string", "enum": ["banner", "ticker"] },
+        "priority": { "type": "number" },
+        "enabled": { "type": "boolean" },
+        "dismissible": { "type": "boolean" },
+        "actionLabel": { "type": "string", "maxLength": 50 },
+        "actionUrl": { "type": "string", "maxLength": 300 },
+        "startAt": { "type": "string" },
+        "endAt": { "type": "string" },
+        "createdBy": { "type": "string" },
+        "updatedBy": { "type": "string" }
+      },
+      "required": ["title", "message", "type", "displayMode", "priority", "enabled", "dismissible"]
     }
   },
   "firestore": {
+    "/announcements/{announcementId}": {
+      "schema": { "$ref": "#/entities/Announcement" },
+      "description": "Website-wide public announcements"
+    },
     "/groups/{groupId}": {
       "schema": { "$ref": "#/entities/Group" },
       "description": "Public and user submitted group directory"

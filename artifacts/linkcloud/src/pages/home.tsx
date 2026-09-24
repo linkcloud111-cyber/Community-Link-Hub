@@ -141,7 +141,8 @@ export default function Home() {
         <div className="max-w-md space-y-2">
           <h1 className="text-3xl font-extrabold text-foreground">Under Maintenance</h1>
           <p className="text-sm text-muted-foreground leading-relaxed">
-            LinkCloud is currently undergoings system upgrades and database optimization. We will be back online shortly!
+            {settings?.maintenanceMessage?.trim() ||
+              "LinkCloud is currently undergoing system upgrades and database optimization. We will be back online shortly!"}
           </p>
         </div>
         <div className="pt-4 flex items-center gap-2 text-xs font-mono text-muted-foreground bg-muted/30 px-4 py-2 rounded-xl border border-border">

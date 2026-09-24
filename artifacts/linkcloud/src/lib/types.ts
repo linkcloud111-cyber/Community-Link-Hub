@@ -354,6 +354,7 @@ export interface SiteSettings {
   copyrightText: string;
   websiteTheme: "light" | "dark" | "system";
   maintenanceMode: boolean;
+  maintenanceMessage?: string;
 
   // Filter Management Toggles
   filterSettings?: FilterSettings;
@@ -527,3 +528,35 @@ export interface EmailChangeRequest {
   version: number;
   updatedAt?: number;
 }
+
+// ─── Website-Wide Announcements ───────────────────────────────────────────────
+
+export type AnnouncementType =
+  | "info"
+  | "announcement"
+  | "important"
+  | "warning"
+  | "maintenance"
+  | "success";
+
+export type AnnouncementDisplayMode = "banner" | "ticker";
+
+export interface Announcement {
+  id: string;
+  title: string;
+  message: string;
+  type: AnnouncementType;
+  displayMode: AnnouncementDisplayMode;
+  priority: number;
+  enabled: boolean;
+  dismissible: boolean;
+  actionLabel?: string;
+  actionUrl?: string;
+  startAt?: string | null;
+  endAt?: string | null;
+  createdAt?: any;
+  updatedAt?: any;
+  createdBy?: string;
+  updatedBy?: string;
+}
+
