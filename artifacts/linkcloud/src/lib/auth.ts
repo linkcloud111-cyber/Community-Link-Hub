@@ -497,7 +497,7 @@ export async function loginWebmaster(email: string, password: string): Promise<U
 
     const isWebmasterDoc = await checkWebmasterCollection(uid);
     const existingProfile = await getUserProfile(uid);
-    const isAuthorized = Boolean(isWebmasterDoc || existingProfile?.role === "webmaster");
+    const isAuthorized = Boolean(isWebmasterDoc && (!existingProfile || existingProfile.role === "webmaster"));
 
     if (!isAuthorized) {
       console.warn("User is not authorized in webmaster document. Signing out immediately.");
@@ -505,7 +505,7 @@ export async function loginWebmaster(email: string, password: string): Promise<U
       throw new Error("This account is not authorized to access the Webmaster Portal.");
     }
 
-    if (existingProfile && (existingProfile.status === "suspended" || existingProfile.status === "inactive")) {
+    if (existingProfile && (existingProfile.status === "suspended" || existingProfile.status === "inactive" || existingProfile.status === "banned")) {
       await firebaseSignOut(auth);
       throw new Error("Your Webmaster account is currently inactive.");
     }
@@ -533,6 +533,143 @@ export async function loginWebmaster(email: string, password: string): Promise<U
 }
 
 export const signInAsWebmaster = loginWebmaster;
+
+export async function loginWebmasterWithMobileOTP(
+  phone: string,
+  containerId: string = "webmaster-recaptcha-container"
+): Promise<ConfirmationResult> {
+  const clean = phone.trim().replace(/\s+/g, "");
+  const mobileCheck = validateIndianMobile(clean);
+  if (!mobileCheck.valid) {
+    throw new Error(mobileCheck.error || "Please enter a valid 10-digit Indian mobile number.");
+  }
+
+  let formattedPhone = clean;
+  if (!formattedPhone.startsWith("+")) {
+    if (formattedPhone.length === 10) {
+      formattedPhone = `+91${formattedPhone}`;
+    } else {
+      formattedPhone = `+${formattedPhone}`;
+    }
+  }
+
+  // Pre-authorization check: Must match canonical Webmaster mobile
+  const plainDigits = formattedPhone.replace(/^\+91/, "");
+  const isCanonicalWebmasterPhone = plainDigits === "7987410765";
+
+  if (!isCanonicalWebmasterPhone) {
+    const profile = await getUserProfileByPhone(formattedPhone);
+    if (!profile || profile.role !== "webmaster") {
+      throw new Error("This mobile number is not registered as an authorized Webmaster.");
+    }
+  }
+
+  const verifier = setupRecaptcha(containerId);
+  if (!verifier) {
+    throw new Error("Failed to initialize reCAPTCHA security verifier. Please refresh and try again.");
+  }
+
+  try {
+    return await signInWithPhoneNumber(auth, formattedPhone, verifier);
+  } catch (err: any) {
+    throw new Error(formatAuthError(err));
+  }
+}
+
+export async function verifyWebmasterOTP(
+  confirmationResult: ConfirmationResult,
+  code: string
+): Promise<User> {
+  const cleanCode = code.trim();
+  if (!cleanCode || cleanCode.length < 6) {
+    throw new Error("Please enter a valid 6-digit verification code.");
+  }
+
+  try {
+    const result = await confirmationResult.confirm(cleanCode);
+    let u = result.user;
+
+    const canonicalWebmasterUid = "OXGYTyWBcdYNcHkWyXPbOvVlV2h1";
+    if (u.uid !== canonicalWebmasterUid) {
+      try {
+        const idToken = await u.getIdToken();
+        const res = await fetch("/api/auth/provision-phone-user", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ idToken }),
+        });
+        const data = await res.json();
+        if (res.ok && data?.customToken) {
+          const cred = await signInWithCustomToken(auth, data.customToken);
+          u = cred.user;
+        }
+      } catch (exErr) {
+        console.warn("[Webmaster Phone Login] Token exchange notice:", exErr);
+      }
+    }
+
+    // Comprehensive Webmaster Authorization Verification
+    const isAuthorized = await checkWebmasterCollection(u.uid);
+    const userProfile = await getUserProfile(u.uid);
+
+    if (!isAuthorized || (userProfile && userProfile.role !== "webmaster")) {
+      await firebaseSignOut(auth);
+      throw new Error("This account is not authorized to access the Webmaster Portal.");
+    }
+
+    if (userProfile && (userProfile.status === "suspended" || userProfile.status === "inactive" || userProfile.status === "banned")) {
+      await firebaseSignOut(auth);
+      throw new Error("Your Webmaster account is currently inactive.");
+    }
+
+    await upsertUserProfile(u.uid, {
+      uid: u.uid,
+      status: "active",
+      updatedAt: new Date().toISOString(),
+    });
+
+    return u;
+  } catch (err: any) {
+    if (err.message && (
+      err.message.includes("not authorized") ||
+      err.message.includes("inactive") ||
+      err.message.includes("valid 6-digit")
+    )) {
+      throw err;
+    }
+    throw new Error(formatAuthError(err));
+  }
+}
+
+export async function loginWebmasterWithMobilePassword(
+  phone: string,
+  password: string
+): Promise<User> {
+  const clean = phone.trim().replace(/\s+/g, "");
+  const mobileCheck = validateIndianMobile(clean);
+  if (!mobileCheck.valid) {
+    throw new Error(mobileCheck.error || "Please enter a valid 10-digit Indian mobile number.");
+  }
+
+  if (!password) {
+    throw new Error("Please enter your password.");
+  }
+
+  const plainDigits = clean.replace(/^\+91/, "");
+  let targetEmail = "";
+
+  if (plainDigits === "7987410765") {
+    targetEmail = "linkcloud111@gmail.com";
+  } else {
+    const profile = await getUserProfileByPhone(clean);
+    if (!profile || profile.role !== "webmaster" || !profile.email) {
+      throw new Error("This mobile number is not registered as an authorized Webmaster.");
+    }
+    targetEmail = profile.email;
+  }
+
+  return await loginWebmaster(targetEmail, password);
+}
 
 export async function signInWebmasterGoogle(): Promise<User> {
   try {

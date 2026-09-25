@@ -159,7 +159,7 @@ export default defineConfig(async ({ command }) => ({
         manualChunks(id) {
           if (id.includes('node_modules')) {
             if (id.includes('firebase')) {
-              return 'firebase-sdk';
+              return 'vendor-firebase';
             }
             if (id.includes('recharts') || id.includes('d3-')) {
               return 'vendor-recharts';
@@ -179,13 +179,6 @@ export default defineConfig(async ({ command }) => ({
             if (id.includes('react/') || id.includes('react-dom/') || id.includes('scheduler')) {
               return 'vendor-react';
             }
-          }
-
-          if (id.includes('/src/lib/cloudinary')) {
-            return 'cloudinary';
-          }
-          if (id.includes('/src/lib/india-data')) {
-            return 'india-data';
           }
         },
       },

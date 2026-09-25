@@ -432,18 +432,24 @@ export async function handleAuthProvisionPhoneUser(
       return;
     }
 
-    // Check if phone exists in mobileIndex
-    const mobileIndexRef = firestore.collection("mobileIndex").doc(phoneNumber);
-    const mobileIndexSnap = await mobileIndexRef.get();
+    // Check if phone exists in mobileIndex (check both +91 and 10-digit formats)
+    let mobileIndexSnap = await firestore.collection("mobileIndex").doc(phoneNumber).get();
+    if (!mobileIndexSnap.exists && phoneNumber.startsWith("+91")) {
+      mobileIndexSnap = await firestore.collection("mobileIndex").doc(phoneNumber.slice(3)).get();
+    }
+    if (!mobileIndexSnap.exists && !phoneNumber.startsWith("+")) {
+      mobileIndexSnap = await firestore.collection("mobileIndex").doc(`+91${phoneNumber}`).get();
+    }
 
     if (mobileIndexSnap.exists) {
-      const existingUid = mobileIndexSnap.data()?.uid;
+      const existingData = mobileIndexSnap.data() || {};
+      const existingUid = existingData.uid;
       if (existingUid) {
         const customToken = await auth.createCustomToken(existingUid);
         sendJson(res, {
           success: true,
           uid: existingUid,
-          accountUid: existingUid,
+          accountUid: existingData.accountUid || existingUid,
           customToken,
           isNew: false,
         });
