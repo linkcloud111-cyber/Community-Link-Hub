@@ -11,7 +11,8 @@
   ],
   "scripts": {
     "dev": "npm run dev --workspace=@workspace/linkcloud",
-    "build": "npm run build --workspace=@workspace/linkcloud && rm -rf dist && mkdir -p dist && cp -r artifacts/linkcloud/dist/. dist/",
+    "build": "npm run build --workspace=@workspace/linkcloud && rm -rf dist && mkdir -p dist && cp -r artifacts/linkcloud/dist/. dist/ && cp dist/index.html . && cp -r dist/assets . && cp server.ts server.js && cp server.ts dist/server.js && cp server.cjs dist/server.cjs",
+    "start": "node server.ts",
     "typecheck": "tsc --build",
     "lint": "tsc --build"
   },

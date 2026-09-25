@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "http";
-import { getFirebaseAdminApp } from "./admin-api";
+import { getFirebaseAdminApp } from "./admin-api.ts";
 import { getAuth } from "firebase-admin/auth";
 import { getFirestore } from "firebase-admin/firestore";
 

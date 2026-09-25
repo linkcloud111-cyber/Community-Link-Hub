@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "http";
 import crypto from "crypto";
-import { getFirebaseAdminApp } from "./admin-api";
+import { getFirebaseAdminApp } from "./admin-api.ts";
 import { getAuth } from "firebase-admin/auth";
 import { getFirestore } from "firebase-admin/firestore";
 
