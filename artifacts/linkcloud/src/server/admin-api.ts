@@ -649,12 +649,12 @@ export async function handleAdminCleanupUnverifiedRequest(
       if (envCronSecret && authHeader === `Bearer ${envCronSecret}`) {
         callerActor = "scheduler_cron";
       } else {
-        const auth = await authenticateAdminRequest(req);
-        if (!auth.authenticated) {
-          sendJson(res, { error: auth.error || "Webmaster authentication required" }, 403);
+        const auth = await verifyWebmasterToken(req);
+        if (!auth.valid) {
+          sendJson(res, { error: auth.error || "Webmaster authentication required" }, auth.statusCode || 403);
           return;
         }
-        callerActor = auth.user?.email || "webmaster";
+        callerActor = auth.email || "webmaster";
       }
     }
 

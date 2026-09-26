@@ -33,8 +33,13 @@ import {
   handleAuthCheckRegistration,
 } from './artifacts/linkcloud/src/server/auth-api.ts';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+function getDirname(): string {
+  if (typeof __dirname !== 'undefined') {
+    return __dirname;
+  }
+  return process.cwd();
+}
+const serverDir = getDirname();
 
 // In Cloud Run: Cloud Run injects PORT (default 8080) and sends probes to it.
 // In local dev: DEFAULT_APP_PORT is 3000.
@@ -44,12 +49,12 @@ const HOST = '0.0.0.0';
 
 // Determine dist directory location
 const possibleDistDirs = [
-  path.resolve(__dirname, 'dist'),
-  path.resolve(__dirname, 'artifacts/linkcloud/dist'),
+  path.resolve(serverDir, 'dist'),
+  path.resolve(serverDir, 'artifacts/linkcloud/dist'),
   path.resolve(process.cwd(), 'dist'),
   path.resolve(process.cwd(), 'artifacts/linkcloud/dist'),
   '/dist',
-  __dirname,
+  serverDir,
 ];
 
 let DIST_DIR = possibleDistDirs[0];

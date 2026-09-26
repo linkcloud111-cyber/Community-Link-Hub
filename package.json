@@ -11,13 +11,14 @@
   ],
   "scripts": {
     "dev": "npm run dev --workspace=@workspace/linkcloud",
-    "build": "npm run build --workspace=@workspace/linkcloud && rm -rf dist && mkdir -p dist && cp -r artifacts/linkcloud/dist/. dist/ && cp dist/index.html . && cp -r dist/assets . && cp server.ts server.js && cp server.ts dist/server.js && cp server.cjs dist/server.cjs",
+    "build": "(npm run build --workspace=@workspace/linkcloud || npm --prefix artifacts/linkcloud run build) && rm -rf dist && mkdir -p dist && cp -r artifacts/linkcloud/dist/. dist/ && cp dist/index.html . && cp -r dist/assets . && esbuild server.ts --bundle --platform=node --format=cjs --outfile=dist/server.cjs --external:firebase-admin && cp dist/server.cjs server.cjs && cp dist/server.cjs server.js",
     "start": "node server.ts",
     "typecheck": "tsc --build",
     "lint": "tsc --build"
   },
   "dependencies": {
     "@replit/connectors-sdk": "^0.4.1",
+    "esbuild": "^0.28.2",
     "firebase-admin": "^14.2.0"
   },
   "devDependencies": {
