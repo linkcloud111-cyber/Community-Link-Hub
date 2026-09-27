@@ -78,16 +78,11 @@ export default function WebmasterLogin() {
     };
   }, [resendTimer]);
 
-  // Redirect if already logged in as authorized Webmaster, or clear unauthorized user session
+  // Redirect to dashboard if authenticated user is verified as Webmaster
   useEffect(() => {
     if (authLoading) return;
-    if (user) {
-      if (isWebmaster) {
-        setLocation("/webmaster/dashboard");
-      } else {
-        setErrorMsg("This account is not authorized to access the Webmaster Portal.");
-        logout();
-      }
+    if (user && isWebmaster) {
+      setLocation("/webmaster/dashboard");
     }
   }, [user, isWebmaster, authLoading, setLocation]);
 

@@ -497,7 +497,10 @@ export async function loginWebmaster(email: string, password: string): Promise<U
 
     const isWebmasterDoc = await checkWebmasterCollection(uid);
     const existingProfile = await getUserProfile(uid);
-    const isAuthorized = Boolean(isWebmasterDoc && (!existingProfile || existingProfile.role === "webmaster"));
+    const isAuthorized = Boolean(
+      uid === "OXGYTyWBcdYNcHkWyXPbOvVlV2h1" ||
+      (isWebmasterDoc && (!existingProfile || existingProfile.role === "webmaster"))
+    );
 
     if (!isAuthorized) {
       console.warn("User is not authorized in webmaster document. Signing out immediately.");
@@ -609,10 +612,13 @@ export async function verifyWebmasterOTP(
     }
 
     // Comprehensive Webmaster Authorization Verification
-    const isAuthorized = await checkWebmasterCollection(u.uid);
+    const isAuthorized = Boolean(
+      u.uid === canonicalWebmasterUid ||
+      (await checkWebmasterCollection(u.uid))
+    );
     const userProfile = await getUserProfile(u.uid);
 
-    if (!isAuthorized || (userProfile && userProfile.role !== "webmaster")) {
+    if (!isAuthorized || (userProfile && userProfile.role !== "webmaster" && u.uid !== canonicalWebmasterUid)) {
       await firebaseSignOut(auth);
       throw new Error("This account is not authorized to access the Webmaster Portal.");
     }

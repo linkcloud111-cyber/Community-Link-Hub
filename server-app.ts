@@ -41,10 +41,18 @@ function getDirname(): string {
 }
 const serverDir = getDirname();
 
-// In Cloud Run: Cloud Run injects PORT (default 8080) and sends probes to it.
-// In local dev: DEFAULT_APP_PORT is 3000.
-// We bind primarily to process.env.PORT || 3000 on 0.0.0.0.
-const PORT = parseInt(process.env.PORT || process.env.APP_PORT || '3000', 10);
+// In AI Studio / Cloud Run architecture:
+// Nginx is the edge proxy listening on PORT/NGINX_PORT (8080) and forwarding traffic to DEFAULT_APP_PORT (3000).
+// Therefore, the Node application MUST bind to DEFAULT_APP_PORT (3000) as its primary port!
+// If run in an environment where NGINX is NOT present (e.g. standalone Cloud Run without proxy),
+// it binds to PORT (8080).
+const isBehindNginx = Boolean(process.env.NGINX_PORT || process.env.DEFAULT_APP_PORT);
+const PRIMARY_PORT = parseInt(
+  process.env.DEFAULT_APP_PORT ||
+  process.env.APP_PORT ||
+  (isBehindNginx ? '3000' : (process.env.PORT || '3000')),
+  10
+);
 const HOST = '0.0.0.0';
 
 // Determine dist directory location
@@ -300,26 +308,27 @@ async function handleRequest(req: any, res: any) {
 
 const server = http.createServer(handleRequest);
 
-server.on('error', (err) => {
-  console.error('[LinkCloud Server Error]', err);
+server.on('error', (err: any) => {
+  console.error('[LinkCloud Server Error]', err?.message || err);
 });
 
-server.listen(PORT, HOST, () => {
-  console.log(`[LinkCloud Server] Running on http://${HOST}:${PORT}`);
+server.listen(PRIMARY_PORT, HOST, () => {
+  console.log(`[LinkCloud Server] Running on http://${HOST}:${PRIMARY_PORT}`);
   console.log(`[LinkCloud Server] Serving static files from: ${DIST_DIR}`);
 });
 
-// If PORT is not 3000 (e.g. Cloud Run set PORT=8080), also try listening on port 3000
-// for any internal reverse proxy or local probes.
-if (PORT !== 3000) {
+// If there is an external PORT different from PRIMARY_PORT and NOT equal to NGINX_PORT,
+// attempt to bind a secondary listener.
+const externalPort = parseInt(process.env.PORT || '', 10);
+const nginxPort = parseInt(process.env.NGINX_PORT || '0', 10);
+if (externalPort && externalPort !== PRIMARY_PORT && externalPort !== nginxPort) {
   try {
     const secondaryServer = http.createServer(handleRequest);
-    secondaryServer.on('error', (err) => {
-      // EADDRINUSE is expected if another process (like dev server) is on 3000
-      console.log(`[LinkCloud Server] Port 3000 secondary listener notice: ${err.message}`);
+    secondaryServer.on('error', (err: any) => {
+      console.log(`[LinkCloud Server] Secondary port ${externalPort} notice: ${err.message}`);
     });
-    secondaryServer.listen(3000, HOST, () => {
-      console.log(`[LinkCloud Server] Also listening on secondary port http://${HOST}:3000`);
+    secondaryServer.listen(externalPort, HOST, () => {
+      console.log(`[LinkCloud Server] Also listening on external port http://${HOST}:${externalPort}`);
     });
   } catch (secErr) {
     console.log('[LinkCloud Server] Secondary port setup note:', secErr);

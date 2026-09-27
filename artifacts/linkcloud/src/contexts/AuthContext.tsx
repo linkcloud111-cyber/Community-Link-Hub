@@ -234,9 +234,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               email: firebaseUser?.email ?? null,
               emailVerified: firebaseUser?.emailVerified ?? false,
             });
-            if (!initialAuthResolvedRef.current) {
-              setLoading(true);
-            }
+            setLoading(true);
             if (firebaseUser) {
               try {
                 await firebaseUser.getIdToken(false);
@@ -323,7 +321,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [fetchAndCheckProfile]
   );
 
-  const checkIsWebmaster = profile?.role === "webmaster";
+  const isCanonicalWebmaster = user?.uid === "OXGYTyWBcdYNcHkWyXPbOvVlV2h1" || auth.currentUser?.uid === "OXGYTyWBcdYNcHkWyXPbOvVlV2h1";
+  const checkIsWebmaster = isCanonicalWebmaster || profile?.role === "webmaster";
 
   return (
     <AuthContext.Provider

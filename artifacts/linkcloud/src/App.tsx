@@ -170,7 +170,10 @@ const ProtectedRoute = ({
           setLocation('/login');
         }
       } else if (webmasterOnly && !isWebmaster) {
-        setLocation('/login');
+        // If user is logged in, wait until profile is resolved before redirecting away
+        if (profile) {
+          setLocation('/login');
+        }
       } else if (!webmasterOnly && !allowBoth && isWebmaster) {
         setLocation('/webmaster/dashboard');
       } else if (!isEmailVerified && !isWebmaster) {
@@ -280,7 +283,7 @@ function Router() {
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <ThemeProvider attribute="class" defaultTheme="dark" enableSystem>
+      <ThemeProvider attribute="class" defaultTheme="light" enableSystem={false}>
         <AuthProvider>
           <TaxonomyProvider>
             <LocationProvider>
