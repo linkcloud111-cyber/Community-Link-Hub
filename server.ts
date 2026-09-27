@@ -5,11 +5,17 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
+const currentDir = path.dirname(fileURLToPath(import.meta.url));
 
 const candidates = [
+  path.resolve(currentDir, 'dist/server.cjs'),
+  path.resolve(currentDir, 'server.cjs'),
+  path.resolve(currentDir, 'dist/server.js'),
+  path.resolve(currentDir, 'server.js'),
   path.resolve(process.cwd(), 'dist/server.cjs'),
   path.resolve(process.cwd(), 'server.cjs'),
   path.resolve(process.cwd(), 'dist/server.js'),
