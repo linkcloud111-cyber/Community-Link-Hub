@@ -1665,8 +1665,8 @@ async function handleAuthProvisionUser(req, res) {
       sendJson3(res, { error: "This Gmail address is already registered." }, 409);
       return;
     }
-    const mobileIndexRef2 = firestore.collection("mobileIndex").doc(cleanPhone);
-    const mobileIndexSnap = await mobileIndexRef2.get();
+    const mobileIndexRef = firestore.collection("mobileIndex").doc(cleanPhone);
+    const mobileIndexSnap = await mobileIndexRef.get();
     if (mobileIndexSnap.exists) {
       sendJson3(res, { error: "An account with this Mobile Number is already registered." }, 409);
       return;
@@ -1725,7 +1725,7 @@ async function handleAuthProvisionUser(req, res) {
       email: cleanEmail,
       createdAt: nowIso
     });
-    batch.set(mobileIndexRef2, {
+    batch.set(mobileIndexRef, {
       uid: canonicalUid,
       phone: cleanPhone,
       createdAt: nowIso
@@ -1893,6 +1893,22 @@ async function handleAuthProvisionPhoneUser(req, res) {
         return;
       }
     }
+    const canonicalWebmasterUid = "OXGYTyWBcdYNcHkWyXPbOvVlV2h1";
+    const webmasterDoc = await firestore.collection("users").doc(canonicalWebmasterUid).get();
+    if (webmasterDoc.exists) {
+      const wmPhone = webmasterDoc.data()?.phone || "";
+      if (wmPhone && (wmPhone === phoneNumber || wmPhone.replace(/\D/g, "") === phoneNumber.replace(/\D/g, ""))) {
+        const customToken2 = await auth.createCustomToken(canonicalWebmasterUid);
+        sendJson3(res, {
+          success: true,
+          uid: canonicalWebmasterUid,
+          accountUid: "linkcloud334520",
+          customToken: customToken2,
+          isNew: false
+        });
+        return;
+      }
+    }
     const canonicalUid = await allocateNextSequentialUid();
     const nowIso = (/* @__PURE__ */ new Date()).toISOString();
     if (decoded.uid && decoded.uid !== canonicalUid) {
@@ -1929,6 +1945,7 @@ async function handleAuthProvisionPhoneUser(req, res) {
       createdAt: nowIso,
       updatedAt: nowIso
     });
+    const mobileIndexRef = firestore.collection("mobileIndex").doc(phoneNumber);
     batch.set(mobileIndexRef, {
       uid: canonicalUid,
       phone: phoneNumber,

@@ -262,6 +262,7 @@ function Router() {
               <Route path="/webmaster/contacts" component={ProtectedWebmasterContacts} />
               <Route path="/webmaster/notifications" component={ProtectedWebmasterNotifications} />
               <Route path="/webmaster/settings" component={ProtectedWebmasterSettings} />
+              <Route path="/webmaster/announcements" component={ProtectedWebmasterSettings} />
               <Route path="/webmaster/security" component={ProtectedWebmasterSecurity} />
               <Route path="/webmaster/change-password" component={ProtectedWebmasterChangePassword} />
               <Route path="/webmaster/my-groups" component={ProtectedDashboard} />

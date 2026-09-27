@@ -153,32 +153,50 @@ export default defineConfig(async ({ command }) => ({
   build: {
     outDir: path.resolve(import.meta.dirname, 'dist'),
     emptyOutDir: true,
-    chunkSizeWarningLimit: 800,
+    chunkSizeWarningLimit: 1000,
     rollupOptions: {
       output: {
         manualChunks(id) {
-          if (id.includes('node_modules')) {
-            if (id.includes('firebase')) {
-              return 'vendor-firebase';
-            }
-            if (id.includes('recharts') || id.includes('d3-')) {
-              return 'vendor-recharts';
-            }
-            if (id.includes('framer-motion')) {
-              return 'vendor-framer';
-            }
-            if (id.includes('lucide-react') || id.includes('react-icons')) {
-              return 'vendor-icons';
-            }
-            if (id.includes('@radix-ui') || id.includes('vaul') || id.includes('cmdk') || id.includes('embla-carousel')) {
-              return 'vendor-ui';
-            }
-            if (id.includes('@tanstack') || id.includes('wouter') || id.includes('next-themes') || id.includes('sonner')) {
-              return 'vendor-core';
-            }
-            if (id.includes('react/') || id.includes('react-dom/') || id.includes('scheduler')) {
-              return 'vendor-react';
-            }
+          if (!id.includes('node_modules')) {
+            return;
+          }
+          // React core runtime
+          if (id.includes('react/') || id.includes('react-dom/') || id.includes('scheduler')) {
+            return 'vendor-react';
+          }
+          // Firebase partitioned to isolate firestore/webchannel from auth/core
+          if (id.includes('@firebase/firestore') || id.includes('firebase/firestore') || id.includes('webchannel-wrapper')) {
+            return 'vendor-firebase-firestore';
+          }
+          if (id.includes('@firebase/auth') || id.includes('firebase/auth')) {
+            return 'vendor-firebase-auth';
+          }
+          if (id.includes('firebase')) {
+            return 'vendor-firebase-core';
+          }
+          // Recharts and all its sub-dependencies (d3, victory-vendor, recharts-scale)
+          if (id.includes('recharts') || id.includes('d3-') || id.includes('victory-vendor') || id.includes('recharts-scale')) {
+            return 'vendor-recharts';
+          }
+          // Framer Motion and all motion primitives (motion-dom, motion-utils)
+          if (id.includes('framer-motion') || id.includes('motion-dom') || id.includes('motion-utils')) {
+            return 'vendor-framer';
+          }
+          // Icon libraries
+          if (id.includes('lucide-react') || id.includes('react-icons')) {
+            return 'vendor-icons';
+          }
+          // Radix and dialog/input UI primitives
+          if (id.includes('@radix-ui') || id.includes('vaul') || id.includes('cmdk') || id.includes('embla-carousel') || id.includes('input-otp')) {
+            return 'vendor-ui';
+          }
+          // Form handling & validation schemas
+          if (id.includes('react-hook-form') || id.includes('@hookform') || id.includes('zod')) {
+            return 'vendor-forms';
+          }
+          // Core utilities (query client, routing, theme, styling, notifications)
+          if (id.includes('@tanstack') || id.includes('wouter') || id.includes('next-themes') || id.includes('sonner') || id.includes('clsx') || id.includes('tailwind-merge') || id.includes('class-variance-authority')) {
+            return 'vendor-core';
           }
         },
       },

@@ -457,6 +457,24 @@ export async function handleAuthProvisionPhoneUser(
       }
     }
 
+    // Check if phone matches canonical Webmaster
+    const canonicalWebmasterUid = "OXGYTyWBcdYNcHkWyXPbOvVlV2h1";
+    const webmasterDoc = await firestore.collection("users").doc(canonicalWebmasterUid).get();
+    if (webmasterDoc.exists) {
+      const wmPhone = webmasterDoc.data()?.phone || "";
+      if (wmPhone && (wmPhone === phoneNumber || wmPhone.replace(/\D/g, "") === phoneNumber.replace(/\D/g, ""))) {
+        const customToken = await auth.createCustomToken(canonicalWebmasterUid);
+        sendJson(res, {
+          success: true,
+          uid: canonicalWebmasterUid,
+          accountUid: "linkcloud334520",
+          customToken,
+          isNew: false,
+        });
+        return;
+      }
+    }
+
     // Allocate canonical sequential UID
     const canonicalUid = await allocateNextSequentialUid();
     const nowIso = new Date().toISOString();
@@ -504,6 +522,7 @@ export async function handleAuthProvisionPhoneUser(
     });
 
     // /mobileIndex/{phone}
+    const mobileIndexRef = firestore.collection("mobileIndex").doc(phoneNumber);
     batch.set(mobileIndexRef, {
       uid: canonicalUid,
       phone: phoneNumber,
