@@ -22,7 +22,7 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
   mod
 ));
 
-// server.ts
+// server-app.ts
 var import_node_http = __toESM(require("node:http"), 1);
 var import_node_fs = __toESM(require("node:fs"), 1);
 var import_node_path = __toESM(require("node:path"), 1);
@@ -2061,7 +2061,7 @@ async function handleAuthCheckRegistration(req, res) {
   }
 }
 
-// server.ts
+// server-app.ts
 function getDirname() {
   if (typeof __dirname !== "undefined") {
     return __dirname;
@@ -2139,7 +2139,7 @@ function serveStaticFile(reqPath, res) {
   }
   return false;
 }
-var server = import_node_http.default.createServer(async (req, res) => {
+async function handleRequest(req, res) {
   const urlObj = new URL(req.url || "/", `http://${req.headers.host || "localhost"}`);
   const pathname = urlObj.pathname;
   if (req.method === "OPTIONS") {
@@ -2269,7 +2269,8 @@ var server = import_node_http.default.createServer(async (req, res) => {
     res.setHeader("Content-Type", "text/html; charset=utf-8");
     res.end('<!DOCTYPE html><html><head><title>LinkCloud</title></head><body><div id="root"></div></body></html>');
   }
-});
+}
+var server = import_node_http.default.createServer(handleRequest);
 server.on("error", (err) => {
   console.error("[LinkCloud Server Error]", err);
 });
@@ -2279,9 +2280,7 @@ server.listen(PORT, HOST, () => {
 });
 if (PORT !== 3e3) {
   try {
-    const secondaryServer = import_node_http.default.createServer((req, res) => {
-      server.emit("request", req, res);
-    });
+    const secondaryServer = import_node_http.default.createServer(handleRequest);
     secondaryServer.on("error", (err) => {
       console.log(`[LinkCloud Server] Port 3000 secondary listener notice: ${err.message}`);
     });
