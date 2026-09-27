@@ -61,6 +61,23 @@ export async function onRequestPost(context: {
     });
   }
 
+  // Check if phone matches canonical Webmaster
+  const canonicalWebmasterUid = "OXGYTyWBcdYNcHkWyXPbOvVlV2h1";
+  const webmasterDoc = await firestoreGetDoc(`users/${canonicalWebmasterUid}`, env);
+  if (webmasterDoc) {
+    const wmPhone = webmasterDoc.phone || "";
+    if (wmPhone && (wmPhone === phoneNumber || wmPhone.replace(/\D/g, "") === phoneNumber.replace(/\D/g, ""))) {
+      const customToken = await adminCreateCustomToken(env, canonicalWebmasterUid);
+      return jsonResponse({
+        success: true,
+        uid: canonicalWebmasterUid,
+        accountUid: "linkcloud334520",
+        customToken,
+        isNew: false,
+      });
+    }
+  }
+
   // Allocate sequential UID
   const sequenceDoc = await firestoreGetDoc("counters/userSequence", env);
   let currentNumber = typeof sequenceDoc?.currentNumber === "number" ? sequenceDoc.currentNumber : 100;
