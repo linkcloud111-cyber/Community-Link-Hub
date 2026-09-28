@@ -36,6 +36,12 @@ for (const cand of candidates) {
 }
 
 if (!started) {
-  console.error('[LinkCloud Launcher] Critical error: could not locate server bundle.');
-  process.exit(1);
+  try {
+    console.log('[LinkCloud Launcher] Falling back to direct server-app module...');
+    await import('./server-app.ts');
+    started = true;
+  } catch (directErr) {
+    console.error('[LinkCloud Launcher] Critical error: could not locate or start server:', directErr);
+    process.exit(1);
+  }
 }

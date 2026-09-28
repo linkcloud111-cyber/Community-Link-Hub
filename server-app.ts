@@ -46,11 +46,12 @@ const HOST = '0.0.0.0';
 
 // Determine dist directory location
 const possibleDistDirs = [
-  serverDir,
   path.resolve(serverDir, 'dist'),
-  path.resolve(serverDir, 'artifacts/linkcloud/dist'),
   path.resolve(process.cwd(), 'dist'),
+  path.resolve(serverDir, 'artifacts/linkcloud/dist'),
   path.resolve(process.cwd(), 'artifacts/linkcloud/dist'),
+  serverDir,
+  process.cwd(),
   '/dist',
 ];
 

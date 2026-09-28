@@ -2069,19 +2069,16 @@ function getDirname() {
   return process.cwd();
 }
 var serverDir = getDirname();
-var isBehindNginx = Boolean(process.env.NGINX_PORT || process.env.DEFAULT_APP_PORT);
-var PRIMARY_PORT = parseInt(
-  process.env.DEFAULT_APP_PORT || process.env.APP_PORT || (isBehindNginx ? "3000" : process.env.PORT || "3000"),
-  10
-);
+var PORT = parseInt(process.env.PORT || process.env.APP_PORT || "8080", 10);
 var HOST = "0.0.0.0";
 var possibleDistDirs = [
   import_node_path.default.resolve(serverDir, "dist"),
-  import_node_path.default.resolve(serverDir, "artifacts/linkcloud/dist"),
   import_node_path.default.resolve(process.cwd(), "dist"),
+  import_node_path.default.resolve(serverDir, "artifacts/linkcloud/dist"),
   import_node_path.default.resolve(process.cwd(), "artifacts/linkcloud/dist"),
-  "/dist",
-  serverDir
+  serverDir,
+  process.cwd(),
+  "/dist"
 ];
 var DIST_DIR = possibleDistDirs[0];
 for (const dir of possibleDistDirs) {
@@ -2276,25 +2273,23 @@ async function handleRequest(req, res) {
 }
 var server = import_node_http.default.createServer(handleRequest);
 server.on("error", (err) => {
-  console.error("[LinkCloud Server Error]", err?.message || err);
+  console.log("[LinkCloud Server Primary Error]", err?.message || err);
 });
-server.listen(PRIMARY_PORT, HOST, () => {
-  console.log(`[LinkCloud Server] Running on http://${HOST}:${PRIMARY_PORT}`);
+server.listen(PORT, HOST, () => {
+  console.log(`[LinkCloud Server] Primary running on http://${HOST}:${PORT}`);
   console.log(`[LinkCloud Server] Serving static files from: ${DIST_DIR}`);
 });
-var externalPort = parseInt(process.env.PORT || "", 10);
-var nginxPort = parseInt(process.env.NGINX_PORT || "0", 10);
-if (externalPort && externalPort !== PRIMARY_PORT && externalPort !== nginxPort) {
+if (PORT !== 3e3) {
   try {
     const secondaryServer = import_node_http.default.createServer(handleRequest);
     secondaryServer.on("error", (err) => {
-      console.log(`[LinkCloud Server] Secondary port ${externalPort} notice: ${err.message}`);
+      console.log(`[LinkCloud Server] Port 3000 notice: ${err?.message || err}`);
     });
-    secondaryServer.listen(externalPort, HOST, () => {
-      console.log(`[LinkCloud Server] Also listening on external port http://${HOST}:${externalPort}`);
+    secondaryServer.listen(3e3, HOST, () => {
+      console.log(`[LinkCloud Server] Dual listener active on http://${HOST}:3000`);
     });
   } catch (secErr) {
-    console.log("[LinkCloud Server] Secondary port setup note:", secErr);
+    console.log("[LinkCloud Server] Secondary port setup note:", secErr?.message || secErr);
   }
 }
 process.on("SIGTERM", () => {
