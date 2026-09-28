@@ -41,7 +41,16 @@ function getDirname(): string {
 }
 const serverDir = getDirname();
 
-const PORT = parseInt(process.env.PORT || process.env.APP_PORT || '8080', 10);
+const nginxPort = parseInt(process.env.NGINX_PORT || '0', 10);
+const defaultAppPort = parseInt(process.env.DEFAULT_APP_PORT || '3000', 10);
+const envPort = parseInt(process.env.PORT || process.env.APP_PORT || '0', 10);
+
+// In AI Studio / Cloud Run container architecture:
+// Nginx is the edge proxy listening on NGINX_PORT (8080) and proxying all traffic to DEFAULT_APP_PORT (3000).
+// Therefore, whenever NGINX is present or DEFAULT_APP_PORT is defined, Node MUST bind to DEFAULT_APP_PORT (3000).
+// If running in a standalone environment without Nginx proxy, Node binds to PORT (e.g. 8080).
+const isBehindNginx = nginxPort > 0 || Boolean(process.env.DEFAULT_APP_PORT);
+const PRIMARY_PORT = isBehindNginx ? defaultAppPort : (envPort > 0 ? envPort : defaultAppPort);
 const HOST = '0.0.0.0';
 
 // Determine dist directory location
@@ -302,20 +311,22 @@ server.on('error', (err: any) => {
   console.log('[LinkCloud Server Primary Error]', err?.message || err);
 });
 
-server.listen(PORT, HOST, () => {
-  console.log(`[LinkCloud Server] Primary running on http://${HOST}:${PORT}`);
+server.listen(PRIMARY_PORT, HOST, () => {
+  console.log(`[LinkCloud Server] Primary running on http://${HOST}:${PRIMARY_PORT}`);
   console.log(`[LinkCloud Server] Serving static files from: ${DIST_DIR}`);
 });
 
-// Dual listener on port 3000 (essential for AI Studio internal proxies and health checks)
-if (PORT !== 3000) {
+// If running standalone (without Nginx proxy) and PRIMARY_PORT is not 3000,
+// also provide dual listener on 3000 for internal proxies and health checks.
+const secondaryPort = (!isBehindNginx && envPort > 0 && envPort !== 3000) ? 3000 : 0;
+if (secondaryPort > 0) {
   try {
     const secondaryServer = http.createServer(handleRequest);
     secondaryServer.on('error', (err: any) => {
-      console.log(`[LinkCloud Server] Port 3000 notice: ${err?.message || err}`);
+      console.log(`[LinkCloud Server] Port ${secondaryPort} notice: ${err?.message || err}`);
     });
-    secondaryServer.listen(3000, HOST, () => {
-      console.log(`[LinkCloud Server] Dual listener active on http://${HOST}:3000`);
+    secondaryServer.listen(secondaryPort, HOST, () => {
+      console.log(`[LinkCloud Server] Secondary listener active on http://${HOST}:${secondaryPort}`);
     });
   } catch (secErr: any) {
     console.log('[LinkCloud Server] Secondary port setup note:', secErr?.message || secErr);

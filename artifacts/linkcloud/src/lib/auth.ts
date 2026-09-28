@@ -212,73 +212,77 @@ export function isSessionExpired(error: any): boolean {
 
 export function formatAuthError(error: any): string {
   if (!error) return "An unexpected error occurred. Please try again.";
-  const code = error.code || "";
-  const msg = typeof error.message === "string" ? error.message : String(error || "");
+  const code = (error.code || "").toLowerCase();
+  const rawMsg = typeof error.message === "string" ? error.message : String(error || "");
+  const msg = rawMsg.toLowerCase();
 
   if (isSessionExpired(error)) {
     return "Your session has expired. Please login again.";
   }
   if (
-    code === "auth/wrong-password" ||
-    code === "auth/user-not-found" ||
-    code === "auth/invalid-credential" ||
+    code.includes("wrong-password") ||
+    code.includes("user-not-found") ||
+    code.includes("invalid-credential") ||
+    code.includes("invalid-login-credentials") ||
     msg.includes("wrong-password") ||
     msg.includes("user-not-found") ||
-    msg.includes("invalid-credential")
+    msg.includes("invalid-credential") ||
+    msg.includes("invalid-login-credentials")
   ) {
     return "Incorrect email address or password. Please try again.";
   }
-  if (code === "auth/invalid-email" || msg.includes("auth/invalid-email")) {
+  if (code.includes("invalid-email") || msg.includes("invalid-email")) {
     return "Please enter a valid email address.";
   }
-  if (code === "auth/email-already-in-use" || msg.includes("auth/email-already-in-use")) {
+  if (code.includes("email-already-in-use") || msg.includes("email-already-in-use")) {
     return "This email address is already registered.";
   }
-  if (code === "auth/weak-password" || msg.includes("auth/weak-password")) {
+  if (code.includes("weak-password") || msg.includes("weak-password")) {
     return "Password must be at least 6 characters long.";
   }
-  if (code === "auth/user-disabled" || msg.includes("auth/user-disabled")) {
+  if (code.includes("user-disabled") || msg.includes("user-disabled")) {
     return "This account has been disabled. Please contact support.";
   }
-  if (code === "auth/requires-recent-login" || msg.includes("auth/requires-recent-login")) {
+  if (code.includes("requires-recent-login") || msg.includes("requires-recent-login")) {
     return "Please sign in again to continue.";
   }
-  if (code === "auth/too-many-requests" || msg.includes("auth/too-many-requests")) {
+  if (code.includes("too-many-requests") || msg.includes("too-many-requests")) {
     return "Too many attempts. Please wait a few moments and try again.";
   }
-  if (code === "auth/invalid-verification-code" || msg.includes("auth/invalid-verification-code")) {
+  if (code.includes("invalid-verification-code") || msg.includes("invalid-verification-code")) {
     return "Invalid verification code. Please try again.";
   }
-  if (code === "auth/code-expired" || msg.includes("auth/code-expired")) {
+  if (code.includes("code-expired") || msg.includes("code-expired")) {
     return "The verification code has expired. Please request a new one.";
   }
-  if (code === "auth/invalid-action-code" || msg.includes("auth/invalid-action-code")) {
+  if (code.includes("invalid-action-code") || msg.includes("invalid-action-code")) {
     return "This verification link is invalid or has already been used. Please request a new one.";
   }
-  if (code === "auth/popup-closed-by-user" || msg.includes("auth/popup-closed-by-user")) {
+  if (code.includes("popup-closed-by-user") || msg.includes("popup-closed-by-user")) {
     return "Google sign-in popup was closed before completing.";
   }
-  if (code === "auth/popup-blocked" || msg.includes("auth/popup-blocked")) {
+  if (code.includes("popup-blocked") || msg.includes("popup-blocked")) {
     return "Sign-in popup was blocked by your browser. Please allow popups for this site.";
   }
-  if (code === "auth/unauthorized-domain" || msg.includes("auth/unauthorized-domain") || msg.includes("unauthorized domain")) {
+  if (code.includes("unauthorized-domain") || msg.includes("unauthorized-domain") || msg.includes("unauthorized domain")) {
     const host = typeof window !== "undefined" ? window.location.hostname : "current domain";
     return `Google Sign-In is not enabled for '${host}'. Please sign in with your Gmail and password, or add '${host}' to Firebase Authentication Authorized Domains.`;
   }
-  if (code === "auth/operation-not-allowed" || msg.includes("auth/operation-not-allowed")) {
+  if (code.includes("operation-not-allowed") || msg.includes("operation-not-allowed")) {
     return "This sign-in method is currently not enabled.";
   }
-  if (code === "auth/network-request-failed" || msg.includes("auth/network-request-failed")) {
+  if (code.includes("network-request-failed") || msg.includes("network-request-failed")) {
     return "Network connection issue. Please check your internet connection.";
   }
 
   // Extract cleaned error message if it has a Firebase prefix
-  const cleaned = msg.replace(/^Firebase:\s*(Error\s*\([^)]+\):?\s*)?/i, "").trim();
-  if (cleaned && !cleaned.startsWith("Firebase") && !cleaned.startsWith("auth/")) {
+  const cleaned = rawMsg.replace(/^Firebase:\s*(Error\s*\([^)]+\):?\s*)?/i, "").trim();
+  // Ensure we never return a single dot or punctuation symbol or internal code
+  if (cleaned && cleaned.length > 2 && !cleaned.startsWith("Firebase") && !cleaned.startsWith("auth/")) {
     return cleaned;
   }
 
-  return "Unable to connect to the authentication service. Please check your connection and try again.";
+  return "Incorrect email address or password. Please try again.";
 }
 
 export async function logout(reason = "User initiated logout"): Promise<void> {

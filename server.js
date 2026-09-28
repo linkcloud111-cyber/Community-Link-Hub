@@ -2069,7 +2069,11 @@ function getDirname() {
   return process.cwd();
 }
 var serverDir = getDirname();
-var PORT = parseInt(process.env.PORT || process.env.APP_PORT || "8080", 10);
+var nginxPort = parseInt(process.env.NGINX_PORT || "0", 10);
+var defaultAppPort = parseInt(process.env.DEFAULT_APP_PORT || "3000", 10);
+var envPort = parseInt(process.env.PORT || process.env.APP_PORT || "0", 10);
+var isBehindNginx = nginxPort > 0 || Boolean(process.env.DEFAULT_APP_PORT);
+var PRIMARY_PORT = isBehindNginx ? defaultAppPort : envPort > 0 ? envPort : defaultAppPort;
 var HOST = "0.0.0.0";
 var possibleDistDirs = [
   import_node_path.default.resolve(serverDir, "dist"),
@@ -2275,18 +2279,19 @@ var server = import_node_http.default.createServer(handleRequest);
 server.on("error", (err) => {
   console.log("[LinkCloud Server Primary Error]", err?.message || err);
 });
-server.listen(PORT, HOST, () => {
-  console.log(`[LinkCloud Server] Primary running on http://${HOST}:${PORT}`);
+server.listen(PRIMARY_PORT, HOST, () => {
+  console.log(`[LinkCloud Server] Primary running on http://${HOST}:${PRIMARY_PORT}`);
   console.log(`[LinkCloud Server] Serving static files from: ${DIST_DIR}`);
 });
-if (PORT !== 3e3) {
+var secondaryPort = !isBehindNginx && envPort > 0 && envPort !== 3e3 ? 3e3 : 0;
+if (secondaryPort > 0) {
   try {
     const secondaryServer = import_node_http.default.createServer(handleRequest);
     secondaryServer.on("error", (err) => {
-      console.log(`[LinkCloud Server] Port 3000 notice: ${err?.message || err}`);
+      console.log(`[LinkCloud Server] Port ${secondaryPort} notice: ${err?.message || err}`);
     });
-    secondaryServer.listen(3e3, HOST, () => {
-      console.log(`[LinkCloud Server] Dual listener active on http://${HOST}:3000`);
+    secondaryServer.listen(secondaryPort, HOST, () => {
+      console.log(`[LinkCloud Server] Secondary listener active on http://${HOST}:${secondaryPort}`);
     });
   } catch (secErr) {
     console.log("[LinkCloud Server] Secondary port setup note:", secErr?.message || secErr);

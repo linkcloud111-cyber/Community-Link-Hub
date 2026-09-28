@@ -137,7 +137,10 @@ export default function WebmasterLogin() {
       }, 600);
     } catch (err: any) {
       setStatus("idle");
-      const message = err?.message || "Invalid Webmaster credentials.";
+      const raw = err?.message || "";
+      const message = (!raw || raw.trim() === "." || raw.trim().length <= 2)
+        ? "Invalid Webmaster credentials. Please check your email and password."
+        : raw;
       setErrorMsg(message);
     }
   };
@@ -199,7 +202,10 @@ export default function WebmasterLogin() {
       }, 600);
     } catch (err: any) {
       setStatus("idle");
-      const message = err?.message || "Invalid verification code.";
+      const raw = err?.message || "";
+      const message = (!raw || raw.trim() === "." || raw.trim().length <= 2)
+        ? "Invalid verification code. Please try again."
+        : raw;
       setErrorMsg(message);
     }
   };
@@ -233,7 +239,10 @@ export default function WebmasterLogin() {
       }, 600);
     } catch (err: any) {
       setStatus("idle");
-      const message = err?.message || "Invalid credentials or unauthorized mobile number.";
+      const raw = err?.message || "";
+      const message = (!raw || raw.trim() === "." || raw.trim().length <= 2)
+        ? "Invalid credentials or unauthorized mobile number."
+        : raw;
       setErrorMsg(message);
     }
   };
@@ -253,7 +262,10 @@ export default function WebmasterLogin() {
       }, 600);
     } catch (err: any) {
       setStatus("idle");
-      const message = err?.message || "Google sign-in failed. Please try again.";
+      const raw = err?.message || "";
+      const message = (!raw || raw.trim() === "." || raw.trim().length <= 2)
+        ? "Google sign-in failed. Please try again."
+        : raw;
       setErrorMsg(message);
     }
   };
