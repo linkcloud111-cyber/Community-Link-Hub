@@ -11,7 +11,7 @@
   ],
   "scripts": {
     "dev": "npm run dev --workspace=@workspace/linkcloud",
-    "build": "(npm run build --workspace=@workspace/linkcloud || npm --prefix artifacts/linkcloud run build) && rm -rf dist && mkdir -p dist && cp -r artifacts/linkcloud/dist/. dist/ && cp dist/index.html . && cp -r dist/assets . && esbuild server-app.ts --bundle --platform=node --format=cjs --outfile=dist/server.cjs --external:firebase-admin && cp dist/server.cjs server.cjs && cp dist/server.cjs server.js",
+    "build": "(npm run build --workspace=@workspace/linkcloud || npm --prefix artifacts/linkcloud run build) && rm -rf dist && mkdir -p dist && cp -r artifacts/linkcloud/dist/. dist/ && cp dist/index.html . && cp -r dist/assets . && esbuild server-app.ts --bundle --platform=node --format=cjs --outfile=dist/server.cjs --external:firebase-admin && cp dist/server.cjs server.cjs && cp dist/server.cjs server.js && cp dist/server.cjs artifacts/linkcloud/server.cjs && cp dist/server.cjs artifacts/linkcloud/server.js && cp server.ts artifacts/linkcloud/server.ts",
     "start": "node server.ts",
     "typecheck": "tsc --build",
     "lint": "tsc --build"
