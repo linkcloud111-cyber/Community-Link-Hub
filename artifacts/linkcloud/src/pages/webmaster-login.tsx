@@ -9,6 +9,7 @@ import {
   signInWebmasterGoogle,
   sendPasswordResetLink,
   logout,
+  formatAuthError,
   type ConfirmationResult,
 } from "@/lib/auth";
 import { validateIndianMobile, validateGmailAddress } from "@/lib/utils";
@@ -137,10 +138,7 @@ export default function WebmasterLogin() {
       }, 600);
     } catch (err: any) {
       setStatus("idle");
-      const raw = err?.message || "";
-      const message = (!raw || raw.trim() === "." || raw.trim().length <= 2)
-        ? "Invalid Webmaster credentials. Please check your email and password."
-        : raw;
+      const message = formatAuthError(err, "Invalid Webmaster credentials. Please check your email and password.");
       setErrorMsg(message);
     }
   };
@@ -170,7 +168,7 @@ export default function WebmasterLogin() {
       toast.success(`Verification code sent to +91 ${cleanDigits.slice(-10)}`);
     } catch (err: any) {
       setStatus("idle");
-      const message = err?.message || "Failed to send verification code. Please try again.";
+      const message = formatAuthError(err, "Failed to send verification code. Please try again.");
       setErrorMsg(message);
     }
   };
@@ -202,10 +200,7 @@ export default function WebmasterLogin() {
       }, 600);
     } catch (err: any) {
       setStatus("idle");
-      const raw = err?.message || "";
-      const message = (!raw || raw.trim() === "." || raw.trim().length <= 2)
-        ? "Invalid verification code. Please try again."
-        : raw;
+      const message = formatAuthError(err, "Invalid verification code. Please try again.");
       setErrorMsg(message);
     }
   };
@@ -239,10 +234,7 @@ export default function WebmasterLogin() {
       }, 600);
     } catch (err: any) {
       setStatus("idle");
-      const raw = err?.message || "";
-      const message = (!raw || raw.trim() === "." || raw.trim().length <= 2)
-        ? "Invalid credentials or unauthorized mobile number."
-        : raw;
+      const message = formatAuthError(err, "Invalid credentials or unauthorized mobile number.");
       setErrorMsg(message);
     }
   };
@@ -262,10 +254,7 @@ export default function WebmasterLogin() {
       }, 600);
     } catch (err: any) {
       setStatus("idle");
-      const raw = err?.message || "";
-      const message = (!raw || raw.trim() === "." || raw.trim().length <= 2)
-        ? "Google sign-in failed. Please try again."
-        : raw;
+      const message = formatAuthError(err, "Google sign-in failed. Please try again.");
       setErrorMsg(message);
     }
   };

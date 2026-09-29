@@ -380,8 +380,8 @@ export default function Login() {
       setTimer(30);
       toast.success("OTP sent to your mobile number!");
     } catch (error: any) {
-      console.error(error);
-      toast.error(error.message || "Failed to send OTP. Ensure reCAPTCHA completes and try again.");
+      console.error("OTP send error:", error);
+      toast.error(formatAuthError(error, "Failed to send OTP. Ensure reCAPTCHA completes and try again."));
     } finally {
       setLoading(false);
     }
@@ -403,8 +403,8 @@ export default function Login() {
       toast.success("Mobile OTP verified successfully!");
       setLocation("/dashboard");
     } catch (error: any) {
-      console.error(error);
-      toast.error(error.message || "Invalid OTP code. Please check and try again.");
+      console.error("OTP verify error:", error);
+      toast.error(formatAuthError(error, "Invalid OTP code. Please check and try again."));
     } finally {
       setLoading(false);
     }
@@ -418,8 +418,8 @@ export default function Login() {
       toast.success("Welcome to LinkCloud!");
       setLocation("/dashboard");
     } catch (error: any) {
-      console.error(error);
-      if (error.message && error.message.startsWith("This is a Webmaster account")) {
+      console.error("Google login error:", error);
+      if (error?.message && error.message.startsWith("This is a Webmaster account")) {
         // Stop execution, error toast and redirect already performed
         return;
       }
@@ -427,7 +427,7 @@ export default function Login() {
       if (msg.includes("unauthorized") || msg.includes("Authorized Domains") || msg.includes("unauthorized-domain")) {
         setOauthModalOpen(true);
       } else {
-        toast.error(msg || "Failed to sign in with Google.");
+        toast.error(formatAuthError(error, "Failed to sign in with Google."));
       }
     } finally {
       setLoading(false);
@@ -447,7 +447,7 @@ export default function Login() {
       setForgotSuccess(true);
       toast.success("Password reset email sent! Check your inbox.");
     } catch (error: any) {
-      toast.error(error.message || "Failed to send password reset link.");
+      toast.error(formatAuthError(error, "Failed to send password reset link."));
     } finally {
       setForgotLoading(false);
     }

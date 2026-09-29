@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/contexts/AuthContext";
-import { registerWithEmail, signInWithGoogle } from "@/lib/auth";
+import { registerWithEmail, signInWithGoogle, formatAuthError } from "@/lib/auth";
 import {
   validateGmailAddress,
   validatePasswordStrength,
@@ -189,19 +189,17 @@ export default function Register() {
       toast.success("Account created successfully! Verification link sent to your Gmail.");
       setLocation("/verify-email");
     } catch (error: any) {
-      console.error(error);
-      const msg = error.message || "Failed to create account. Please try again.";
-      if (msg.includes("Gmail") || msg.includes("email") || msg.includes("registered") || msg.includes("Mobile") || msg.includes("phone")) {
-        if (msg.includes("Mobile") || msg.includes("phone")) {
-          setCustomPhoneError(msg);
-          toast.error(msg);
-        } else {
-          const emailErrMsg = msg.includes("registered") ? "This email address is already registered." : msg;
-          setCustomEmailError(emailErrMsg);
-          toast.error(emailErrMsg);
-        }
+      console.error("Registration error:", error);
+      const friendlyMsg = formatAuthError(error, "Failed to create account. Please try again.");
+      const lower = friendlyMsg.toLowerCase();
+      if (lower.includes("mobile") || lower.includes("phone")) {
+        setCustomPhoneError(friendlyMsg);
+        toast.error(friendlyMsg);
+      } else if (lower.includes("email") || lower.includes("registered") || lower.includes("gmail")) {
+        setCustomEmailError(friendlyMsg);
+        toast.error(friendlyMsg);
       } else {
-        toast.error(msg);
+        toast.error(friendlyMsg);
       }
     } finally {
       setLoading(false);
@@ -215,12 +213,12 @@ export default function Register() {
       toast.success("Welcome to LinkCloud!");
       setLocation(isWebmaster ? "/webmaster/dashboard" : "/dashboard");
     } catch (error: any) {
-      console.error(error);
-      const msg = error?.message || "";
-      if (msg.includes("unauthorized") || msg.includes("Authorized Domains") || msg.includes("unauthorized-domain")) {
+      console.error("Google signup error:", error);
+      const rawMsg = error?.message || "";
+      if (rawMsg.includes("unauthorized") || rawMsg.includes("Authorized Domains") || rawMsg.includes("unauthorized-domain")) {
         setOauthModalOpen(true);
       } else {
-        toast.error(msg || "Failed to sign up with Google.");
+        toast.error(formatAuthError(error, "Failed to sign up with Google."));
       }
     } finally {
       setLoading(false);

@@ -258,11 +258,16 @@ function Router() {
               <Route path="/webmaster" component={ProtectedWebmasterOverview} />
               <Route path="/webmaster/dashboard" component={ProtectedWebmasterOverview} />
               <Route path="/webmaster/groups" component={ProtectedWebmasterGroups} />
+              <Route path="/webmaster/submissions" component={ProtectedWebmasterGroups} />
               <Route path="/webmaster/users" component={ProtectedWebmasterUsers} />
               <Route path="/webmaster/categories" component={ProtectedWebmasterCategories} />
+              <Route path="/webmaster/taxonomy" component={ProtectedWebmasterCategories} />
               <Route path="/webmaster/locations" component={ProtectedWebmasterLocations} />
               <Route path="/webmaster/reports" component={ProtectedWebmasterReports} />
+              <Route path="/webmaster/links" component={ProtectedWebmasterReports} />
               <Route path="/webmaster/contacts" component={ProtectedWebmasterContacts} />
+              <Route path="/webmaster/complaints" component={ProtectedWebmasterContacts} />
+              <Route path="/webmaster/grievances" component={ProtectedWebmasterContacts} />
               <Route path="/webmaster/notifications" component={ProtectedWebmasterNotifications} />
               <Route path="/webmaster/settings" component={ProtectedWebmasterSettings} />
               <Route path="/webmaster/announcements" component={ProtectedWebmasterSettings} />
