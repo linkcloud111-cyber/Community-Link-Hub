@@ -41,16 +41,7 @@ function getDirname(): string {
 }
 const serverDir = getDirname();
 
-const nginxPort = parseInt(process.env.NGINX_PORT || '0', 10);
-const defaultAppPort = parseInt(process.env.DEFAULT_APP_PORT || '3000', 10);
-const envPort = parseInt(process.env.PORT || process.env.APP_PORT || '0', 10);
-
-// In AI Studio / Cloud Run container architecture:
-// Nginx is the edge proxy listening on NGINX_PORT (8080) and proxying all traffic to DEFAULT_APP_PORT (3000).
-// Therefore, whenever NGINX is present or DEFAULT_APP_PORT is defined, Node MUST bind to DEFAULT_APP_PORT (3000).
-// If running in a standalone environment without Nginx proxy, Node binds to PORT (e.g. 8080).
-const isBehindNginx = nginxPort > 0 || Boolean(process.env.DEFAULT_APP_PORT);
-const PRIMARY_PORT = isBehindNginx ? defaultAppPort : (envPort > 0 ? envPort : defaultAppPort);
+const TARGET_PORT = parseInt(process.env.PORT || process.env.APP_PORT || '8080', 10);
 const HOST = '0.0.0.0';
 
 // Determine dist directory location
@@ -305,44 +296,39 @@ async function handleRequest(req: any, res: any) {
   }
 }
 
-const server = http.createServer(handleRequest);
-
-server.on('error', (err: any) => {
-  console.log('[LinkCloud Server Primary Error]', err?.message || err);
-});
-
-server.listen(PRIMARY_PORT, HOST, () => {
-  console.log(`[LinkCloud Server] Primary running on http://${HOST}:${PRIMARY_PORT}`);
-  console.log(`[LinkCloud Server] Serving static files from: ${DIST_DIR}`);
-});
-
-// If running standalone (without Nginx proxy) and PRIMARY_PORT is not 3000,
-// also provide dual listener on 3000 for internal proxies and health checks.
-const secondaryPort = (!isBehindNginx && envPort > 0 && envPort !== 3000) ? 3000 : 0;
-if (secondaryPort > 0) {
-  try {
-    const secondaryServer = http.createServer(handleRequest);
-    secondaryServer.on('error', (err: any) => {
-      console.log(`[LinkCloud Server] Port ${secondaryPort} notice: ${err?.message || err}`);
-    });
-    secondaryServer.listen(secondaryPort, HOST, () => {
-      console.log(`[LinkCloud Server] Secondary listener active on http://${HOST}:${secondaryPort}`);
-    });
-  } catch (secErr: any) {
-    console.log('[LinkCloud Server] Secondary port setup note:', secErr?.message || secErr);
-  }
+function createAndStartServer(port: number, label: string): http.Server {
+  const s = http.createServer(handleRequest);
+  s.on('error', (err: any) => {
+    if (err.code === 'EADDRINUSE') {
+      console.log(`[LinkCloud Server] Port ${port} (${label}) already bound/in use - skipping`);
+    } else {
+      console.error(`[LinkCloud Server] Port ${port} (${label}) error:`, err?.message || err);
+    }
+  });
+  s.listen(port, HOST, () => {
+    console.log(`[LinkCloud Server] ${label} listening on http://${HOST}:${port}`);
+    console.log(`[LinkCloud Server] Serving static files from: ${DIST_DIR}`);
+  });
+  return s;
 }
 
-process.on('SIGTERM', () => {
-  console.log('[LinkCloud Server] Received SIGTERM, shutting down...');
-  server.close(() => {
-    process.exit(0);
-  });
-});
+// 1. Primary ingress port (Cloud Run $PORT / default 8080)
+const primaryServer = createAndStartServer(TARGET_PORT, 'Container Ingress');
 
-process.on('SIGINT', () => {
-  console.log('[LinkCloud Server] Received SIGINT, shutting down...');
-  server.close(() => {
-    process.exit(0);
-  });
-});
+// 2. Secondary listener on port 3000 (AI Studio internal dev proxy / standard default port)
+let secondaryServer: http.Server | null = null;
+if (TARGET_PORT !== 3000) {
+  secondaryServer = createAndStartServer(3000, 'Internal Port 3000');
+}
+
+function gracefulShutdown() {
+  console.log('[LinkCloud Server] Received shutdown signal, closing servers...');
+  try { primaryServer.close(); } catch {}
+  if (secondaryServer) {
+    try { secondaryServer.close(); } catch {}
+  }
+  process.exit(0);
+}
+
+process.on('SIGTERM', gracefulShutdown);
+process.on('SIGINT', gracefulShutdown);

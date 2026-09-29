@@ -2069,11 +2069,7 @@ function getDirname() {
   return process.cwd();
 }
 var serverDir = getDirname();
-var nginxPort = parseInt(process.env.NGINX_PORT || "0", 10);
-var defaultAppPort = parseInt(process.env.DEFAULT_APP_PORT || "3000", 10);
-var envPort = parseInt(process.env.PORT || process.env.APP_PORT || "0", 10);
-var isBehindNginx = nginxPort > 0 || Boolean(process.env.DEFAULT_APP_PORT);
-var PRIMARY_PORT = isBehindNginx ? defaultAppPort : envPort > 0 ? envPort : defaultAppPort;
+var TARGET_PORT = parseInt(process.env.PORT || process.env.APP_PORT || "8080", 10);
 var HOST = "0.0.0.0";
 var possibleDistDirs = [
   import_node_path.default.resolve(serverDir, "dist"),
@@ -2275,37 +2271,39 @@ async function handleRequest(req, res) {
     res.end('<!DOCTYPE html><html><head><title>LinkCloud</title></head><body><div id="root"></div></body></html>');
   }
 }
-var server = import_node_http.default.createServer(handleRequest);
-server.on("error", (err) => {
-  console.log("[LinkCloud Server Primary Error]", err?.message || err);
-});
-server.listen(PRIMARY_PORT, HOST, () => {
-  console.log(`[LinkCloud Server] Primary running on http://${HOST}:${PRIMARY_PORT}`);
-  console.log(`[LinkCloud Server] Serving static files from: ${DIST_DIR}`);
-});
-var secondaryPort = !isBehindNginx && envPort > 0 && envPort !== 3e3 ? 3e3 : 0;
-if (secondaryPort > 0) {
-  try {
-    const secondaryServer = import_node_http.default.createServer(handleRequest);
-    secondaryServer.on("error", (err) => {
-      console.log(`[LinkCloud Server] Port ${secondaryPort} notice: ${err?.message || err}`);
-    });
-    secondaryServer.listen(secondaryPort, HOST, () => {
-      console.log(`[LinkCloud Server] Secondary listener active on http://${HOST}:${secondaryPort}`);
-    });
-  } catch (secErr) {
-    console.log("[LinkCloud Server] Secondary port setup note:", secErr?.message || secErr);
-  }
+function createAndStartServer(port, label) {
+  const s = import_node_http.default.createServer(handleRequest);
+  s.on("error", (err) => {
+    if (err.code === "EADDRINUSE") {
+      console.log(`[LinkCloud Server] Port ${port} (${label}) already bound/in use - skipping`);
+    } else {
+      console.error(`[LinkCloud Server] Port ${port} (${label}) error:`, err?.message || err);
+    }
+  });
+  s.listen(port, HOST, () => {
+    console.log(`[LinkCloud Server] ${label} listening on http://${HOST}:${port}`);
+    console.log(`[LinkCloud Server] Serving static files from: ${DIST_DIR}`);
+  });
+  return s;
 }
-process.on("SIGTERM", () => {
-  console.log("[LinkCloud Server] Received SIGTERM, shutting down...");
-  server.close(() => {
-    process.exit(0);
-  });
-});
-process.on("SIGINT", () => {
-  console.log("[LinkCloud Server] Received SIGINT, shutting down...");
-  server.close(() => {
-    process.exit(0);
-  });
-});
+var primaryServer = createAndStartServer(TARGET_PORT, "Container Ingress");
+var secondaryServer = null;
+if (TARGET_PORT !== 3e3) {
+  secondaryServer = createAndStartServer(3e3, "Internal Port 3000");
+}
+function gracefulShutdown() {
+  console.log("[LinkCloud Server] Received shutdown signal, closing servers...");
+  try {
+    primaryServer.close();
+  } catch {
+  }
+  if (secondaryServer) {
+    try {
+      secondaryServer.close();
+    } catch {
+    }
+  }
+  process.exit(0);
+}
+process.on("SIGTERM", gracefulShutdown);
+process.on("SIGINT", gracefulShutdown);
