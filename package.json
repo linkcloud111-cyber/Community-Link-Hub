@@ -22,10 +22,10 @@
   "dependencies": {
     "@replit/connectors-sdk": "^0.4.1",
     "esbuild": "^0.28.2",
-    "firebase-admin": "^14.2.0"
+    "firebase-admin": "^14.2.0",
+    "typescript": "~5.9.3"
   },
   "devDependencies": {
-    "prettier": "^3.9.6",
-    "typescript": "~5.9.3"
+    "prettier": "^3.9.6"
   }
 }
