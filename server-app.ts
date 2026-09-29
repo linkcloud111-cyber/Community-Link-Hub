@@ -321,8 +321,12 @@ if (TARGET_PORT !== 3000) {
   secondaryServer = createAndStartServer(3000, 'Internal Port 3000');
 }
 
+// Keep the event loop alive permanently in all container environments so the server process never exits prematurely
+const keepAliveTimer = setInterval(() => {}, 60000);
+
 function gracefulShutdown() {
   console.log('[LinkCloud Server] Received shutdown signal, closing servers...');
+  clearInterval(keepAliveTimer);
   try { primaryServer.close(); } catch {}
   if (secondaryServer) {
     try { secondaryServer.close(); } catch {}

@@ -2291,8 +2291,11 @@ var secondaryServer = null;
 if (TARGET_PORT !== 3e3) {
   secondaryServer = createAndStartServer(3e3, "Internal Port 3000");
 }
+var keepAliveTimer = setInterval(() => {
+}, 6e4);
 function gracefulShutdown() {
   console.log("[LinkCloud Server] Received shutdown signal, closing servers...");
+  clearInterval(keepAliveTimer);
   try {
     primaryServer.close();
   } catch {
