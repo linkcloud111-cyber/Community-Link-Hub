@@ -20,10 +20,6 @@ const candidates = [
   path.resolve(process.cwd(), 'server.cjs'),
   path.resolve(process.cwd(), 'artifacts/linkcloud/dist/server.cjs'),
   path.resolve(process.cwd(), 'artifacts/linkcloud/server.cjs'),
-  path.resolve(currentDir, 'dist/server.js'),
-  path.resolve(currentDir, 'server.js'),
-  path.resolve(process.cwd(), 'dist/server.js'),
-  path.resolve(process.cwd(), 'server.js'),
 ];
 
 let started = false;

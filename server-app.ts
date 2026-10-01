@@ -154,6 +154,14 @@ async function handleRequest(req: any, res: any) {
     return;
   }
 
+  // Cookie verification probe endpoint
+  if (pathname === '/__cookie_check.html') {
+    res.statusCode = 200;
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.end('<!DOCTYPE html><html><head><title>Cookie Check</title></head><body><script>window.location.href = new URLSearchParams(window.location.search).get("return_url") || "/";</script></body></html>');
+    return;
+  }
+
   // API Routes
   try {
     if (pathname === '/api/announcements') {
@@ -296,29 +304,41 @@ async function handleRequest(req: any, res: any) {
   }
 }
 
-function createAndStartServer(port: number, label: string): http.Server {
+function startServerWithRetry(port: number, label: string, isPrimaryAppPort: boolean): http.Server {
   const s = http.createServer(handleRequest);
+  let retryCount = 0;
+  const maxRetries = isPrimaryAppPort ? 120 : 3;
+
   s.on('error', (err: any) => {
     if (err.code === 'EADDRINUSE') {
-      console.log(`[LinkCloud Server] Port ${port} (${label}) already bound/in use - skipping`);
+      if (isPrimaryAppPort && retryCount < maxRetries) {
+        retryCount++;
+        setTimeout(() => {
+          try { s.close(); } catch {}
+          s.listen(port, HOST);
+        }, 500);
+      } else {
+        console.log(`[LinkCloud Server] Port ${port} (${label}) currently in use - standby mode active`);
+      }
     } else {
       console.error(`[LinkCloud Server] Port ${port} (${label}) error:`, err?.message || err);
     }
   });
+
   s.listen(port, HOST, () => {
-    console.log(`[LinkCloud Server] ${label} listening on http://${HOST}:${port}`);
+    console.log(`[LinkCloud Server] ${label} successfully listening on http://${HOST}:${port}`);
     console.log(`[LinkCloud Server] Serving static files from: ${DIST_DIR}`);
   });
   return s;
 }
 
-// 1. Primary ingress port (Cloud Run $PORT / default 8080)
-const primaryServer = createAndStartServer(TARGET_PORT, 'Container Ingress');
+// 1. Mandatory application port 3000 (AI Studio app-container & internal proxy)
+const appServer = startServerWithRetry(3000, 'App Port 3000', true);
 
-// 2. Secondary listener on port 3000 (AI Studio internal dev proxy / standard default port)
-let secondaryServer: http.Server | null = null;
+// 2. Ingress port (Cloud Run $PORT / 8080 if not 3000)
+let ingressServer: http.Server | null = null;
 if (TARGET_PORT !== 3000) {
-  secondaryServer = createAndStartServer(3000, 'Internal Port 3000');
+  ingressServer = startServerWithRetry(TARGET_PORT, 'Container Ingress', false);
 }
 
 // Keep the event loop alive permanently in all container environments so the server process never exits prematurely
@@ -327,9 +347,9 @@ const keepAliveTimer = setInterval(() => {}, 60000);
 function gracefulShutdown() {
   console.log('[LinkCloud Server] Received shutdown signal, closing servers...');
   clearInterval(keepAliveTimer);
-  try { primaryServer.close(); } catch {}
-  if (secondaryServer) {
-    try { secondaryServer.close(); } catch {}
+  try { appServer.close(); } catch {}
+  if (ingressServer) {
+    try { ingressServer.close(); } catch {}
   }
   process.exit(0);
 }
