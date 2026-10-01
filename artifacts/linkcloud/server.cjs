@@ -123105,51 +123105,55 @@ async function handleRequest(req, res) {
     res.end('<!DOCTYPE html><html><head><title>LinkCloud</title></head><body><div id="root"></div></body></html>');
   }
 }
-function startServerWithRetry(port, label, isPrimaryAppPort) {
-  const s2 = import_node_http3.default.createServer(handleRequest);
-  let retryCount = 0;
-  const maxRetries = isPrimaryAppPort ? 120 : 3;
-  s2.on("error", (err) => {
-    if (err.code === "EADDRINUSE") {
-      if (isPrimaryAppPort && retryCount < maxRetries) {
-        retryCount++;
-        setTimeout(() => {
-          try {
-            s2.close();
-          } catch {
-          }
-          s2.listen(port, HOST);
-        }, 500);
+var activeAppServer = null;
+var activeIngressServer = null;
+function bindWithRetry(port, label, isAppPort, maxTries = 120) {
+  let tries = 0;
+  function attempt() {
+    tries++;
+    const s2 = import_node_http3.default.createServer(handleRequest);
+    s2.once("error", (err) => {
+      if (err.code === "EADDRINUSE") {
+        if (isAppPort && tries < maxTries) {
+          setTimeout(attempt, 500);
+        } else {
+          console.log(`[LinkCloud Server] Port ${port} (${label}) already in use - operating in standby mode`);
+        }
       } else {
-        console.log(`[LinkCloud Server] Port ${port} (${label}) currently in use - standby mode active`);
+        console.error(`[LinkCloud Server] Port ${port} (${label}) error:`, err?.message || err);
       }
-    } else {
-      console.error(`[LinkCloud Server] Port ${port} (${label}) error:`, err?.message || err);
-    }
-  });
-  s2.listen(port, HOST, () => {
-    console.log(`[LinkCloud Server] ${label} successfully listening on http://${HOST}:${port}`);
-    console.log(`[LinkCloud Server] Serving static files from: ${DIST_DIR}`);
-  });
-  return s2;
+    });
+    s2.once("listening", () => {
+      console.log(`[LinkCloud Server] ${label} successfully listening on http://${HOST}:${port}`);
+      console.log(`[LinkCloud Server] Serving static files from: ${DIST_DIR}`);
+      if (isAppPort) {
+        activeAppServer = s2;
+      } else {
+        activeIngressServer = s2;
+      }
+    });
+    s2.listen(port, HOST);
+  }
+  attempt();
 }
-var appServer = startServerWithRetry(3e3, "App Port 3000", true);
-var ingressServer = null;
+bindWithRetry(3e3, "App Port 3000", true, 60);
 if (TARGET_PORT !== 3e3) {
-  ingressServer = startServerWithRetry(TARGET_PORT, "Container Ingress", false);
+  bindWithRetry(TARGET_PORT, "Container Ingress", true, 60);
 }
 var keepAliveTimer = setInterval(() => {
 }, 6e4);
 function gracefulShutdown() {
   console.log("[LinkCloud Server] Received shutdown signal, closing servers...");
   clearInterval(keepAliveTimer);
-  try {
-    appServer.close();
-  } catch {
-  }
-  if (ingressServer) {
+  if (activeAppServer) {
     try {
-      ingressServer.close();
+      activeAppServer.close();
+    } catch {
+    }
+  }
+  if (activeIngressServer) {
+    try {
+      activeIngressServer.close();
     } catch {
     }
   }
