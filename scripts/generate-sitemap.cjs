@@ -118,6 +118,26 @@ function writeSitemapToPaths() {
   }
 
   console.log(`[Sitemap] Completed: XML sitemap successfully generated across ${writtenCount} locations.`);
+
+  // Write static health check JSON files across all public and dist directories
+  const healthJson = JSON.stringify({ status: 'healthy', timestamp: new Date().toISOString() });
+  const healthDirs = [
+    path.join(rootDir, 'public'),
+    path.join(rootDir, 'artifacts', 'linkcloud', 'public'),
+    path.join(rootDir, 'dist'),
+    path.join(rootDir, 'artifacts', 'linkcloud', 'dist'),
+  ];
+  for (const dir of healthDirs) {
+    if (fs.existsSync(dir)) {
+      try {
+        fs.writeFileSync(path.join(dir, 'health'), healthJson, 'utf8');
+        fs.writeFileSync(path.join(dir, 'health.json'), healthJson, 'utf8');
+        fs.writeFileSync(path.join(dir, '__health'), healthJson, 'utf8');
+        fs.writeFileSync(path.join(dir, '_health'), healthJson, 'utf8');
+      } catch {}
+    }
+  }
+
   return xml;
 }
 

@@ -122890,6 +122890,19 @@ async function handleAuthCheckRegistration(req, res) {
 }
 
 // server-app.ts
+try {
+  const envFile = "/app/.dev.env.json";
+  if (import_node_fs2.default.existsSync(envFile)) {
+    const raw = import_node_fs2.default.readFileSync(envFile, "utf8");
+    const parsed = JSON.parse(raw);
+    for (const [k, v] of Object.entries(parsed)) {
+      if (!process.env[k] && typeof v === "string") {
+        process.env[k] = v;
+      }
+    }
+  }
+} catch {
+}
 function getDirname() {
   if (typeof __dirname !== "undefined") {
     return __dirname;
@@ -123107,17 +123120,17 @@ async function handleRequest(req, res) {
 }
 var activeAppServer = null;
 var activeIngressServer = null;
-function bindWithRetry(port, label, isAppPort, maxTries = 120) {
+function bindWithRetry(port, label, serverType, maxTries = 60, retryDelayMs = 500) {
   let tries = 0;
   function attempt() {
     tries++;
     const s2 = import_node_http3.default.createServer(handleRequest);
     s2.once("error", (err) => {
       if (err.code === "EADDRINUSE") {
-        if (isAppPort && tries < maxTries) {
-          setTimeout(attempt, 500);
+        if (tries < maxTries) {
+          setTimeout(attempt, retryDelayMs);
         } else {
-          console.log(`[LinkCloud Server] Port ${port} (${label}) already in use - operating in standby mode`);
+          console.log(`[LinkCloud Server] Port ${port} (${label}) in use after ${tries} attempts - running in standby mode`);
         }
       } else {
         console.error(`[LinkCloud Server] Port ${port} (${label}) error:`, err?.message || err);
@@ -123126,7 +123139,7 @@ function bindWithRetry(port, label, isAppPort, maxTries = 120) {
     s2.once("listening", () => {
       console.log(`[LinkCloud Server] ${label} successfully listening on http://${HOST}:${port}`);
       console.log(`[LinkCloud Server] Serving static files from: ${DIST_DIR}`);
-      if (isAppPort) {
+      if (serverType === "app") {
         activeAppServer = s2;
       } else {
         activeIngressServer = s2;
@@ -123136,9 +123149,9 @@ function bindWithRetry(port, label, isAppPort, maxTries = 120) {
   }
   attempt();
 }
-bindWithRetry(3e3, "App Port 3000", true, 60);
+bindWithRetry(3e3, "App Port 3000", "app", 60, 500);
 if (TARGET_PORT !== 3e3) {
-  bindWithRetry(TARGET_PORT, "Container Ingress", true, 60);
+  bindWithRetry(TARGET_PORT, "Container Ingress", "ingress", 60, 500);
 }
 var keepAliveTimer = setInterval(() => {
 }, 6e4);

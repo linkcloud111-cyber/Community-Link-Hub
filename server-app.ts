@@ -33,6 +33,21 @@ import {
   handleAuthCheckRegistration,
 } from './artifacts/linkcloud/src/server/auth-api.ts';
 
+try {
+  const envFile = '/app/.dev.env.json';
+  if (fs.existsSync(envFile)) {
+    const raw = fs.readFileSync(envFile, 'utf8');
+    const parsed = JSON.parse(raw);
+    for (const [k, v] of Object.entries(parsed)) {
+      if (!process.env[k] && typeof v === 'string') {
+        process.env[k] = v;
+      }
+    }
+  }
+} catch {
+  // Ignore in environments without .dev.env.json
+}
+
 function getDirname(): string {
   if (typeof __dirname !== 'undefined') {
     return __dirname;
@@ -307,7 +322,13 @@ async function handleRequest(req: any, res: any) {
 let activeAppServer: http.Server | null = null;
 let activeIngressServer: http.Server | null = null;
 
-function bindWithRetry(port: number, label: string, isAppPort: boolean, maxTries: number = 120): void {
+function bindWithRetry(
+  port: number,
+  label: string,
+  serverType: 'app' | 'ingress',
+  maxTries: number = 60,
+  retryDelayMs: number = 500
+): void {
   let tries = 0;
 
   function attempt() {
@@ -316,11 +337,10 @@ function bindWithRetry(port: number, label: string, isAppPort: boolean, maxTries
 
     s.once('error', (err: any) => {
       if (err.code === 'EADDRINUSE') {
-        if (isAppPort && tries < maxTries) {
-          // Retry every 500ms so we seamlessly take over port 3000 once the startup shim releases it
-          setTimeout(attempt, 500);
+        if (tries < maxTries) {
+          setTimeout(attempt, retryDelayMs);
         } else {
-          console.log(`[LinkCloud Server] Port ${port} (${label}) already in use - operating in standby mode`);
+          console.log(`[LinkCloud Server] Port ${port} (${label}) in use after ${tries} attempts - running in standby mode`);
         }
       } else {
         console.error(`[LinkCloud Server] Port ${port} (${label}) error:`, err?.message || err);
@@ -330,7 +350,7 @@ function bindWithRetry(port: number, label: string, isAppPort: boolean, maxTries
     s.once('listening', () => {
       console.log(`[LinkCloud Server] ${label} successfully listening on http://${HOST}:${port}`);
       console.log(`[LinkCloud Server] Serving static files from: ${DIST_DIR}`);
-      if (isAppPort) {
+      if (serverType === 'app') {
         activeAppServer = s;
       } else {
         activeIngressServer = s;
@@ -344,11 +364,11 @@ function bindWithRetry(port: number, label: string, isAppPort: boolean, maxTries
 }
 
 // 1. Mandatory application port 3000 (AI Studio standard app port proxied by Nginx)
-bindWithRetry(3000, 'App Port 3000', true, 60);
+bindWithRetry(3000, 'App Port 3000', 'app', 60, 500);
 
 // 2. Container ingress port (Cloud Run $PORT / 8080 if not 3000)
 if (TARGET_PORT !== 3000) {
-  bindWithRetry(TARGET_PORT, 'Container Ingress', true, 60);
+  bindWithRetry(TARGET_PORT, 'Container Ingress', 'ingress', 60, 500);
 }
 
 // Keep the event loop alive permanently in all container environments so the server process never exits prematurely
