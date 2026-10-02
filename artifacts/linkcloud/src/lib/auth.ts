@@ -449,12 +449,16 @@ export async function loginWebmaster(email: string, password: string): Promise<U
       throw new Error("Your Webmaster account is currently inactive.");
     }
 
-    await upsertUserProfile(uid, {
-      uid,
-      email: u.email?.toLowerCase() || cleanEmail,
-      status: "active",
-      updatedAt: new Date().toISOString(),
-    });
+    try {
+      await upsertUserProfile(uid, {
+        uid,
+        email: u.email?.toLowerCase() || cleanEmail,
+        status: "active",
+        updatedAt: new Date().toISOString(),
+      });
+    } catch (upsertErr) {
+      console.warn("[AUTH] Notice: auxiliary login timestamp update notice:", upsertErr);
+    }
 
     return u;
   } catch (err: any) {

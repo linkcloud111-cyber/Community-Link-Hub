@@ -26,6 +26,7 @@ export const FIREBASE_AUTH_ERROR_MAP: Record<string, string> = {
   "auth/too-many-requests": "Too many failed attempts. Access temporarily disabled. Please try again later or reset your password.",
 
   // Session & Security
+  "auth/multi-factor-auth-required": "Multi-factor authentication required. Please verify via your registered mobile number.",
   "auth/requires-recent-login": "Please sign in again to complete this sensitive action.",
   "auth/user-token-expired": "Your session has expired. Please login again.",
   "auth/id-token-expired": "Your session has expired. Please login again.",

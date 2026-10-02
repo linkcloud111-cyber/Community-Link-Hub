@@ -33,15 +33,16 @@ const isValidApiKey =
   typeof rawApiKey === "string" &&
   rawApiKey.trim().length > 10 &&
   rawApiKey !== "undefined" &&
-  !rawApiKey.includes("YOUR_");
+  !rawApiKey.includes("YOUR_") &&
+  !rawApiKey.includes("Dummy");
 
 const firebaseConfig = {
-  apiKey: isValidApiKey ? rawApiKey : "AIzaSyDummyApiKeyForLinkcloudApp2026Key",
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || "linkcloud-app.firebaseapp.com",
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || "linkcloud-app",
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || "linkcloud-app.appspot.com",
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || "123456789012",
-  appId: import.meta.env.VITE_FIREBASE_APP_ID || "1:123456789012:web:abcdef1234567890",
+  apiKey: isValidApiKey ? rawApiKey : "AIzaSyDUsh9Q9XNmcRrrK1779uSnaMZ7Oi87qc0",
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || "linkcloud-5bb2f.firebaseapp.com",
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || "linkcloud-5bb2f",
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || "linkcloud-5bb2f.firebasestorage.app",
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || "193107942566",
+  appId: import.meta.env.VITE_FIREBASE_APP_ID || "1:193107942566:web:38b181294ea887b8406867",
 };
 
 let app: FirebaseApp;
