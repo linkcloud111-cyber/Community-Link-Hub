@@ -90,7 +90,7 @@ export async function safeSendEmailVerification(
   continuePath: string
 ): Promise<void> {
   const origin = getAppBaseUrl();
-  const authDomain = auth.config?.authDomain || "linkcloud-app.firebaseapp.com";
+  const authDomain = auth.config?.authDomain || "linkcloud-5bb2f.firebaseapp.com";
   const targetUser = auth.currentUser || user;
 
   try {
@@ -160,7 +160,7 @@ export async function safeSendPasswordResetEmail(
   continuePath: string
 ): Promise<void> {
   const origin = getAppBaseUrl();
-  const authDomain = authInstance.config?.authDomain || "linkcloud-app.firebaseapp.com";
+  const authDomain = authInstance.config?.authDomain || "linkcloud-5bb2f.firebaseapp.com";
 
   try {
     const settings: ActionCodeSettings = {

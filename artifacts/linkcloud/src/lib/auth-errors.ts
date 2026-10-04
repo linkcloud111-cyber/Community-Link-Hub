@@ -49,6 +49,9 @@ export const FIREBASE_AUTH_ERROR_MAP: Record<string, string> = {
   "auth/operation-not-allowed": "This sign-in method is currently disabled.",
 
   // Network & Server
+  "auth/invalid-api-key": "Invalid Firebase API key configuration. Please contact administrator.",
+  "auth/api-key-not-valid": "Firebase API key is invalid or blocked. Please contact administrator.",
+  "auth/app-deleted": "Firebase instance is currently unavailable. Please reload the page.",
   "auth/network-request-failed": "Network connection issue. Please check your internet connection and try again.",
   "auth/internal-error": "An internal error occurred. Please try again in a few moments.",
   "auth/timeout": "The request timed out. Please check your connection and try again.",

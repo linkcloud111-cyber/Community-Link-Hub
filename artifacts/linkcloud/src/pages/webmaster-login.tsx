@@ -138,7 +138,9 @@ export default function WebmasterLogin() {
       }, 600);
     } catch (err: any) {
       setStatus("idle");
-      const message = formatAuthError(err, "Invalid Webmaster credentials. Please check your email and password.");
+      const message = (err && typeof err.message === "string" && err.message.length > 0)
+        ? err.message
+        : formatAuthError(err, "Invalid Webmaster credentials. Please check your email and password.");
       setErrorMsg(message);
     }
   };
