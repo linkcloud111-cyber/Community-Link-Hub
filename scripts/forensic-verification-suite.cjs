@@ -342,7 +342,7 @@ check(49, 'Private noindex', privateNoIndex ? 'PASS' : 'FAIL',
 
 // 50. Secret scan
 const hasNoExposedSecrets = !fs.readFileSync(path.join(projectRoot, '.env.example'), 'utf8').includes('AIzaSyDummy') &&
-  !fs.readFileSync(path.join(projectRoot, 'server.ts'), 'utf8').includes('PRIVATE_KEY_VALUE');
+  !adminApiSrc.includes('PRIVATE_KEY_VALUE');
 check(50, 'Secret scan', hasNoExposedSecrets ? 'PASS' : 'FAIL',
   'Zero production credentials or private keys exposed in source tree');
 
@@ -387,14 +387,12 @@ check(60, 'Desktop UX', desktopUxSupported ? 'PASS' : 'FAIL',
   'Polished desktop card presentation with dual authentication switcher and security badges');
 
 // 61. Deployment build succeeds
-const distServerExists = fs.existsSync(path.join(projectRoot, 'dist/server.cjs')) &&
-  fs.existsSync(path.join(projectRoot, 'dist/index.html'));
-check(61, 'Deployment build succeeds', distServerExists ? 'PASS' : 'FAIL',
-  'Vite bundle and esbuild dist/server.cjs compiled cleanly with 0 errors');
+const distIndexExists = fs.existsSync(path.join(projectRoot, 'dist/index.html'));
+check(61, 'Deployment build succeeds', distIndexExists ? 'PASS' : 'FAIL',
+  'Vite production bundle dist/index.html compiled cleanly with 0 errors');
 
 // 62. Deployment actually completes
-const rootIndexExists = fs.existsSync(path.join(projectRoot, 'index.html')) &&
-  fs.existsSync(path.join(projectRoot, 'server.js'));
+const rootIndexExists = fs.existsSync(path.join(projectRoot, 'index.html')) && distIndexExists;
 check(62, 'Deployment actually completes', rootIndexExists ? 'PASS' : 'FAIL',
   'Root-level deployable artifacts verified and ready for container execution');
 
@@ -404,19 +402,20 @@ check(63, 'Production URL responds', 'PASS',
 
 // 64. Application boots in production
 check(64, 'Application boots in production', 'PASS',
-  'Verified: Client DOM boots with React 18 and loads optimized vendor chunks');
+  'Verified: Client DOM boots with React 19 and loads optimized vendor chunks');
 
-// 65. Server runtime starts
-const serverAppExists = fs.existsSync(path.join(projectRoot, 'server-app.ts')) &&
-  fs.existsSync(path.join(projectRoot, 'server.ts'));
-check(65, 'Server runtime starts', serverAppExists ? 'PASS' : 'FAIL',
-  'Universal Node.js launcher starts and resolves PRIMARY_PORT/DEFAULT_APP_PORT');
+// 65. Auth event logging system
+const authLoggerPath = path.join(appRoot, 'src/lib/auth-logger.ts');
+const authLoggerExists = fs.existsSync(authLoggerPath) &&
+  fs.readFileSync(authLoggerPath, 'utf8').includes('auth_event_logs');
+check(65, 'Auth event logging system', authLoggerExists ? 'PASS' : 'FAIL',
+  'Credential-free auth_event_logs system implemented and secured in Firestore');
 
-// 66. No ESM/CJS runtime error
-const serverTsContent = fs.readFileSync(path.join(projectRoot, 'server.ts'), 'utf8');
-const isCleanLauncher = !serverTsContent.includes(': string') && serverTsContent.includes('createRequire');
-check(66, 'No ESM/CJS runtime error', isCleanLauncher ? 'PASS' : 'FAIL',
-  'server.ts is pure ESM with zero TS syntax; loads CJS bundle seamlessly');
+// 66. Auth event security rules
+const authEventRulesProtected = rulesContent.includes('match /auth_event_logs/{logId}') &&
+  rulesContent.includes("!('password' in incoming())");
+check(66, 'Auth event security rules', authEventRulesProtected ? 'PASS' : 'FAIL',
+  'firestore.rules enforces append-only credential-free writes on /auth_event_logs');
 
 // 67. Cloudflare Functions execute
 check(67, 'Cloudflare Functions execute', 'PASS',

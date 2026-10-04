@@ -1,0 +1,98 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "User profile document stored in /users/{userId}",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "maxLength": 128 },
+        "accountUid": { "type": "string", "maxLength": 64 },
+        "email": { "type": "string", "format": "email", "maxLength": 128 },
+        "displayName": { "type": "string", "maxLength": 100 },
+        "phone": { "type": "string", "maxLength": 20 },
+        "role": { "type": "string", "enum": ["visitor", "user", "webmaster"] },
+        "status": { "type": "string", "enum": ["active", "pending_verification", "suspended", "banned", "deleted"] },
+        "emailVerified": { "type": "boolean" }
+      },
+      "required": ["uid", "role", "status"]
+    },
+    "WebmasterRecord": {
+      "title": "WebmasterRecord",
+      "description": "Authoritative webmaster authority record in /webmaster/{webmasterId}",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "maxLength": 128 },
+        "accountUid": { "type": "string", "maxLength": 64 },
+        "email": { "type": "string", "format": "email", "maxLength": 128 },
+        "role": { "type": "string", "enum": ["webmaster"] },
+        "status": { "type": "string", "enum": ["active", "inactive"] }
+      },
+      "required": ["uid", "role", "status"]
+    },
+    "AuthEventLog": {
+      "title": "AuthEventLog",
+      "description": "Append-only credential-free authentication event record in /auth_event_logs/{logId}",
+      "type": "object",
+      "properties": {
+        "event": { "type": "string", "maxLength": 100 },
+        "method": {
+          "type": "string",
+          "maxLength": 40,
+          "enum": [
+            "email_password",
+            "mobile_otp",
+            "mobile_password",
+            "google",
+            "email_verification",
+            "password_reset",
+            "password_change",
+            "email_change",
+            "registration",
+            "session"
+          ]
+        },
+        "context": { "type": "string", "maxLength": 40 },
+        "outcome": { "type": "string", "enum": ["success", "failure"] },
+        "failureType": { "type": "string", "maxLength": 60 },
+        "errorCode": { "type": "string", "maxLength": 100 },
+        "errorMessage": { "type": "string", "maxLength": 300 },
+        "uid": { "type": "string", "maxLength": 128 },
+        "maskedIdentifier": { "type": "string", "maxLength": 128 },
+        "portal": { "type": "string", "enum": ["user", "webmaster", "system"] },
+        "route": { "type": "string", "maxLength": 120 },
+        "timestampIso": { "type": "string", "maxLength": 40 }
+      },
+      "required": ["event", "method", "outcome", "failureType", "portal", "timestampIso"]
+    },
+    "AuditLog": {
+      "title": "AuditLog",
+      "description": "Tamper-proof administrative audit log record in /audit_logs/{logId}",
+      "type": "object",
+      "properties": {
+        "action": { "type": "string", "maxLength": 100 },
+        "details": { "type": "string", "maxLength": 500 },
+        "adminEmail": { "type": "string", "maxLength": 128 },
+        "actorUid": { "type": "string", "maxLength": 128 }
+      },
+      "required": ["action", "details"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "User profile collection"
+    },
+    "/webmaster/{webmasterId}": {
+      "schema": "WebmasterRecord",
+      "description": "Authoritative webmaster collection"
+    },
+    "/auth_event_logs/{logId}": {
+      "schema": "AuthEventLog",
+      "description": "Append-only authentication forensic event logs without sensitive credentials"
+    },
+    "/audit_logs/{logId}": {
+      "schema": "AuditLog",
+      "description": "Tamper-proof administrative audit logs"
+    }
+  }
+}

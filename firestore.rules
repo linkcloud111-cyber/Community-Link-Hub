@@ -287,6 +287,29 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
+    // ─── Authentication Forensic Event Logs ───
+    // Append-only telemetry for authentication events (login, OTP, Google, reset, verification).
+    // Strictly forbids storing sensitive credential fields; read restricted to Webmaster; immutable.
+    match /auth_event_logs/{logId} {
+      allow read: if isWebmaster();
+      allow create: if
+        incoming().keys().hasAll(['event', 'method', 'outcome', 'failureType', 'portal', 'timestampIso']) &&
+        incoming().event is string && incoming().event.size() <= 100 &&
+        incoming().method is string && incoming().method.size() <= 40 &&
+        (incoming().outcome == 'success' || incoming().outcome == 'failure') &&
+        incoming().failureType is string && incoming().failureType.size() <= 60 &&
+        !('password' in incoming()) &&
+        !('pass' in incoming()) &&
+        !('otp' in incoming()) &&
+        !('otpCode' in incoming()) &&
+        !('token' in incoming()) &&
+        !('idToken' in incoming()) &&
+        !('refreshToken' in incoming()) &&
+        !('customToken' in incoming()) &&
+        !('oobCode' in incoming());
+      allow update, delete: if false;
+    }
+
     // ─── Site Settings ───
     match /settings/{settingId} {
       allow read: if true;

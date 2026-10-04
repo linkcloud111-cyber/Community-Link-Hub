@@ -29,6 +29,7 @@ import type {
   AnnouncementDisplayMode,
 } from "@/lib/types";
 import { clearSiteSettingsCache } from "@/lib/page-meta";
+import { getAuthEventLogs, type AuthEventLogRecord } from "@/lib/auth";
 import AdminNav from "@/components/admin-nav";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { useAuth } from "@/contexts/AuthContext";
@@ -190,6 +191,7 @@ export default function AdminSettings() {
   const [faqs, setFaqs] = useState<FAQItem[]>([]);
   const [helpArticles, setHelpArticles] = useState<HelpArticle[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
+  const [authEventLogs, setAuthEventLogs] = useState<AuthEventLogRecord[]>([]);
   const [searchAnalytics, setSearchAnalytics] = useState<SearchAnalytics[]>([]);
 
   // Announcements State
@@ -229,14 +231,16 @@ export default function AdminSettings() {
       getAuditLogs(30),
       getSearchAnalytics(),
       getAnnouncements(false),
+      getAuthEventLogs(40),
     ])
-      .then(([siteData, faqData, articleData, auditData, searchData, annData]) => {
+      .then(([siteData, faqData, articleData, auditData, searchData, annData, authLogsData]) => {
         if (siteData) setSettings((prev) => ({ ...prev, ...siteData }));
         if (faqData) setFaqs(faqData);
         if (articleData) setHelpArticles(articleData);
         if (auditData) setAuditLogs(auditData);
         if (searchData) setSearchAnalytics(searchData);
         if (annData) setAnnouncements(annData);
+        if (authLogsData) setAuthEventLogs(authLogsData);
       })
       .catch((err) => {
         console.error(err);
@@ -1859,33 +1863,104 @@ export default function AdminSettings() {
 
           {/* TAB 10: AUDIT LOGS */}
           {tab === "auditLog" && (
-            <div className="bg-card border border-border rounded-3xl p-6 space-y-4 shadow-sm">
-              <div className="flex items-center justify-between border-b border-border pb-3">
-                <div>
-                  <h2 className="font-bold text-base flex items-center gap-2">
-                    <History className="w-5 h-5 text-primary" /> Webmaster System Audit Log
-                  </h2>
-                  <p className="text-xs text-muted-foreground">
-                    Chronological record of critical administrative actions performed in the console.
-                  </p>
+            <div className="space-y-6">
+              <div className="bg-card border border-border rounded-3xl p-6 space-y-4 shadow-sm">
+                <div className="flex items-center justify-between border-b border-border pb-3">
+                  <div>
+                    <h2 className="font-bold text-base flex items-center gap-2">
+                      <Lock className="w-5 h-5 text-primary" /> Authentication Forensic Event Logs
+                    </h2>
+                    <p className="text-xs text-muted-foreground">
+                      Append-only telemetry from <code className="text-primary font-mono">/auth_event_logs</code> tracking login outcomes, failure types, and Firebase error codes without storing credentials.
+                    </p>
+                  </div>
                 </div>
+
+                {authEventLogs.length === 0 ? (
+                  <p className="text-xs text-muted-foreground py-4 text-center">
+                    No authentication events recorded yet.
+                  </p>
+                ) : (
+                  <div className="space-y-2 max-h-96 overflow-y-auto pr-1">
+                    {authEventLogs.map((item) => (
+                      <div
+                        key={item.id || `${item.event}-${item.timestampIso}`}
+                        className="p-3 bg-muted/20 border border-border rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs"
+                      >
+                        <div className="space-y-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span
+                              className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase ${
+                                item.outcome === "success"
+                                  ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
+                                  : "bg-destructive/15 text-destructive"
+                              }`}
+                            >
+                              {item.outcome}
+                            </span>
+                            <span className="font-bold text-foreground">{item.event}</span>
+                            <span className="px-2 py-0.5 bg-primary/10 text-primary rounded-md text-[10px] font-mono">
+                              {item.method}
+                            </span>
+                            <span className="px-2 py-0.5 bg-muted text-muted-foreground rounded-md text-[10px] font-mono">
+                              portal: {item.portal}
+                            </span>
+                            {item.failureType && item.failureType !== "none" && (
+                              <span className="px-2 py-0.5 bg-amber-500/15 text-amber-600 dark:text-amber-400 rounded-md text-[10px] font-mono">
+                                {item.failureType}
+                              </span>
+                            )}
+                            {item.errorCode && (
+                              <span className="px-2 py-0.5 bg-rose-500/15 text-rose-600 dark:text-rose-400 rounded-md text-[10px] font-mono">
+                                {item.errorCode}
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex flex-wrap items-center gap-3 text-[11px] text-muted-foreground">
+                            {item.maskedIdentifier && <span>Actor: {item.maskedIdentifier}</span>}
+                            {item.uid && <span className="font-mono">UID: {item.uid}</span>}
+                            {item.errorMessage && (
+                              <span className="text-destructive/90">{item.errorMessage}</span>
+                            )}
+                          </div>
+                        </div>
+                        <span className="text-[10px] text-muted-foreground font-mono shrink-0">
+                          {item.timestampIso ? new Date(item.timestampIso).toLocaleString() : "Recently"}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
-              <div className="space-y-2">
-                {auditLogs.map((log) => (
-                  <div key={log.id} className="p-3 bg-muted/20 border border-border rounded-xl flex items-center justify-between text-xs">
-                    <div className="space-y-0.5">
-                      <div className="flex items-center gap-2">
-                        <span className="font-bold text-primary">{log.action}</span>
-                        <span className="text-[10px] text-muted-foreground">by {log.adminEmail}</span>
-                      </div>
-                      <p className="text-muted-foreground">{log.details}</p>
-                    </div>
-                    <span className="text-[10px] text-muted-foreground font-mono">
-                      {log.createdAt?.toDate ? log.createdAt.toDate().toLocaleString() : "Recently"}
-                    </span>
+              <div className="bg-card border border-border rounded-3xl p-6 space-y-4 shadow-sm">
+                <div className="flex items-center justify-between border-b border-border pb-3">
+                  <div>
+                    <h2 className="font-bold text-base flex items-center gap-2">
+                      <History className="w-5 h-5 text-primary" /> Webmaster System Audit Log
+                    </h2>
+                    <p className="text-xs text-muted-foreground">
+                      Chronological record of critical administrative actions performed in the console.
+                    </p>
                   </div>
-                ))}
+                </div>
+
+                <div className="space-y-2">
+                  {auditLogs.map((log) => (
+                    <div key={log.id} className="p-3 bg-muted/20 border border-border rounded-xl flex items-center justify-between text-xs">
+                      <div className="space-y-0.5">
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-primary">{log.action}</span>
+                          <span className="text-[10px] text-muted-foreground">by {log.adminEmail}</span>
+                        </div>
+                        <p className="text-muted-foreground">{log.details}</p>
+                      </div>
+                      <span className="text-[10px] text-muted-foreground font-mono">
+                        {log.createdAt?.toDate ? log.createdAt.toDate().toLocaleString() : "Recently"}
+                      </span>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
           )}

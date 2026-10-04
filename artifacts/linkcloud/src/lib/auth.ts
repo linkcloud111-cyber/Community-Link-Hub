@@ -212,6 +212,22 @@ export function isSessionExpired(error: any): boolean {
 
 import { getFriendlyAuthErrorMessage, type AuthErrorContext } from "./auth-errors";
 export { getFriendlyAuthErrorMessage, FIREBASE_AUTH_ERROR_MAP, type AuthErrorContext } from "./auth-errors";
+import {
+  logAuthEvent,
+  getAuthEventLogs,
+  type AuthEventLogRecord,
+  type AuthEventMethod,
+  type AuthEventOutcome,
+  type AuthFailureType,
+} from "./auth-logger";
+export {
+  logAuthEvent,
+  getAuthEventLogs,
+  type AuthEventLogRecord,
+  type AuthEventMethod,
+  type AuthEventOutcome,
+  type AuthFailureType,
+};
 
 export function formatAuthError(
   error: any,
@@ -222,12 +238,22 @@ export function formatAuthError(
 }
 
 export async function logout(reason = "User initiated logout"): Promise<void> {
+  const currentUid = auth.currentUser?.uid ?? null;
+  const currentEmail = auth.currentUser?.email ?? null;
   console.warn("[AUTH SIGNOUT]", {
     reason,
-    uid: auth.currentUser?.uid ?? null,
-    email: auth.currentUser?.email ?? null,
+    uid: currentUid,
+    email: currentEmail,
   });
   try {
+    await logAuthEvent({
+      event: "LOGOUT",
+      method: "session",
+      context: "general",
+      outcome: "success",
+      uid: currentUid,
+      identifier: currentEmail,
+    });
     if (typeof window !== "undefined" && window.localStorage) {
       try {
         const keysToRemove: string[] = [];
@@ -344,6 +370,15 @@ export async function signInUserWithGoogle(): Promise<User> {
         await firebaseSignOut(auth);
         throw new Error("Account not found. Your previous LinkCloud account has been permanently deleted. Please create a new account.");
       }
+      await logAuthEvent({
+        event: "USER_GOOGLE_LOGIN",
+        method: "google",
+        context: "google",
+        outcome: "success",
+        uid: u.uid,
+        identifier: u.email,
+        portal: "user",
+      });
       return u;
     } else {
       // Provision canonical sequential user via server API
@@ -356,6 +391,15 @@ export async function signInUserWithGoogle(): Promise<User> {
       const resData = await response.json().catch(() => ({}));
       if (response.ok && resData?.customToken) {
         const cred = await signInWithCustomToken(auth, resData.customToken);
+        await logAuthEvent({
+          event: "USER_GOOGLE_PROVISION_LOGIN",
+          method: "google",
+          context: "google",
+          outcome: "success",
+          uid: cred.user.uid,
+          identifier: cred.user.email,
+          portal: "user",
+        });
         return cred.user;
       }
 
@@ -363,6 +407,14 @@ export async function signInUserWithGoogle(): Promise<User> {
       throw new Error(resData?.error || "Please register first. This Google account is not registered with LinkCloud.");
     }
   } catch (err: any) {
+    await logAuthEvent({
+      event: "USER_GOOGLE_LOGIN",
+      method: "google",
+      context: "google",
+      outcome: "failure",
+      error: err,
+      portal: "user",
+    });
     if (
       err.message &&
       (err.message.includes("register first") ||
@@ -464,8 +516,27 @@ export async function loginWebmaster(email: string, password: string): Promise<U
       console.warn("[AUTH] Notice: auxiliary login timestamp update notice:", upsertErr);
     }
 
+    await logAuthEvent({
+      event: "WEBMASTER_EMAIL_LOGIN",
+      method: "email_password",
+      context: "email_password",
+      outcome: "success",
+      uid,
+      identifier: cleanEmail,
+      portal: "webmaster",
+    });
+
     return u;
   } catch (err: any) {
+    await logAuthEvent({
+      event: "WEBMASTER_EMAIL_LOGIN",
+      method: "email_password",
+      context: "email_password",
+      outcome: "failure",
+      error: err,
+      identifier: cleanEmail,
+      portal: "webmaster",
+    });
     if (err.message && (
       err.message.includes("not authorized") ||
       err.message.includes("inactive") ||
@@ -517,8 +588,26 @@ export async function loginWebmasterWithMobileOTP(
   }
 
   try {
-    return await signInWithPhoneNumber(auth, formattedPhone, verifier);
+    const res = await signInWithPhoneNumber(auth, formattedPhone, verifier);
+    await logAuthEvent({
+      event: "WEBMASTER_OTP_SEND",
+      method: "mobile_otp",
+      context: "mobile_otp",
+      outcome: "success",
+      identifier: formattedPhone,
+      portal: "webmaster",
+    });
+    return res;
   } catch (err: any) {
+    await logAuthEvent({
+      event: "WEBMASTER_OTP_SEND",
+      method: "mobile_otp",
+      context: "mobile_otp",
+      outcome: "failure",
+      error: err,
+      identifier: formattedPhone,
+      portal: "webmaster",
+    });
     throw new Error(formatAuthError(err, "Failed to send verification code. Please try again.", "mobile_otp"));
   }
 }
@@ -578,8 +667,26 @@ export async function verifyWebmasterOTP(
       updatedAt: new Date().toISOString(),
     });
 
+    await logAuthEvent({
+      event: "WEBMASTER_OTP_VERIFY",
+      method: "mobile_otp",
+      context: "mobile_otp",
+      outcome: "success",
+      uid: u.uid,
+      identifier: u.phoneNumber,
+      portal: "webmaster",
+    });
+
     return u;
   } catch (err: any) {
+    await logAuthEvent({
+      event: "WEBMASTER_OTP_VERIFY",
+      method: "mobile_otp",
+      context: "mobile_otp",
+      outcome: "failure",
+      error: err,
+      portal: "webmaster",
+    });
     if (err.message && (
       err.message.includes("not authorized") ||
       err.message.includes("inactive") ||
@@ -649,8 +756,26 @@ export async function signInWebmasterGoogle(): Promise<User> {
       updatedAt: new Date().toISOString(),
     });
 
+    await logAuthEvent({
+      event: "WEBMASTER_GOOGLE_LOGIN",
+      method: "google",
+      context: "google",
+      outcome: "success",
+      uid,
+      identifier: u.email,
+      portal: "webmaster",
+    });
+
     return u;
   } catch (err: any) {
+    await logAuthEvent({
+      event: "WEBMASTER_GOOGLE_LOGIN",
+      method: "google",
+      context: "google",
+      outcome: "failure",
+      error: err,
+      portal: "webmaster",
+    });
     if (err.message && (
       err.message.includes("not authorized") ||
       err.message.includes("inactive")
@@ -719,8 +844,27 @@ export async function loginUser(email: string, password: string): Promise<User> 
       throw new Error("Your email address is pending verification. Please verify your email before logging in.");
     }
 
+    await logAuthEvent({
+      event: "USER_EMAIL_LOGIN",
+      method: "email_password",
+      context: "email_password",
+      outcome: "success",
+      uid: u.uid,
+      identifier: gmailCheck.cleanEmail,
+      portal: "user",
+    });
+
     return u;
   } catch (err: any) {
+    await logAuthEvent({
+      event: "USER_EMAIL_LOGIN",
+      method: "email_password",
+      context: "email_password",
+      outcome: "failure",
+      error: err,
+      identifier: gmailCheck.cleanEmail,
+      portal: "user",
+    });
     if (
       err.message &&
       (err.message.startsWith("This is a Webmaster account") ||
@@ -766,8 +910,26 @@ export async function signInWithMobileOTP(
       throw new Error("Failed to initialize reCAPTCHA verifier.");
     }
 
-    return await signInWithPhoneNumber(auth, formattedPhone, verifier);
+    const res = await signInWithPhoneNumber(auth, formattedPhone, verifier);
+    await logAuthEvent({
+      event: "USER_OTP_SEND",
+      method: "mobile_otp",
+      context: "mobile_otp",
+      outcome: "success",
+      identifier: formattedPhone,
+      portal: "user",
+    });
+    return res;
   } catch (err: any) {
+    await logAuthEvent({
+      event: "USER_OTP_SEND",
+      method: "mobile_otp",
+      context: "mobile_otp",
+      outcome: "failure",
+      error: err,
+      identifier: clean,
+      portal: "user",
+    });
     throw new Error(formatAuthError(err, "Invalid mobile number. Please check and try again.", "mobile_otp"));
   }
 }
@@ -805,6 +967,15 @@ export async function verifyOTP(
         await firebaseSignOut(auth);
         throw new Error("Account not found. Your previous LinkCloud account has been permanently deleted. Please create a new account.");
       }
+      await logAuthEvent({
+        event: "USER_OTP_VERIFY",
+        method: "mobile_otp",
+        context: "mobile_otp",
+        outcome: "success",
+        uid: u.uid,
+        identifier: u.phoneNumber,
+        portal: "user",
+      });
       return u;
     } else {
       // Provision canonical sequential user via server API
@@ -817,6 +988,15 @@ export async function verifyOTP(
       const resData = await response.json().catch(() => ({}));
       if (response.ok && resData?.customToken) {
         const cred = await signInWithCustomToken(auth, resData.customToken);
+        await logAuthEvent({
+          event: "USER_OTP_PROVISION_LOGIN",
+          method: "mobile_otp",
+          context: "mobile_otp",
+          outcome: "success",
+          uid: cred.user.uid,
+          identifier: cred.user.phoneNumber,
+          portal: "user",
+        });
         return cred.user;
       }
 
@@ -824,6 +1004,14 @@ export async function verifyOTP(
       throw new Error(resData?.error || "Failed to provision canonical Phone user session. Please try again.");
     }
   } catch (err: any) {
+    await logAuthEvent({
+      event: "USER_OTP_VERIFY",
+      method: "mobile_otp",
+      context: "mobile_otp",
+      outcome: "failure",
+      error: err,
+      portal: "user",
+    });
     if (
       err.message &&
       (err.message.startsWith("Your LinkCloud account") ||
@@ -925,8 +1113,27 @@ export async function registerWithEmail(data: {
       console.warn("Could not send verification email:", err);
     }
 
+    await logAuthEvent({
+      event: "USER_REGISTER",
+      method: "registration",
+      context: "email_password",
+      outcome: "success",
+      uid: u.uid,
+      identifier: gmailCheck.cleanEmail,
+      portal: "user",
+    });
+
     return u;
   } catch (err: any) {
+    await logAuthEvent({
+      event: "USER_REGISTER",
+      method: "registration",
+      context: "email_password",
+      outcome: "failure",
+      error: err,
+      identifier: gmailCheck.cleanEmail,
+      portal: "user",
+    });
     throw new Error(formatAuthError(err));
   }
 }
@@ -939,7 +1146,22 @@ export async function sendPasswordResetLink(email: string): Promise<void> {
 
   try {
     await safeSendPasswordResetEmail(auth, cleanEmail, `/verify-handler?mode=resetPassword`);
+    await logAuthEvent({
+      event: "PASSWORD_RESET_REQUEST",
+      method: "password_reset",
+      context: "password_reset",
+      outcome: "success",
+      identifier: cleanEmail,
+    });
   } catch (err: any) {
+    await logAuthEvent({
+      event: "PASSWORD_RESET_REQUEST",
+      method: "password_reset",
+      context: "password_reset",
+      outcome: "failure",
+      error: err,
+      identifier: cleanEmail,
+    });
     throw new Error(formatAuthError(err, "Unable to process password reset request. Please try again.", "password_reset"));
   }
 }
@@ -1017,7 +1239,26 @@ export async function updateUserPassword(
     await reauthenticateWithCredential(user, cred);
     await updatePassword(user, newPass);
     console.log("Password changed");
+    await logAuthEvent({
+      event: "PASSWORD_CHANGED",
+      method: "password_change",
+      context: "email_password",
+      outcome: "success",
+      uid: user.uid,
+      identifier: user.email,
+      portal: "user",
+    });
   } catch (err: any) {
+    await logAuthEvent({
+      event: "PASSWORD_CHANGED",
+      method: "password_change",
+      context: "email_password",
+      outcome: "failure",
+      error: err,
+      uid: user.uid,
+      identifier: user.email,
+      portal: "user",
+    });
     const code = err?.code || "";
     const msg = String(err?.message || "");
     if (
@@ -1205,6 +1446,16 @@ export async function updateUserEmailAddress(
     console.log("[EMAIL CHANGE] User re-authentication verified successfully");
   } catch (err: any) {
     console.warn("[EMAIL CHANGE] Re-authentication error:", err?.code || err?.message);
+    await logAuthEvent({
+      event: "EMAIL_CHANGE_REQUEST",
+      method: "email_change",
+      context: "email_password",
+      outcome: "failure",
+      error: err,
+      uid: user.uid,
+      identifier: gmailCheck.cleanEmail,
+      portal: "user",
+    });
     const code = err?.code || "";
     const msg = String(err?.message || "");
     if (
@@ -1307,6 +1558,15 @@ export async function updateUserEmailAddress(
       status: "pending",
     });
     await logAuditEvent("Verification Sent", `Verification email sent to ${gmailCheck.cleanEmail}`, user.email, user.uid);
+    await logAuthEvent({
+      event: "EMAIL_CHANGE_REQUEST",
+      method: "email_change",
+      context: "email_verification",
+      outcome: "success",
+      uid: user.uid,
+      identifier: gmailCheck.cleanEmail,
+      portal: "user",
+    });
     await createUserNotification(
       user.uid,
       "Email Change Requested",

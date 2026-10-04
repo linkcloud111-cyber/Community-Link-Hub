@@ -33,7 +33,7 @@ import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
 import type { EmailChangeRequest } from "@/lib/types";
 import { validatePasswordStrength } from "@/lib/utils";
-import { EMAIL_CHANGE_TTL_MS } from "@/lib/auth";
+import { EMAIL_CHANGE_TTL_MS, logAuthEvent } from "@/lib/auth";
 import { upsertUserProfile } from "@/lib/firestore";
 
 type HandlerStatus =
@@ -115,8 +115,22 @@ export default function VerifyHandlerPage() {
           const email = await verifyPasswordResetCode(auth, rawOobCode);
           setResetEmail(email);
           setStatus("reset_form");
+          await logAuthEvent({
+            event: "PASSWORD_RESET_CODE_VERIFIED",
+            method: "password_reset",
+            context: "password_reset",
+            outcome: "success",
+            identifier: email,
+          });
         } catch (err: any) {
           console.error("[VERIFY HANDLER] verifyPasswordResetCode error:", err);
+          await logAuthEvent({
+            event: "PASSWORD_RESET_CODE_VERIFIED",
+            method: "password_reset",
+            context: "password_reset",
+            outcome: "failure",
+            error: err,
+          });
           const code = err?.code || "";
           if (code === "auth/expired-action-code") {
             setStatus("expired");
@@ -159,10 +173,27 @@ export default function VerifyHandlerPage() {
             await refreshProfile();
           }
 
+          await logAuthEvent({
+            event: "EMAIL_VERIFICATION_CONFIRMED",
+            method: "email_verification",
+            context: "email_verification",
+            outcome: "success",
+            uid: rawUid || auth.currentUser?.uid || null,
+            identifier: auth.currentUser?.email || null,
+          });
+
           setStatus("success");
           toast.success("Email address verified successfully!");
         } catch (err: any) {
           console.error("[VERIFY HANDLER] Signup verification error:", err);
+          await logAuthEvent({
+            event: "EMAIL_VERIFICATION_CONFIRMED",
+            method: "email_verification",
+            context: "email_verification",
+            outcome: "failure",
+            error: err,
+            uid: rawUid || auth.currentUser?.uid || null,
+          });
           const code = err?.code || "";
           if (code === "auth/expired-action-code") {
             setStatus("expired");
@@ -452,11 +483,26 @@ export default function VerifyHandlerPage() {
     setResettingPassword(true);
     try {
       await confirmPasswordReset(auth, oobCode, newPassword);
+      await logAuthEvent({
+        event: "PASSWORD_RESET_COMPLETED",
+        method: "password_reset",
+        context: "password_reset",
+        outcome: "success",
+        identifier: resetEmail,
+      });
       toast.success("Password has been reset successfully.");
       setStatus("success");
       setErrorMessage("Your password has been reset successfully. You can now log in with your new password.");
     } catch (err: any) {
       console.error("[VERIFY HANDLER] confirmPasswordReset error:", err);
+      await logAuthEvent({
+        event: "PASSWORD_RESET_COMPLETED",
+        method: "password_reset",
+        context: "password_reset",
+        outcome: "failure",
+        error: err,
+        identifier: resetEmail,
+      });
       toast.error(err?.message || "Failed to reset password. Please request a new link.");
     } finally {
       setResettingPassword(false);
