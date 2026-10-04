@@ -139,8 +139,8 @@ export default function Login() {
     if (customEmailError) {
       identifierError = customEmailError;
     } else if (identifierTouched || submitted) {
-      if (!identifier.trim()) identifierError = "Enter a valid 10-digit mobile number.";
-      else if (!mobileCheck.valid) identifierError = "Enter a valid 10-digit mobile number.";
+      if (!identifier.trim()) identifierError = "Invalid mobile number. Please check and try again.";
+      else if (!mobileCheck.valid) identifierError = "Invalid mobile number. Please check and try again.";
     }
   } else {
     isIdentifierValid = gmailCheck.valid && !customEmailError;
@@ -148,14 +148,14 @@ export default function Login() {
       identifierError = customEmailError;
     } else if (identifierTouched || submitted) {
       if (!identifier.trim()) {
-        identifierError = "Enter a valid Gmail address.";
+        identifierError = "Please enter your email address.";
       } else if (!gmailCheck.valid) {
         identifierError = "Enter a valid Gmail address.";
       }
     }
   }
 
-  const isPasswordValid = password.length >= 8 && !customPasswordError;
+  const isPasswordValid = password.length >= 1 && !customPasswordError;
   let passwordError: string | null = null;
 
   // Rule: Never show both login ID error and password error at the same time.
@@ -163,8 +163,8 @@ export default function Login() {
   if (customPasswordError) {
     passwordError = customPasswordError;
   } else if (passwordTouched || submitted) {
-    if (!password || password.length < 8) {
-      passwordError = "Incorrect password.";
+    if (!password) {
+      passwordError = "Please enter your password.";
     }
   }
 
@@ -200,8 +200,14 @@ export default function Login() {
       // 1. Check if Mobile format is valid
       const mobileCheckResult = validateIndianMobile(identifier.trim());
       if (!mobileCheckResult.valid) {
-        setCustomEmailError("Enter a valid 10-digit mobile number.");
-        toast.error("Enter a valid 10-digit mobile number.");
+        setCustomEmailError("Invalid mobile number. Please check and try again.");
+        toast.error("Invalid mobile number. Please check and try again.");
+        return;
+      }
+
+      if (!password) {
+        setCustomPasswordError("Please enter your password.");
+        toast.error("Please enter your password.");
         return;
       }
 
@@ -211,8 +217,8 @@ export default function Login() {
         // 2. Check if Mobile exists in database
         const userProfileByPhone = await getUserProfileByPhone(identifier.trim());
         if (!userProfileByPhone || !userProfileByPhone.email) {
-          setCustomEmailError("Incorrect mobile number.");
-          toast.error("Incorrect mobile number.");
+          setCustomEmailError("Invalid mobile number. Please check and try again.");
+          toast.error("Invalid mobile number. Please check and try again.");
           setLoading(false);
           return;
         }
@@ -222,14 +228,6 @@ export default function Login() {
         if (lockout.isLocked) {
           const mins = Math.ceil(lockout.remainingSec / 60);
           toast.error(`Account locked due to 5 failed login attempts. Please try again in ${mins} minute${mins > 1 ? "s" : ""}.`);
-          setLoading(false);
-          return;
-        }
-
-        // 3. Verify password
-        if (!password || password.length < 8) {
-          setCustomPasswordError("Incorrect password.");
-          toast.error("Incorrect password.");
           setLoading(false);
           return;
         }
@@ -247,20 +245,30 @@ export default function Login() {
         }
       } catch (error: any) {
         console.error("Mobile login error:", error);
-        setCustomPasswordError("Incorrect password.");
-        toast.error(formatAuthError(error));
+        const friendlyMsg = formatAuthError(error, "Incorrect email or password. Please try again.", "email_password");
+        setCustomPasswordError(friendlyMsg);
+        toast.error(friendlyMsg);
       } finally {
         setLoading(false);
       }
     } else {
+      if (!identifier.trim()) {
+        setCustomEmailError("Please enter your email address.");
+        toast.error("Please enter your email address.");
+        return;
+      }
+
       // 1. Check if Gmail syntax is valid (@gmail.com)
       const gmailCheckResult = validateGmailAddress(identifier.trim());
       if (!gmailCheckResult.valid) {
-        setCustomEmailError("Enter a valid Gmail address.");
-        toast.error("Enter a valid Gmail address.");
-        if (!password || password.length < 8) {
-          setCustomPasswordError("Incorrect password.");
-        }
+        setCustomEmailError(gmailCheckResult.error || "Enter a valid Gmail address.");
+        toast.error(gmailCheckResult.error || "Enter a valid Gmail address.");
+        return;
+      }
+
+      if (!password) {
+        setCustomPasswordError("Please enter your password.");
+        toast.error("Please enter your password.");
         return;
       }
 
@@ -273,33 +281,6 @@ export default function Login() {
       }
 
       setLoading(true);
-
-      // Server-side check: Verify if Gmail address is registered in LinkCloud
-      let regStatus: { registered: boolean; verified?: boolean } = { registered: false };
-      try {
-        const checkRes = await fetch("/api/auth/check-registration", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email: gmailCheckResult.cleanEmail }),
-        });
-        if (checkRes.ok) {
-          regStatus = await checkRes.json();
-        } else {
-          const isReg = await checkIsEmailRegistered(gmailCheckResult.cleanEmail);
-          regStatus = { registered: isReg, verified: false };
-        }
-      } catch {
-        const isReg = await checkIsEmailRegistered(gmailCheckResult.cleanEmail);
-        regStatus = { registered: isReg, verified: false };
-      }
-
-      // Case A — Gmail is not registered in LinkCloud
-      if (!regStatus.registered) {
-        setCustomEmailError("Please register first. This Gmail is not registered with LinkCloud.");
-        toast.error("Please register first. This Gmail is not registered with LinkCloud.");
-        setLoading(false);
-        return;
-      }
 
       try {
         await setAuthRememberMe(rememberMe);
@@ -314,12 +295,10 @@ export default function Login() {
           window.localStorage.setItem("user_email", gmailCheckResult.cleanEmail);
         }
 
-        // Case D — Gmail is registered, verified and password is correct
         if (u.emailVerified) {
           toast.success("Login successful.");
           setLocation("/dashboard");
         } else {
-          // Case B — Gmail is registered but not verified
           toast.info("Please verify your Gmail address before signing in.");
           setLocation("/verify-email");
         }
@@ -351,10 +330,26 @@ export default function Login() {
           return;
         }
 
-        // Case C — Gmail is registered, but password is incorrect
+        if (
+          errMsg.startsWith("This is a Webmaster account") ||
+          errMsg.startsWith("Your LinkCloud account") ||
+          errMsg.startsWith("Account not found") ||
+          errMsg.startsWith("Your email address is pending verification")
+        ) {
+          setCustomPasswordError(errMsg);
+          toast.error(errMsg);
+          setLoading(false);
+          return;
+        }
+
+        const friendlyMsg = formatAuthError(
+          error,
+          "Incorrect email or password. Please try again.",
+          "email_password"
+        );
         setCustomEmailError(null);
-        setCustomPasswordError("Incorrect password.");
-        toast.error("Incorrect password.");
+        setCustomPasswordError(friendlyMsg);
+        toast.error(friendlyMsg);
         recordFailedLoginAttempt(gmailCheckResult.cleanEmail);
       } finally {
         setLoading(false);
@@ -367,7 +362,8 @@ export default function Login() {
     setIdentifierTouched(true);
 
     if (!mobileCheck.valid) {
-      toast.error(mobileCheck.error || "Enter a valid 10-digit Indian mobile number.");
+      setCustomEmailError("Invalid mobile number. Please check and try again.");
+      toast.error("Invalid mobile number. Please check and try again.");
       return;
     }
 
@@ -381,7 +377,7 @@ export default function Login() {
       toast.success("OTP sent to your mobile number!");
     } catch (error: any) {
       console.error("OTP send error:", error);
-      toast.error(formatAuthError(error, "Failed to send OTP. Ensure reCAPTCHA completes and try again."));
+      toast.error(formatAuthError(error, "Invalid mobile number. Please check and try again.", "mobile_otp"));
     } finally {
       setLoading(false);
     }
@@ -390,11 +386,11 @@ export default function Login() {
   const handleVerifyOTP = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!confirmationResult) {
-      toast.error("Please request OTP first.");
+      toast.error("OTP expired. Please request a new one.");
       return;
     }
     if (!otpCode || otpCode.length < 6) {
-      toast.error("Please enter valid 6-digit OTP code.");
+      toast.error("Invalid OTP. Please try again.");
       return;
     }
     setLoading(true);
@@ -404,7 +400,7 @@ export default function Login() {
       setLocation("/dashboard");
     } catch (error: any) {
       console.error("OTP verify error:", error);
-      toast.error(formatAuthError(error, "Invalid OTP code. Please check and try again."));
+      toast.error(formatAuthError(error, "Invalid OTP. Please try again.", "mobile_otp"));
     } finally {
       setLoading(false);
     }
@@ -427,7 +423,7 @@ export default function Login() {
       if (msg.includes("unauthorized") || msg.includes("Authorized Domains") || msg.includes("unauthorized-domain")) {
         setOauthModalOpen(true);
       } else {
-        toast.error(formatAuthError(error, "Failed to sign in with Google."));
+        toast.error(formatAuthError(error, "Failed to sign in with Google.", "google"));
       }
     } finally {
       setLoading(false);
@@ -447,7 +443,7 @@ export default function Login() {
       setForgotSuccess(true);
       toast.success("Password reset email sent! Check your inbox.");
     } catch (error: any) {
-      toast.error(formatAuthError(error, "Failed to send password reset link."));
+      toast.error(formatAuthError(error, "Failed to send password reset link.", "password_reset"));
     } finally {
       setForgotLoading(false);
     }

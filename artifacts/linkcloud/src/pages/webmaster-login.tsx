@@ -140,7 +140,7 @@ export default function WebmasterLogin() {
       setStatus("idle");
       const message = (err && typeof err.message === "string" && err.message.length > 0)
         ? err.message
-        : formatAuthError(err, "Invalid Webmaster credentials. Please check your email and password.");
+        : formatAuthError(err, "Incorrect email or password. Please try again.", "email_password");
       setErrorMsg(message);
     }
   };
@@ -152,7 +152,7 @@ export default function WebmasterLogin() {
 
     const check = validateIndianMobile(cleanDigits);
     if (!check.valid) {
-      setErrorMsg(check.error || "Please enter a valid 10-digit Indian mobile number.");
+      setErrorMsg("Invalid mobile number. Please check and try again.");
       return;
     }
 
@@ -170,7 +170,7 @@ export default function WebmasterLogin() {
       toast.success(`Verification code sent to +91 ${cleanDigits.slice(-10)}`);
     } catch (err: any) {
       setStatus("idle");
-      const message = formatAuthError(err, "Failed to send verification code. Please try again.");
+      const message = formatAuthError(err, "Invalid mobile number. Please check and try again.", "mobile_otp");
       setErrorMsg(message);
     }
   };
@@ -179,13 +179,13 @@ export default function WebmasterLogin() {
   const handleVerifyMobileOTP = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!confirmationResult) {
-      setErrorMsg("Session expired. Please request a new verification code.");
+      setErrorMsg("OTP expired. Please request a new one.");
       return;
     }
 
     const cleanCode = otpCode.trim();
     if (!cleanCode || cleanCode.length < 6) {
-      setErrorMsg("Please enter the complete 6-digit verification code.");
+      setErrorMsg("Invalid OTP. Please try again.");
       return;
     }
 
@@ -202,7 +202,7 @@ export default function WebmasterLogin() {
       }, 600);
     } catch (err: any) {
       setStatus("idle");
-      const message = formatAuthError(err, "Invalid verification code. Please try again.");
+      const message = formatAuthError(err, "Invalid OTP. Please try again.", "mobile_otp");
       setErrorMsg(message);
     }
   };
@@ -215,7 +215,7 @@ export default function WebmasterLogin() {
     const cleanDigits = mobileNumber.replace(/\D/g, "");
     const check = validateIndianMobile(cleanDigits);
     if (!check.valid) {
-      setErrorMsg(check.error || "Please enter a valid 10-digit Indian mobile number.");
+      setErrorMsg("Invalid mobile number. Please check and try again.");
       return;
     }
 
@@ -236,7 +236,7 @@ export default function WebmasterLogin() {
       }, 600);
     } catch (err: any) {
       setStatus("idle");
-      const message = formatAuthError(err, "Invalid credentials or unauthorized mobile number.");
+      const message = formatAuthError(err, "Incorrect email or password. Please try again.", "email_password");
       setErrorMsg(message);
     }
   };
@@ -256,7 +256,7 @@ export default function WebmasterLogin() {
       }, 600);
     } catch (err: any) {
       setStatus("idle");
-      const message = formatAuthError(err, "Google sign-in failed. Please try again.");
+      const message = formatAuthError(err, "Google sign-in failed. Please try again.", "google");
       setErrorMsg(message);
     }
   };

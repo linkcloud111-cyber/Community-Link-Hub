@@ -139,7 +139,7 @@ export function VerifyPhoneModal({
 
     const check = validateNewMobile(phone, currentPhone);
     if (!check.valid) {
-      toast.error(check.error || "Please enter a valid 10-digit Indian mobile number.");
+      toast.error("Invalid mobile number. Please check and try again.");
       return;
     }
 
@@ -164,7 +164,7 @@ export function VerifyPhoneModal({
       setCooldown(60);
       toast.success(`OTP sent to +91 ${check.raw10}`);
     } catch (err: any) {
-      toast.error(err?.message || "Failed to send OTP. Please try again.");
+      toast.error(err?.message || "Invalid mobile number. Please check and try again.");
     } finally {
       setLoading(false);
     }
@@ -192,8 +192,12 @@ export function VerifyPhoneModal({
   // Handle Verify OTP
   const handleVerifyOTP = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!confirmationResult || !otpCode || otpCode.trim().length < 6) {
-      toast.error("Please enter the 6-digit OTP code.");
+    if (!confirmationResult) {
+      toast.error("OTP expired. Please request a new one.");
+      return;
+    }
+    if (!otpCode || otpCode.trim().length < 6) {
+      toast.error("Invalid OTP. Please try again.");
       return;
     }
 
@@ -217,7 +221,7 @@ export function VerifyPhoneModal({
       toast.success("Mobile number verified successfully!");
       handleClose();
     } catch (err: any) {
-      toast.error(err?.message || "Invalid OTP code. Please check and try again.");
+      toast.error(err?.message || "Invalid OTP. Please try again.");
     } finally {
       setLoading(false);
     }

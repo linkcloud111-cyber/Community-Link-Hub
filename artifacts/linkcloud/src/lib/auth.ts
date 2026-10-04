@@ -210,11 +210,15 @@ export function isSessionExpired(error: any): boolean {
   );
 }
 
-import { getFriendlyAuthErrorMessage } from "./auth-errors";
-export { getFriendlyAuthErrorMessage, FIREBASE_AUTH_ERROR_MAP } from "./auth-errors";
+import { getFriendlyAuthErrorMessage, type AuthErrorContext } from "./auth-errors";
+export { getFriendlyAuthErrorMessage, FIREBASE_AUTH_ERROR_MAP, type AuthErrorContext } from "./auth-errors";
 
-export function formatAuthError(error: any, fallback?: string): string {
-  return getFriendlyAuthErrorMessage(error, fallback);
+export function formatAuthError(
+  error: any,
+  fallback?: string,
+  context: AuthErrorContext = "general"
+): string {
+  return getFriendlyAuthErrorMessage(error, fallback, context);
 }
 
 export async function logout(reason = "User initiated logout"): Promise<void> {
@@ -368,7 +372,7 @@ export async function signInUserWithGoogle(): Promise<User> {
     ) {
       throw err;
     }
-    throw new Error(formatAuthError(err));
+    throw new Error(formatAuthError(err, "Failed to sign in with Google.", "google"));
   }
 }
 
@@ -470,7 +474,7 @@ export async function loginWebmaster(email: string, password: string): Promise<U
     )) {
       throw err;
     }
-    const formatted = formatAuthError(err);
+    const formatted = formatAuthError(err, "Incorrect email or password. Please try again.", "email_password");
     throw new Error(formatted);
   }
 }
@@ -515,7 +519,7 @@ export async function loginWebmasterWithMobileOTP(
   try {
     return await signInWithPhoneNumber(auth, formattedPhone, verifier);
   } catch (err: any) {
-    throw new Error(formatAuthError(err));
+    throw new Error(formatAuthError(err, "Failed to send verification code. Please try again.", "mobile_otp"));
   }
 }
 
@@ -583,7 +587,7 @@ export async function verifyWebmasterOTP(
     )) {
       throw err;
     }
-    throw new Error(formatAuthError(err));
+    throw new Error(formatAuthError(err, "Invalid OTP. Please try again.", "mobile_otp"));
   }
 }
 
@@ -653,7 +657,7 @@ export async function signInWebmasterGoogle(): Promise<User> {
     )) {
       throw err;
     }
-    const formatted = formatAuthError(err);
+    const formatted = formatAuthError(err, "Google sign-in failed. Please try again.", "google");
     throw new Error(formatted);
   }
 }
@@ -727,7 +731,11 @@ export async function loginUser(email: string, password: string): Promise<User> 
     ) {
       throw err;
     }
-    throw err;
+    const formattedError: any = new Error(
+      formatAuthError(err, "Incorrect email or password. Please try again.", "email_password")
+    );
+    if (err?.code) formattedError.code = err.code;
+    throw formattedError;
   }
 }
 
@@ -737,8 +745,14 @@ export async function signInWithMobileOTP(
   phone: string,
   containerId: string = "recaptcha-container"
 ): Promise<ConfirmationResult> {
+  const clean = phone.trim().replace(/\s+/g, "");
+  const mobileCheck = validateIndianMobile(clean);
+  if (!mobileCheck.valid) {
+    throw new Error("Invalid mobile number. Please check and try again.");
+  }
+
   try {
-    let formattedPhone = phone.trim().replace(/\s+/g, "");
+    let formattedPhone = clean;
     if (!formattedPhone.startsWith("+")) {
       if (formattedPhone.length === 10) {
         formattedPhone = `+91${formattedPhone}`;
@@ -754,7 +768,7 @@ export async function signInWithMobileOTP(
 
     return await signInWithPhoneNumber(auth, formattedPhone, verifier);
   } catch (err: any) {
-    throw new Error(formatAuthError(err));
+    throw new Error(formatAuthError(err, "Invalid mobile number. Please check and try again.", "mobile_otp"));
   }
 }
 
@@ -818,7 +832,7 @@ export async function verifyOTP(
     ) {
       throw err;
     }
-    throw new Error(formatAuthError(err));
+    throw new Error(formatAuthError(err, "Invalid OTP. Please try again.", "mobile_otp"));
   }
 }
 
@@ -926,7 +940,7 @@ export async function sendPasswordResetLink(email: string): Promise<void> {
   try {
     await safeSendPasswordResetEmail(auth, cleanEmail, `/verify-handler?mode=resetPassword`);
   } catch (err: any) {
-    throw new Error(formatAuthError(err));
+    throw new Error(formatAuthError(err, "Unable to process password reset request. Please try again.", "password_reset"));
   }
 }
 
@@ -973,13 +987,13 @@ export async function resendVerificationEmail(user: User): Promise<void> {
       if (code === "auth/too-many-requests" || msg.includes("too-many-requests")) {
         throw new Error("Too many requests. Please wait a few minutes before trying again.");
       }
-      throw new Error(formatAuthError(err));
+      throw new Error(formatAuthError(err, "Unable to verify email address. Please request a new verification link.", "email_verification"));
     }
   } else {
     try {
       await safeSendEmailVerification(targetUser, `/verify-handler?mode=verifyEmail&uid=${targetUser.uid}`);
     } catch (err: any) {
-      throw new Error(formatAuthError(err));
+      throw new Error(formatAuthError(err, "Unable to verify email address. Please request a new verification link.", "email_verification"));
     }
   }
 }
