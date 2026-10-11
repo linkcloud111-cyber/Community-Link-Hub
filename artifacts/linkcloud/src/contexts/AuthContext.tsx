@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
-import { User, onAuthStateChanged, signOut as firebaseSignOut, applyActionCode } from "firebase/auth";
+import { User, onAuthStateChanged, signOut as firebaseSignOut, applyActionCode, type ConfirmationResult } from "firebase/auth";
 import { auth, db } from "../lib/firebase";
 import { doc, setDoc, deleteDoc, serverTimestamp } from "firebase/firestore";
 import {
@@ -13,6 +13,15 @@ import {
 import {
   checkWebmasterCollection,
   checkAndSyncEmailChangeStatus as checkAndSyncEmailAuth,
+  loginUser,
+  registerWithEmail,
+  signInWithGoogle as signInWithGoogleAuth,
+  signInWithMobileOTP as signInWithMobileOTPAuth,
+  verifyOTP as verifyOTPAuth,
+  loginWebmaster as loginWebmasterAuth,
+  logout as logoutAuth,
+  logAuthEvent,
+  extractAuthErrorCode,
   type EmailVerificationSyncResult,
 } from "../lib/auth";
 import type { UserProfile } from "../lib/types";
@@ -28,6 +37,19 @@ interface AuthContextValue {
   startSessionHandoff: () => void;
   endSessionHandoff: () => void;
   refreshProfile: () => Promise<void>;
+  login: (email: string, password: string, remember?: boolean) => Promise<User>;
+  register: (data: {
+    fullName: string;
+    dob: string;
+    email: string;
+    phone: string;
+    password: string;
+  }) => Promise<User>;
+  loginWithGoogle: (mode?: "login" | "register") => Promise<User>;
+  sendMobileOTP: (phone: string, containerId?: string) => Promise<ConfirmationResult>;
+  verifyMobileOTP: (confirmationResult: ConfirmationResult, code: string) => Promise<User>;
+  loginAsWebmaster: (email: string, password: string) => Promise<User>;
+  logout: () => Promise<void>;
   checkAndSyncEmailChangeStatus: (options?: {
     manual?: boolean;
     targetPendingEmail?: string | null;
@@ -44,6 +66,25 @@ const AuthContext = createContext<AuthContextValue>({
   startSessionHandoff: () => {},
   endSessionHandoff: () => {},
   refreshProfile: async () => {},
+  login: async () => {
+    throw new Error("AuthContext not initialized");
+  },
+  register: async () => {
+    throw new Error("AuthContext not initialized");
+  },
+  loginWithGoogle: async () => {
+    throw new Error("AuthContext not initialized");
+  },
+  sendMobileOTP: async () => {
+    throw new Error("AuthContext not initialized");
+  },
+  verifyMobileOTP: async () => {
+    throw new Error("AuthContext not initialized");
+  },
+  loginAsWebmaster: async () => {
+    throw new Error("AuthContext not initialized");
+  },
+  logout: async () => {},
   checkAndSyncEmailChangeStatus: async () => ({
     status: "pending",
     message: "Your email verification is still pending.",
@@ -240,6 +281,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 await firebaseUser.getIdToken(false);
               } catch (tokenErr: any) {
                 console.warn("[AUTH TOKEN] Auth token reload notice:", tokenErr);
+                await logAuthEvent({
+                  event: "AUTH_TOKEN_RELOAD_FAILURE",
+                  method: "session",
+                  context: "general",
+                  outcome: "failure",
+                  error: tokenErr,
+                  errorCode: extractAuthErrorCode(tokenErr),
+                  uid: firebaseUser.uid,
+                  identifier: firebaseUser.email || firebaseUser.phoneNumber,
+                });
               }
 
               // Fetch Firestore profile and check webmaster collection
@@ -277,6 +328,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           },
           (err) => {
             console.warn("[AUTH STATE] Auth state change error:", err);
+            logAuthEvent({
+              event: "AUTH_STATE_CHANGED_ERROR",
+              method: "session",
+              context: "general",
+              outcome: "failure",
+              error: err,
+              errorCode: extractAuthErrorCode(err),
+            }).catch(() => {});
             initialAuthResolvedRef.current = true;
             setLoading(false);
           }
@@ -321,6 +380,213 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [fetchAndCheckProfile]
   );
 
+  const login = useCallback(async (email: string, password: string, remember: boolean = true): Promise<User> => {
+    try {
+      const loggedInUser = await loginUser(email, password, remember);
+      await logAuthEvent({
+        event: "AUTH_CONTEXT_LOGIN_SUCCESS",
+        method: "email_password",
+        context: "email_password",
+        outcome: "success",
+        uid: loggedInUser.uid,
+        identifier: email,
+        portal: "user",
+      });
+      await fetchAndCheckProfile(loggedInUser.uid, loggedInUser.email, loggedInUser.emailVerified);
+      return loggedInUser;
+    } catch (err: any) {
+      await logAuthEvent({
+        event: "AUTH_CONTEXT_LOGIN_FAILURE",
+        method: "email_password",
+        context: "email_password",
+        outcome: "failure",
+        error: err,
+        errorCode: extractAuthErrorCode(err),
+        identifier: email,
+        portal: "user",
+      });
+      throw err;
+    }
+  }, [fetchAndCheckProfile]);
+
+  const register = useCallback(async (data: {
+    fullName: string;
+    dob: string;
+    email: string;
+    phone: string;
+    password: string;
+  }): Promise<User> => {
+    try {
+      const registeredUser = await registerWithEmail(data);
+      await logAuthEvent({
+        event: "AUTH_CONTEXT_SIGNUP_SUCCESS",
+        method: "registration",
+        context: "email_password",
+        outcome: "success",
+        uid: registeredUser.uid,
+        identifier: data.email,
+        portal: "user",
+      });
+      await fetchAndCheckProfile(registeredUser.uid, registeredUser.email, registeredUser.emailVerified);
+      return registeredUser;
+    } catch (err: any) {
+      await logAuthEvent({
+        event: "AUTH_CONTEXT_SIGNUP_FAILURE",
+        method: "registration",
+        context: "email_password",
+        outcome: "failure",
+        error: err,
+        errorCode: extractAuthErrorCode(err),
+        identifier: data.email,
+        portal: "user",
+      });
+      throw err;
+    }
+  }, [fetchAndCheckProfile]);
+
+  const loginWithGoogle = useCallback(async (mode: "login" | "register" = "login"): Promise<User> => {
+    try {
+      const googleUser = await signInWithGoogleAuth(mode);
+      await logAuthEvent({
+        event: mode === "register" ? "AUTH_CONTEXT_GOOGLE_SIGNUP_SUCCESS" : "AUTH_CONTEXT_GOOGLE_LOGIN_SUCCESS",
+        method: "google",
+        context: "google",
+        outcome: "success",
+        uid: googleUser.uid,
+        identifier: googleUser.email,
+        portal: "user",
+      });
+      await fetchAndCheckProfile(googleUser.uid, googleUser.email, googleUser.emailVerified);
+      return googleUser;
+    } catch (err: any) {
+      await logAuthEvent({
+        event: mode === "register" ? "AUTH_CONTEXT_GOOGLE_SIGNUP_FAILURE" : "AUTH_CONTEXT_GOOGLE_LOGIN_FAILURE",
+        method: "google",
+        context: "google",
+        outcome: "failure",
+        error: err,
+        errorCode: extractAuthErrorCode(err),
+        portal: "user",
+      });
+      throw err;
+    }
+  }, [fetchAndCheckProfile]);
+
+  const sendMobileOTP = useCallback(async (phone: string, containerId: string = "recaptcha-container"): Promise<ConfirmationResult> => {
+    try {
+      const confirmationResult = await signInWithMobileOTPAuth(phone, containerId);
+      await logAuthEvent({
+        event: "AUTH_CONTEXT_OTP_SEND_SUCCESS",
+        method: "mobile_otp",
+        context: "mobile_otp",
+        outcome: "success",
+        identifier: phone,
+        portal: "user",
+      });
+      return confirmationResult;
+    } catch (err: any) {
+      await logAuthEvent({
+        event: "AUTH_CONTEXT_OTP_SEND_FAILURE",
+        method: "mobile_otp",
+        context: "mobile_otp",
+        outcome: "failure",
+        error: err,
+        errorCode: extractAuthErrorCode(err),
+        identifier: phone,
+        portal: "user",
+      });
+      throw err;
+    }
+  }, []);
+
+  const verifyMobileOTP = useCallback(async (confirmationResult: ConfirmationResult, code: string): Promise<User> => {
+    try {
+      const verifiedUser = await verifyOTPAuth(confirmationResult, code);
+      await logAuthEvent({
+        event: "AUTH_CONTEXT_OTP_LOGIN_SUCCESS",
+        method: "mobile_otp",
+        context: "mobile_otp",
+        outcome: "success",
+        uid: verifiedUser.uid,
+        identifier: verifiedUser.phoneNumber,
+        portal: "user",
+      });
+      await fetchAndCheckProfile(verifiedUser.uid, verifiedUser.email, verifiedUser.emailVerified);
+      return verifiedUser;
+    } catch (err: any) {
+      await logAuthEvent({
+        event: "AUTH_CONTEXT_OTP_LOGIN_FAILURE",
+        method: "mobile_otp",
+        context: "mobile_otp",
+        outcome: "failure",
+        error: err,
+        errorCode: extractAuthErrorCode(err),
+        portal: "user",
+      });
+      throw err;
+    }
+  }, [fetchAndCheckProfile]);
+
+  const loginAsWebmaster = useCallback(async (email: string, password: string): Promise<User> => {
+    try {
+      const wmUser = await loginWebmasterAuth(email, password);
+      await logAuthEvent({
+        event: "AUTH_CONTEXT_WEBMASTER_LOGIN_SUCCESS",
+        method: "email_password",
+        context: "email_password",
+        outcome: "success",
+        uid: wmUser.uid,
+        identifier: email,
+        portal: "webmaster",
+      });
+      await fetchAndCheckProfile(wmUser.uid, wmUser.email, wmUser.emailVerified);
+      return wmUser;
+    } catch (err: any) {
+      await logAuthEvent({
+        event: "AUTH_CONTEXT_WEBMASTER_LOGIN_FAILURE",
+        method: "email_password",
+        context: "email_password",
+        outcome: "failure",
+        error: err,
+        errorCode: extractAuthErrorCode(err),
+        identifier: email,
+        portal: "webmaster",
+      });
+      throw err;
+    }
+  }, [fetchAndCheckProfile]);
+
+  const logout = useCallback(async (): Promise<void> => {
+    const activeUid = auth.currentUser?.uid || user?.uid || null;
+    const activeIdentifier = auth.currentUser?.email || auth.currentUser?.phoneNumber || user?.email || null;
+    try {
+      await logoutAuth();
+      setUser(null);
+      setProfile(null);
+      setPendingEmail(null);
+      await logAuthEvent({
+        event: "AUTH_CONTEXT_LOGOUT",
+        method: "session",
+        context: "general",
+        outcome: "success",
+        uid: activeUid,
+        identifier: activeIdentifier,
+      });
+    } catch (err: any) {
+      await logAuthEvent({
+        event: "AUTH_CONTEXT_LOGOUT",
+        method: "session",
+        context: "general",
+        outcome: "failure",
+        error: err,
+        errorCode: extractAuthErrorCode(err),
+        uid: activeUid,
+        identifier: activeIdentifier,
+      });
+      throw err;
+    }
+  }, [user?.uid, user?.email]);
+
   const isCanonicalWebmaster = user?.uid === "OXGYTyWBcdYNcHkWyXPbOvVlV2h1" || auth.currentUser?.uid === "OXGYTyWBcdYNcHkWyXPbOvVlV2h1";
   const checkIsWebmaster = isCanonicalWebmaster || profile?.role === "webmaster";
 
@@ -336,6 +602,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         startSessionHandoff,
         endSessionHandoff,
         refreshProfile,
+        login,
+        register,
+        loginWithGoogle,
+        sendMobileOTP,
+        verifyMobileOTP,
+        loginAsWebmaster,
+        logout,
         checkAndSyncEmailChangeStatus,
       }}
     >

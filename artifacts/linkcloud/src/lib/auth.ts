@@ -215,6 +215,7 @@ export { getFriendlyAuthErrorMessage, FIREBASE_AUTH_ERROR_MAP, type AuthErrorCon
 import {
   logAuthEvent,
   getAuthEventLogs,
+  extractAuthErrorCode,
   type AuthEventLogRecord,
   type AuthEventMethod,
   type AuthEventOutcome,
@@ -223,6 +224,7 @@ import {
 export {
   logAuthEvent,
   getAuthEventLogs,
+  extractAuthErrorCode,
   type AuthEventLogRecord,
   type AuthEventMethod,
   type AuthEventOutcome,

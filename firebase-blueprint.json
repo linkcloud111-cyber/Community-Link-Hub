@@ -86,6 +86,10 @@
       "schema": "WebmasterRecord",
       "description": "Authoritative webmaster collection"
     },
+    "/auth_logs/{logId}": {
+      "schema": "AuthEventLog",
+      "description": "Append-only authentication event logs without sensitive credentials"
+    },
     "/auth_event_logs/{logId}": {
       "schema": "AuthEventLog",
       "description": "Append-only authentication forensic event logs without sensitive credentials"

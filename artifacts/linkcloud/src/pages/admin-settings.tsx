@@ -1871,7 +1871,7 @@ export default function AdminSettings() {
                       <Lock className="w-5 h-5 text-primary" /> Authentication Forensic Event Logs
                     </h2>
                     <p className="text-xs text-muted-foreground">
-                      Append-only telemetry from <code className="text-primary font-mono">/auth_event_logs</code> tracking login outcomes, failure types, and Firebase error codes without storing credentials.
+                      Append-only telemetry from <code className="text-primary font-mono">/auth_logs</code> and <code className="text-primary font-mono">/auth_event_logs</code> tracking login outcomes, signups, failure types, and Firebase error codes without storing credentials.
                     </p>
                   </div>
                 </div>

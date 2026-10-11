@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { useLocation } from "wouter";
 import { getSiteSettings } from "./firestore";
+import { useSiteSettings } from "@/contexts/SiteSettingsContext";
 import type { SiteSettings } from "./types";
 
 export interface SEOProps {
@@ -98,7 +99,7 @@ function setOrCreateJsonLd(id: string, data: Record<string, any>) {
 }
 
 /**
- * Page-level hook for setting explicit SEO metadata
+ * Page-level hook for setting explicit SEO metadata reactively with Webmaster settings
  */
 export function usePageSEO({
   title,
@@ -112,97 +113,91 @@ export function usePageSEO({
   jsonLd,
 }: SEOProps) {
   const [location] = useLocation();
+  const { settings } = useSiteSettings();
 
   useEffect(() => {
-    let active = true;
+    const siteName = settings?.siteName || "LinkCloud";
+    const defaultDesc =
+      settings?.metaDescription ||
+      settings?.siteDescription ||
+      "India's Premium WhatsApp & Telegram Community Directory. Discover verified active groups.";
+    const defaultKeywords =
+      settings?.metaKeywords ||
+      "WhatsApp groups, Telegram channels, Discord servers, India group links";
+    const detectedOrigin =
+      typeof window !== "undefined" &&
+      window.location.origin &&
+      !window.location.origin.includes("localhost")
+        ? window.location.origin
+        : "https://community-link-hub.pages.dev";
+    const configuredCanonical = settings?.canonicalUrl?.trim();
+    const canonicalBase = (
+      configuredCanonical && configuredCanonical !== "https://linkcloud.in"
+        ? configuredCanonical
+        : detectedOrigin
+    ).replace(/\/$/, "");
+    const defaultOgImage =
+      settings?.ogImage || `${canonicalBase}/og-banner.png`;
+    const defaultTwitterImage =
+      settings?.twitterCardImage || defaultOgImage;
 
-    fetchSiteSettingsCached().then((settings) => {
-      if (!active) return;
-
-      const siteName = settings?.siteName || "LinkCloud";
-      const defaultDesc =
-        settings?.metaDescription ||
-        "India's Premium WhatsApp & Telegram Community Directory. Discover verified active groups.";
-      const defaultKeywords =
-        settings?.metaKeywords ||
-        "WhatsApp groups, Telegram channels, Discord servers, India group links";
-      const detectedOrigin =
-        typeof window !== "undefined" &&
-        window.location.origin &&
-        !window.location.origin.includes("localhost")
-          ? window.location.origin
-          : "https://community-link-hub.pages.dev";
-      const configuredCanonical = settings?.canonicalUrl?.trim();
-      const canonicalBase = (
-        configuredCanonical && configuredCanonical !== "https://linkcloud.in"
-          ? configuredCanonical
-          : detectedOrigin
-      ).replace(/\/$/, "");
-      const defaultOgImage =
-        settings?.ogImage || `${canonicalBase}/og-banner.png`;
-      const defaultTwitterImage =
-        settings?.twitterCardImage || defaultOgImage;
-
-      // 1. Calculate Document Title
-      let pageTitle = siteName;
-      if (title) {
-        if (title.includes(siteName)) {
-          pageTitle = title;
-        } else if (subtitle) {
-          pageTitle = `${title} — ${subtitle} | ${siteName}`;
-        } else {
-          pageTitle = `${title} — ${siteName}`;
-        }
-      } else if (settings?.metaTitle) {
-        pageTitle = settings.metaTitle;
-      }
-      document.title = pageTitle;
-
-      // 2. Meta Description & Keywords
-      const finalDesc = description || defaultDesc;
-      const finalKeywords = keywords || defaultKeywords;
-      setOrCreateMeta("description", finalDesc);
-      setOrCreateMeta("keywords", finalKeywords);
-
-      // 3. Robots Tag (Check private route vs public vs maintenance mode)
-      const forceNoIndex =
-        noIndex !== undefined
-          ? noIndex
-          : isPrivateRoute(location) || Boolean(settings?.maintenanceMode);
-      if (forceNoIndex) {
-        setOrCreateMeta("robots", "noindex, nofollow");
+    // 1. Calculate Document Title
+    let pageTitle = siteName;
+    if (title) {
+      if (title.includes(siteName)) {
+        pageTitle = title;
+      } else if (subtitle) {
+        pageTitle = `${title} — ${subtitle} | ${siteName}`;
       } else {
-        setOrCreateMeta("robots", "index, follow");
+        pageTitle = `${title} — ${siteName}`;
       }
+    } else if (settings?.metaTitle) {
+      pageTitle = settings.metaTitle;
+    } else if (settings?.siteTagline) {
+      pageTitle = `${siteName} — ${settings.siteTagline}`;
+    }
+    document.title = pageTitle;
 
-      // 4. Canonical URL
-      const currentPath = canonicalPath || location.split("?")[0];
-      const fullCanonical = `${canonicalBase}${currentPath === "/" ? "" : currentPath}`;
-      setOrCreateCanonical(fullCanonical);
+    // 2. Meta Description & Keywords
+    const finalDesc = description || defaultDesc;
+    const finalKeywords = keywords || defaultKeywords;
+    setOrCreateMeta("description", finalDesc);
+    setOrCreateMeta("keywords", finalKeywords);
 
-      // 5. OpenGraph Tags
-      setOrCreateMeta("og:title", pageTitle, true);
-      setOrCreateMeta("og:description", finalDesc, true);
-      setOrCreateMeta("og:url", fullCanonical, true);
-      setOrCreateMeta("og:type", ogType, true);
-      setOrCreateMeta("og:site_name", siteName, true);
-      setOrCreateMeta("og:image", ogImage || defaultOgImage, true);
+    // 3. Robots Tag (Check private route vs public vs maintenance mode)
+    const forceNoIndex =
+      noIndex !== undefined
+        ? noIndex
+        : isPrivateRoute(location) || Boolean(settings?.maintenanceMode);
+    if (forceNoIndex) {
+      setOrCreateMeta("robots", "noindex, nofollow");
+    } else {
+      setOrCreateMeta("robots", "index, follow");
+    }
 
-      // 6. Twitter Card Tags
-      setOrCreateMeta("twitter:card", "summary_large_image");
-      setOrCreateMeta("twitter:title", pageTitle);
-      setOrCreateMeta("twitter:description", finalDesc);
-      setOrCreateMeta("twitter:image", ogImage || defaultTwitterImage);
+    // 4. Canonical URL
+    const currentPath = canonicalPath || location.split("?")[0];
+    const fullCanonical = `${canonicalBase}${currentPath === "/" ? "" : currentPath}`;
+    setOrCreateCanonical(fullCanonical);
 
-      // 7. Structured Data (JSON-LD)
-      if (jsonLd) {
-        setOrCreateJsonLd("page-jsonld", jsonLd);
-      }
-    });
+    // 5. OpenGraph Tags
+    setOrCreateMeta("og:title", pageTitle, true);
+    setOrCreateMeta("og:description", finalDesc, true);
+    setOrCreateMeta("og:url", fullCanonical, true);
+    setOrCreateMeta("og:type", ogType, true);
+    setOrCreateMeta("og:site_name", siteName, true);
+    setOrCreateMeta("og:image", ogImage || defaultOgImage, true);
 
-    return () => {
-      active = false;
-    };
+    // 6. Twitter Card Tags
+    setOrCreateMeta("twitter:card", "summary_large_image");
+    setOrCreateMeta("twitter:title", pageTitle);
+    setOrCreateMeta("twitter:description", finalDesc);
+    setOrCreateMeta("twitter:image", ogImage || defaultTwitterImage);
+
+    // 7. Structured Data (JSON-LD)
+    if (jsonLd) {
+      setOrCreateJsonLd("page-jsonld", jsonLd);
+    }
   }, [
     title,
     subtitle,
@@ -214,13 +209,14 @@ export function usePageSEO({
     noIndex,
     jsonLd,
     location,
+    settings,
   ]);
 }
 
 /**
  * Backwards-compatible convenience wrapper for usePageTitle
  */
-export function usePageTitle(title: string, subtitle?: string, description?: string) {
+export function usePageTitle(title?: string, subtitle?: string, description?: string) {
   usePageSEO({ title, subtitle, description });
 }
 
@@ -231,55 +227,36 @@ export function usePageTitle(title: string, subtitle?: string, description?: str
  */
 export function useGlobalSEO() {
   const [location] = useLocation();
+  const { settings } = useSiteSettings();
 
   useEffect(() => {
-    let active = true;
+    const canonicalBase = (
+      settings?.canonicalUrl || "https://linkcloud.in"
+    ).replace(/\/$/, "");
+    const cleanPath = location.split("?")[0];
+    const fullCanonical = `${canonicalBase}${cleanPath === "/" ? "" : cleanPath}`;
 
-    fetchSiteSettingsCached().then((settings) => {
-      if (!active) return;
+    // Enforce strict robots rule based on path
+    if (isPrivateRoute(cleanPath) || settings?.maintenanceMode) {
+      setOrCreateMeta("robots", "noindex, nofollow");
+    } else {
+      setOrCreateMeta("robots", "index, follow");
+    }
 
-      const canonicalBase = (
-        settings?.canonicalUrl || "https://linkcloud.in"
-      ).replace(/\/$/, "");
-      const cleanPath = location.split("?")[0];
-      const fullCanonical = `${canonicalBase}${cleanPath === "/" ? "" : cleanPath}`;
+    setOrCreateCanonical(fullCanonical);
 
-      // Enforce strict robots rule based on path
-      if (isPrivateRoute(cleanPath)) {
-        setOrCreateMeta("robots", "noindex, nofollow");
-      } else {
-        setOrCreateMeta("robots", "index, follow");
-      }
-
-      setOrCreateCanonical(fullCanonical);
-
-      // Inject Global Schema.org WebSite JSON-LD
-      if (settings?.structuredDataJson) {
-        try {
-          const parsed = JSON.parse(settings.structuredDataJson);
-          setOrCreateJsonLd("linkcloud-global-jsonld", parsed);
-        } catch {
-          // Fallback if custom JSON-LD is invalid
-          setOrCreateJsonLd("linkcloud-global-jsonld", {
-            "@context": "https://schema.org",
-            "@type": "WebSite",
-            name: settings?.siteName || "LinkCloud",
-            url: canonicalBase,
-            description: settings?.metaDescription || "India's Public Community Directory",
-            potentialAction: {
-              "@type": "SearchAction",
-              target: `${canonicalBase}/groups?q={search_term_string}`,
-              "query-input": "required name=search_term_string",
-            },
-          });
-        }
-      } else {
+    // Inject Global Schema.org WebSite JSON-LD
+    if (settings?.structuredDataJson) {
+      try {
+        const parsed = JSON.parse(settings.structuredDataJson);
+        setOrCreateJsonLd("linkcloud-global-jsonld", parsed);
+      } catch {
         setOrCreateJsonLd("linkcloud-global-jsonld", {
           "@context": "https://schema.org",
           "@type": "WebSite",
           name: settings?.siteName || "LinkCloud",
           url: canonicalBase,
-          description: "India's Premium Community Directory",
+          description: settings?.metaDescription || settings?.siteDescription || "India's Public Community Directory",
           potentialAction: {
             "@type": "SearchAction",
             target: `${canonicalBase}/groups?q={search_term_string}`,
@@ -287,10 +264,20 @@ export function useGlobalSEO() {
           },
         });
       }
-    });
-
-    return () => {
-      active = false;
-    };
-  }, [location]);
+    } else {
+      setOrCreateJsonLd("linkcloud-global-jsonld", {
+        "@context": "https://schema.org",
+        "@type": "WebSite",
+        name: settings?.siteName || "LinkCloud",
+        url: canonicalBase,
+        description: settings?.metaDescription || settings?.siteDescription || "India's Premium Community Directory",
+        potentialAction: {
+          "@type": "SearchAction",
+          target: `${canonicalBase}/groups?q={search_term_string}`,
+          "query-input": "required name=search_term_string",
+        },
+      });
+    }
+  }, [location, settings]);
 }
+

@@ -220,7 +220,7 @@ export function extractAuthErrorCode(error: unknown): string | null {
 
 /**
  * Writes a sanitized, credential-free authentication event record to the dedicated
- * `auth_event_logs` Firestore collection. Non-blocking and fail-safe.
+ * `auth_logs` and `auth_event_logs` Firestore collections. Non-blocking and fail-safe.
  */
 export async function logAuthEvent(params: {
   event: string;
@@ -277,7 +277,10 @@ export async function logAuthEvent(params: {
       timestampIso: new Date().toISOString(),
     };
 
-    await addDoc(collection(db, "auth_event_logs"), record);
+    await Promise.all([
+      addDoc(collection(db, "auth_logs"), record),
+      addDoc(collection(db, "auth_event_logs"), record),
+    ]);
   } catch (logErr) {
     // Non-fatal: logging must never interrupt authentication flows
     console.warn("[AUTH LOGGER] Notice:", logErr);
@@ -293,9 +296,9 @@ export async function getAuthEventLogs(
 ): Promise<AuthEventLogRecord[]> {
   try {
     if (!db || typeof db !== "object" || !("app" in db)) return [];
-    const colRef = collection(db, "auth_event_logs");
-    const q =
-      outcomeFilter && outcomeFilter !== "all"
+    const buildQuery = (collectionName: string) => {
+      const colRef = collection(db, collectionName);
+      return outcomeFilter && outcomeFilter !== "all"
         ? query(
             colRef,
             where("outcome", "==", outcomeFilter),
@@ -303,11 +306,35 @@ export async function getAuthEventLogs(
             limit(limitCount)
           )
         : query(colRef, orderBy("createdAt", "desc"), limit(limitCount));
+    };
 
-    const snap = await getDocs(q);
-    return snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as AuthEventLogRecord));
+    const [authLogsSnap, eventLogsSnap] = await Promise.all([
+      getDocs(buildQuery("auth_logs")).catch(() => null),
+      getDocs(buildQuery("auth_event_logs")).catch(() => null),
+    ]);
+
+    const combined: AuthEventLogRecord[] = [];
+    const seenKeys = new Set<string>();
+
+    const addSnapDocs = (snap: any) => {
+      if (!snap || !snap.docs) return;
+      for (const d of snap.docs) {
+        const data = d.data() as any;
+        const dedupeKey = `${data.event || ""}_${data.timestampIso || d.id}_${data.uid || ""}`;
+        if (!seenKeys.has(dedupeKey)) {
+          seenKeys.add(dedupeKey);
+          combined.push({ id: d.id, ...data } as AuthEventLogRecord);
+        }
+      }
+    };
+
+    addSnapDocs(authLogsSnap);
+    addSnapDocs(eventLogsSnap);
+
+    combined.sort((a, b) => (b.timestampIso || "").localeCompare(a.timestampIso || ""));
+    return combined.slice(0, limitCount);
   } catch (err) {
-    console.warn("[AUTH LOGGER] Failed to fetch auth_event_logs:", err);
+    console.warn("[AUTH LOGGER] Failed to fetch auth_logs / auth_event_logs:", err);
     return [];
   }
 }
