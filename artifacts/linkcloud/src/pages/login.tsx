@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/contexts/AuthContext";
+import { useSiteSettings } from "@/contexts/SiteSettingsContext";
 import { fetchSignInMethodsForEmail } from "firebase/auth";
 import { auth } from "@/lib/firebase";
 import {
@@ -81,6 +82,7 @@ export default function Login() {
   const [loading, setLoading] = useState(false);
   const [, setLocation] = useLocation();
   const { user, profile, isWebmaster, loading: authLoading, pendingEmail } = useAuth();
+  const { settings } = useSiteSettings();
 
   useEffect(() => {
     let interval: any = null;
@@ -714,35 +716,44 @@ export default function Login() {
               </form>
             )}
 
-            {/* Divider */}
-            <div className="relative my-6">
-              <div className="absolute inset-0 flex items-center">
-                <div className="w-full border-t border-border"></div>
-              </div>
-              <div className="relative flex justify-center text-xs">
-                <span className="px-3 bg-card text-muted-foreground font-medium uppercase tracking-wider">
-                  Or Continue With
-                </span>
-              </div>
-            </div>
-
             {/* Google Sign In */}
-            <button
-              type="button"
-              onClick={handleGoogleLogin}
-              disabled={loading}
-              className="w-full py-3 px-4 bg-background border border-border font-semibold text-sm rounded-xl hover:bg-muted/50 transition-all flex items-center justify-center gap-3 shadow-sm disabled:opacity-50"
-            >
-              <FcGoogle className="w-5 h-5" /> Continue with Google
-            </button>
+            {settings?.googleLoginEnabled !== false && (
+              <>
+                <div className="relative my-6">
+                  <div className="absolute inset-0 flex items-center">
+                    <div className="w-full border-t border-border"></div>
+                  </div>
+                  <div className="relative flex justify-center text-xs">
+                    <span className="px-3 bg-card text-muted-foreground font-medium uppercase tracking-wider">
+                      Or Continue With
+                    </span>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleGoogleLogin}
+                  disabled={loading}
+                  className="w-full py-3 px-4 bg-background border border-border font-semibold text-sm rounded-xl hover:bg-muted/50 transition-all flex items-center justify-center gap-3 shadow-sm disabled:opacity-50 cursor-pointer"
+                >
+                  <FcGoogle className="w-5 h-5" /> Continue with Google
+                </button>
+              </>
+            )}
 
             {/* Sign Up Redirect */}
-            <p className="text-center mt-6 text-sm text-muted-foreground">
-              Don't have an account?{" "}
-              <Link href="/register" className="font-semibold text-primary hover:underline">
-                Create Account
-              </Link>
-            </p>
+            {settings?.userRegistrationEnabled !== false ? (
+              <p className="text-center mt-6 text-sm text-muted-foreground">
+                Don't have an account?{" "}
+                <Link href="/register" className="font-semibold text-primary hover:underline">
+                  Create Account
+                </Link>
+              </p>
+            ) : (
+              <p className="text-center mt-6 text-xs text-muted-foreground">
+                New user registrations are currently closed by webmaster.
+              </p>
+            )}
           </div>
         </div>
       </div>

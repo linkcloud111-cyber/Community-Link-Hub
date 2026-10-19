@@ -11,6 +11,7 @@ import {
 } from "@/lib/firestore";
 import type { Group } from "@/lib/types";
 import { useAuth } from "@/contexts/AuthContext";
+import { useSiteSettings } from "@/contexts/SiteSettingsContext";
 import {
   Loader2,
   ShieldAlert,
@@ -46,6 +47,7 @@ import { usePageSEO } from "@/lib/page-meta";
 export default function GroupDetail() {
   const { id } = useParams();
   const { user, profile, isWebmaster } = useAuth();
+  const { settings } = useSiteSettings();
 
   const [group, setGroup] = useState<Group | null>(null);
   const [related, setRelated] = useState<Group[]>([]);
@@ -537,18 +539,20 @@ export default function GroupDetail() {
               </button>
             </div>
 
-            <button
-              onClick={handleFavorite}
-              disabled={favLoading}
-              className={`w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-semibold transition-colors border ${
-                favorited
-                  ? "bg-red-500/10 border-red-500/30 text-red-500"
-                  : "border-border hover:bg-muted text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              <Heart className={`w-4 h-4 ${favorited ? "fill-current" : ""}`} />
-              {favorited ? "Saved to Favorites" : "Save to Favorites"}
-            </button>
+            {settings?.favoritesEnabled !== false && (
+              <button
+                onClick={handleFavorite}
+                disabled={favLoading}
+                className={`w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-semibold transition-colors border cursor-pointer ${
+                  favorited
+                    ? "bg-red-500/10 border-red-500/30 text-red-500"
+                    : "border-border hover:bg-muted text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <Heart className={`w-4 h-4 ${favorited ? "fill-current" : ""}`} />
+                {favorited ? "Saved to Favorites" : "Save to Favorites"}
+              </button>
+            )}
 
             {/* Quick Stats */}
             <div className="grid grid-cols-2 gap-3 pt-4 border-t border-border">
@@ -568,12 +572,14 @@ export default function GroupDetail() {
             </div>
 
             {/* Report Button (Open to anyone) */}
-            <button
-              onClick={() => setReportOpen(true)}
-              className="w-full py-2.5 bg-muted hover:bg-destructive/10 text-muted-foreground hover:text-destructive text-xs font-semibold rounded-xl transition-colors flex items-center justify-center gap-2"
-            >
-              <ShieldAlert className="w-4 h-4" /> Report Group / Broken Link
-            </button>
+            {settings?.reportSystemEnabled !== false && (
+              <button
+                onClick={() => setReportOpen(true)}
+                className="w-full py-2.5 bg-muted hover:bg-destructive/10 text-muted-foreground hover:text-destructive text-xs font-semibold rounded-xl transition-colors flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <ShieldAlert className="w-4 h-4" /> Report Group / Broken Link
+              </button>
+            )}
           </div>
         </div>
       </motion.div>

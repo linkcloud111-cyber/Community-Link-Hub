@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/contexts/AuthContext";
+import { useSiteSettings } from "@/contexts/SiteSettingsContext";
 import { registerWithEmail, signInWithGoogle, formatAuthError } from "@/lib/auth";
 import {
   validateGmailAddress,
@@ -61,6 +62,7 @@ export default function Register() {
   const [loading, setLoading] = useState(false);
   const [, setLocation] = useLocation();
   const { user, isWebmaster, loading: authLoading } = useAuth();
+  const { settings } = useSiteSettings();
 
   // Redirect if already logged in
   useEffect(() => {
@@ -77,6 +79,29 @@ export default function Register() {
 
   if (authLoading || user) {
     return null;
+  }
+
+  if (settings?.userRegistrationEnabled === false) {
+    return (
+      <div className="min-h-[85vh] flex items-center justify-center p-4 sm:p-6 bg-gradient-to-b from-background via-muted/20 to-background py-10">
+        <div className="w-full max-w-md">
+          <div className="bg-card/80 backdrop-blur-xl border border-border rounded-3xl p-6 sm:p-8 shadow-2xl relative overflow-hidden text-center space-y-4">
+            <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-amber-500/10 text-amber-500 mb-2">
+              <Lock className="w-8 h-8" />
+            </div>
+            <h1 className="text-2xl font-bold">Registration Temporarily Paused</h1>
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              New account registrations are currently paused by the webmaster for database review. Existing community members can still sign in to their dashboard.
+            </p>
+            <div className="pt-2">
+              <Link href="/login" className="px-6 py-2.5 bg-primary text-primary-foreground font-semibold text-sm rounded-xl hover:bg-primary/90 transition inline-block">
+                Go to Sign In
+              </Link>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   // Real-time Validations
@@ -548,27 +573,30 @@ export default function Register() {
               )}
             </button>
 
-            {/* Divider */}
-            <div className="relative my-6">
-              <div className="absolute inset-0 flex items-center">
-                <div className="w-full border-t border-border"></div>
-              </div>
-              <div className="relative flex justify-center text-xs">
-                <span className="px-3 bg-card text-muted-foreground font-medium uppercase tracking-wider">
-                  Or Sign Up With
-                </span>
-              </div>
-            </div>
-
             {/* Google Signup */}
-            <button
-              type="button"
-              onClick={handleGoogleSignup}
-              disabled={loading}
-              className="w-full py-3 px-4 bg-background border border-border font-semibold text-sm rounded-xl hover:bg-muted/50 transition-all flex items-center justify-center gap-3 shadow-sm"
-            >
-              <FcGoogle className="w-5 h-5" /> Continue with Google
-            </button>
+            {settings?.googleLoginEnabled !== false && (
+              <>
+                <div className="relative my-6">
+                  <div className="absolute inset-0 flex items-center">
+                    <div className="w-full border-t border-border"></div>
+                  </div>
+                  <div className="relative flex justify-center text-xs">
+                    <span className="px-3 bg-card text-muted-foreground font-medium uppercase tracking-wider">
+                      Or Sign Up With
+                    </span>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleGoogleSignup}
+                  disabled={loading}
+                  className="w-full py-3 px-4 bg-background border border-border font-semibold text-sm rounded-xl hover:bg-muted/50 transition-all flex items-center justify-center gap-3 shadow-sm cursor-pointer"
+                >
+                  <FcGoogle className="w-5 h-5" /> Continue with Google
+                </button>
+              </>
+            )}
 
             {/* Login Link */}
             <p className="text-center mt-6 text-sm text-muted-foreground">

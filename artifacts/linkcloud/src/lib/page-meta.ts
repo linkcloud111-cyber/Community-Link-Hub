@@ -39,6 +39,9 @@ export async function fetchSiteSettingsCached(): Promise<SiteSettings | null> {
 export function clearSiteSettingsCache() {
   cachedSiteSettings = null;
   settingsFetchPromise = null;
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("lc-site-settings-updated"));
+  }
 }
 
 /**

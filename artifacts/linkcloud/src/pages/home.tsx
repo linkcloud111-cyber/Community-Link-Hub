@@ -13,6 +13,7 @@ import {
 } from "@/lib/firestore";
 import type { Group, SiteSettings, FAQItem } from "@/lib/types";
 import { useAuth } from "@/contexts/AuthContext";
+import { useSiteSettings } from "@/contexts/SiteSettingsContext";
 import GroupCard from "@/components/group-card";
 import SkeletonCard from "@/components/skeleton-card";
 import { PlatformIcon } from "@/components/platform-icon";
@@ -60,8 +61,8 @@ export default function Home() {
   const [loadingInitial, setLoadingInitial] = useState(true);
   const [faqOpen, setFaqOpen] = useState<number | null>(0);
 
-  // Settings & FAQs from Firestore
-  const [settings, setSettings] = useState<SiteSettings | null>(null);
+  // Settings from live context & FAQs from Firestore
+  const { settings } = useSiteSettings();
   const [faqs, setFaqs] = useState<FAQItem[]>([]);
 
   // Suggestions for autocomplete search bar
@@ -74,19 +75,17 @@ export default function Home() {
 
     async function loadInitial() {
       try {
-        const [feat, trend, late, all, siteData, faqData] = await Promise.all([
+        const [feat, trend, late, all, faqData] = await Promise.all([
           getFeaturedGroups(),
           getTrendingGroups(),
           getLatestGroups(),
           getApprovedGroups(),
-          getSiteSettings(),
           getFAQs(),
         ]);
         setFeatured(feat);
         setPopular(trend);
         setLatest(late);
         setAllGroupsCount(all.length);
-        setSettings(siteData);
         setFaqs(faqData);
 
         const joins = all.reduce((sum, g) => sum + (g.joinCount ?? 0), 0);

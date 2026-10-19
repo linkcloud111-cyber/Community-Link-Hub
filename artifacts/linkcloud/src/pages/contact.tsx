@@ -1,8 +1,20 @@
 import { useState, useEffect } from "react";
 import { createContactMessage } from "@/lib/firestore";
 import { useAuth } from "@/contexts/AuthContext";
+import { useSiteSettings } from "@/contexts/SiteSettingsContext";
 import { toast } from "sonner";
-import { Mail, Phone, User, MessageSquare, Send, Loader2, CheckCircle2 } from "lucide-react";
+import {
+  Mail,
+  Phone,
+  User,
+  MessageSquare,
+  Send,
+  Loader2,
+  CheckCircle2,
+  MapPin,
+  Clock,
+  ShieldCheck,
+} from "lucide-react";
 import { motion } from "framer-motion";
 import { PageBreadcrumb } from "@/components/page-breadcrumb";
 import { CharacterCounter } from "@/components/character-counter";
@@ -12,6 +24,7 @@ import { validateIndianMobile } from "@/lib/utils";
 export default function ContactPage() {
   usePageTitle("Contact Webmaster", "Support & Inquiries");
   const { user, profile } = useAuth();
+  const { settings } = useSiteSettings();
 
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -35,6 +48,11 @@ export default function ContactPage() {
       }
     }
   }, [user, profile]);
+
+  const supportEmail = settings?.supportEmail || settings?.contactEmail || "linkcloud111@gmail.com";
+  const supportMobile = settings?.supportMobile || "";
+  const businessAddress = settings?.businessAddress || "";
+  const officeHours = settings?.officeHours || "";
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -74,7 +92,7 @@ export default function ContactPage() {
   };
 
   return (
-    <div className="max-w-3xl mx-auto space-y-6 pb-20">
+    <div className="max-w-4xl mx-auto space-y-8 pb-20">
       <PageBreadcrumb items={[{ label: "Contact Webmaster" }]} />
 
       <div className="text-center space-y-3">
@@ -83,130 +101,204 @@ export default function ContactPage() {
         </span>
         <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight">Contact Webmaster</h1>
         <p className="text-sm sm:text-base text-muted-foreground max-w-xl mx-auto">
-          Have a question, feedback, partnership request, or need help with a listing? Send a direct message to our support team.
+          Have a question, feedback, partnership request, or need help with a listing? Connect directly with our team.
         </p>
       </div>
 
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="bg-card border border-border/80 rounded-3xl p-6 sm:p-10 shadow-xl"
-      >
-        {submitted ? (
-          <div className="text-center space-y-4 py-8">
-            <div className="w-16 h-16 bg-emerald-500/10 text-emerald-500 rounded-full flex items-center justify-center mx-auto">
-              <CheckCircle2 className="w-10 h-10" />
-            </div>
-            <h2 className="text-2xl font-bold">Message Sent Successfully</h2>
-            <p className="text-sm text-muted-foreground max-w-md mx-auto">
-              Thank you for reaching out. The webmaster team will review your message and respond via email as soon as possible.
-            </p>
-            <button
-              onClick={() => setSubmitted(false)}
-              className="px-6 py-2.5 bg-primary text-primary-foreground font-semibold text-sm rounded-xl hover:bg-primary/90 transition"
-            >
-              Send Another Message
-            </button>
+      {/* Official Directory Contact Information from Webmaster Settings */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="p-4 rounded-2xl bg-card border border-border/80 shadow-sm space-y-1">
+          <div className="w-8 h-8 rounded-xl bg-primary/10 text-primary flex items-center justify-center mb-2">
+            <Mail className="w-4 h-4" />
           </div>
-        ) : (
-          <form onSubmit={handleSubmit} className="space-y-5">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-              {/* Full Name */}
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
-                  <User className="w-3.5 h-3.5 text-primary" /> Full Name *
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="Your Full Name"
-                  className="w-full px-4 py-3 bg-background border border-border rounded-xl text-sm focus:ring-2 focus:ring-primary outline-none transition"
-                />
-              </div>
+          <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">Official Email</p>
+          <a
+            href={`mailto:${supportEmail}`}
+            className="text-xs font-semibold text-foreground hover:text-primary transition-colors block truncate"
+            title={supportEmail}
+          >
+            {supportEmail}
+          </a>
+        </div>
 
-              {/* Email Address */}
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
-                  <Mail className="w-3.5 h-3.5 text-primary" /> Email Address *
-                </label>
-                <input
-                  type="email"
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="name@example.com"
-                  className="w-full px-4 py-3 bg-background border border-border rounded-xl text-sm focus:ring-2 focus:ring-primary outline-none transition"
-                />
-              </div>
+        {supportMobile && (
+          <div className="p-4 rounded-2xl bg-card border border-border/80 shadow-sm space-y-1">
+            <div className="w-8 h-8 rounded-xl bg-emerald-500/10 text-emerald-500 flex items-center justify-center mb-2">
+              <Phone className="w-4 h-4" />
             </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-              {/* Mobile Number */}
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
-                  <Phone className="w-3.5 h-3.5 text-primary" /> Mobile Number (Optional)
-                </label>
-                <input
-                  type="tel"
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                  placeholder="e.g. 9876543210"
-                  maxLength={10}
-                  className="w-full px-4 py-3 bg-background border border-border rounded-xl text-sm focus:ring-2 focus:ring-primary outline-none transition"
-                />
-              </div>
-
-              {/* Subject */}
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
-                  <MessageSquare className="w-3.5 h-3.5 text-primary" /> Subject *
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={subject}
-                  onChange={(e) => setSubject(e.target.value)}
-                  maxLength={100}
-                  placeholder="e.g. Listing Inquiry, Support, Bug Report"
-                  className="w-full px-4 py-3 bg-background border border-border rounded-xl text-sm focus:ring-2 focus:ring-primary outline-none transition"
-                />
-                <CharacterCounter current={subject.length} max={100} />
-              </div>
-            </div>
-
-            {/* Message */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-bold text-foreground uppercase tracking-wider">
-                Message Content *
-              </label>
-              <textarea
-                required
-                rows={5}
-                value={message}
-                onChange={(e) => setMessage(e.target.value)}
-                maxLength={1000}
-                placeholder="Describe your message or request in detail (minimum 20 characters)..."
-                className="w-full px-4 py-3 bg-background border border-border rounded-xl text-sm focus:ring-2 focus:ring-primary outline-none transition resize-none"
-              />
-              <CharacterCounter current={message.length} min={20} max={1000} />
-            </div>
-
-            <button
-              type="submit"
-              disabled={submitting}
-              className="w-full py-3.5 bg-primary text-primary-foreground font-bold rounded-xl text-sm hover:bg-primary/90 transition shadow-lg shadow-primary/20 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-70"
+            <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">Helpline</p>
+            <a
+              href={`tel:${supportMobile.replace(/\s+/g, "")}`}
+              className="text-xs font-semibold text-foreground hover:text-emerald-500 transition-colors block"
             >
-              {submitting ? (
-                <><Loader2 className="w-4 h-4 animate-spin" /> Sending Message...</>
-              ) : (
-                <><Send className="w-4 h-4" /> Send Message</>
-              )}
-            </button>
-          </form>
+              {supportMobile}
+            </a>
+          </div>
         )}
-      </motion.div>
+
+        {officeHours && (
+          <div className="p-4 rounded-2xl bg-card border border-border/80 shadow-sm space-y-1">
+            <div className="w-8 h-8 rounded-xl bg-blue-500/10 text-blue-500 flex items-center justify-center mb-2">
+              <Clock className="w-4 h-4" />
+            </div>
+            <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">Desk Hours</p>
+            <p className="text-xs text-foreground font-medium leading-relaxed">{officeHours}</p>
+          </div>
+        )}
+
+        {businessAddress && (
+          <div className="p-4 rounded-2xl bg-card border border-border/80 shadow-sm space-y-1">
+            <div className="w-8 h-8 rounded-xl bg-purple-500/10 text-purple-500 flex items-center justify-center mb-2">
+              <MapPin className="w-4 h-4" />
+            </div>
+            <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">HQ Address</p>
+            <p className="text-xs text-foreground font-medium leading-relaxed truncate" title={businessAddress}>
+              {businessAddress}
+            </p>
+          </div>
+        )}
+      </div>
+
+      {settings?.contactFormEnabled === false ? (
+        <div className="bg-card border border-border/80 rounded-3xl p-8 sm:p-12 text-center space-y-4 shadow-xl">
+          <div className="w-16 h-16 rounded-2xl bg-amber-500/10 text-amber-500 flex items-center justify-center mx-auto border border-amber-500/20">
+            <Mail className="w-8 h-8" />
+          </div>
+          <h2 className="text-2xl font-bold">Contact Form Temporarily Closed</h2>
+          <p className="text-sm text-muted-foreground max-w-md mx-auto leading-relaxed">
+            Direct web submissions are currently paused. You can reach the webmaster team directly by sending an email to:
+          </p>
+          <div className="pt-2">
+            <a
+              href={`mailto:${supportEmail}`}
+              className="px-6 py-2.5 bg-primary text-primary-foreground font-semibold text-sm rounded-xl hover:bg-primary/90 transition inline-flex items-center gap-2"
+            >
+              <Mail className="w-4 h-4" /> {supportEmail}
+            </a>
+          </div>
+        </div>
+      ) : (
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="bg-card border border-border/80 rounded-3xl p-6 sm:p-10 shadow-xl"
+        >
+          {submitted ? (
+            <div className="text-center space-y-4 py-8">
+              <div className="w-16 h-16 bg-emerald-500/10 text-emerald-500 rounded-full flex items-center justify-center mx-auto">
+                <CheckCircle2 className="w-10 h-10" />
+              </div>
+              <h2 className="text-2xl font-bold">Message Sent Successfully</h2>
+              <p className="text-sm text-muted-foreground max-w-md mx-auto">
+                Thank you for reaching out. The webmaster team will review your message and respond via email as soon as possible.
+              </p>
+              <button
+                onClick={() => setSubmitted(false)}
+                className="px-6 py-2.5 bg-primary text-primary-foreground font-semibold text-sm rounded-xl hover:bg-primary/90 transition"
+              >
+                Send Another Message
+              </button>
+            </div>
+          ) : (
+            <form onSubmit={handleSubmit} className="space-y-5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                {/* Full Name */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
+                    <User className="w-3.5 h-3.5 text-primary" /> Full Name *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    placeholder="Your Full Name"
+                    className="w-full px-4 py-3 bg-background border border-border rounded-xl text-sm focus:ring-2 focus:ring-primary outline-none transition"
+                  />
+                </div>
+
+                {/* Email Address */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
+                    <Mail className="w-3.5 h-3.5 text-primary" /> Email Address *
+                  </label>
+                  <input
+                    type="email"
+                    required
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="name@example.com"
+                    className="w-full px-4 py-3 bg-background border border-border rounded-xl text-sm focus:ring-2 focus:ring-primary outline-none transition"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                {/* Mobile Number */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
+                    <Phone className="w-3.5 h-3.5 text-primary" /> Mobile Number (Optional)
+                  </label>
+                  <input
+                    type="tel"
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
+                    placeholder="e.g. 9876543210"
+                    maxLength={10}
+                    className="w-full px-4 py-3 bg-background border border-border rounded-xl text-sm focus:ring-2 focus:ring-primary outline-none transition"
+                  />
+                </div>
+
+                {/* Subject */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
+                    <MessageSquare className="w-3.5 h-3.5 text-primary" /> Subject *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={subject}
+                    onChange={(e) => setSubject(e.target.value)}
+                    maxLength={100}
+                    placeholder="e.g. Listing Inquiry, Support, Bug Report"
+                    className="w-full px-4 py-3 bg-background border border-border rounded-xl text-sm focus:ring-2 focus:ring-primary outline-none transition"
+                  />
+                  <CharacterCounter current={subject.length} max={100} />
+                </div>
+              </div>
+
+              {/* Message */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-foreground uppercase tracking-wider">
+                  Message Content *
+                </label>
+                <textarea
+                  required
+                  rows={5}
+                  value={message}
+                  onChange={(e) => setMessage(e.target.value)}
+                  maxLength={1000}
+                  placeholder="Describe your message or request in detail (minimum 20 characters)..."
+                  className="w-full px-4 py-3 bg-background border border-border rounded-xl text-sm focus:ring-2 focus:ring-primary outline-none transition resize-none"
+                />
+                <CharacterCounter current={message.length} min={20} max={1000} />
+              </div>
+
+              <button
+                type="submit"
+                disabled={submitting}
+                className="w-full py-3.5 bg-primary text-primary-foreground font-bold rounded-xl text-sm hover:bg-primary/90 transition shadow-lg shadow-primary/20 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-70"
+              >
+                {submitting ? (
+                  <><Loader2 className="w-4 h-4 animate-spin" /> Sending Message...</>
+                ) : (
+                  <><Send className="w-4 h-4" /> Send Message</>
+                )}
+              </button>
+            </form>
+          )}
+        </motion.div>
+      )}
     </div>
   );
 }

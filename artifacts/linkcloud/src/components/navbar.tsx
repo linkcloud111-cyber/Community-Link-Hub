@@ -27,9 +27,11 @@ import {
   LayoutGrid,
 } from "lucide-react";
 import { useState, useEffect } from "react";
+import { useSiteSettings } from "@/contexts/SiteSettingsContext";
 
 export default function Navbar() {
   const { theme, setTheme } = useTheme();
+  const { settings, effectiveTheme } = useSiteSettings();
   const { user, isWebmaster, profile } = useAuth();
   const [location, setLocation] = useLocation();
   const [mounted, setMounted] = useState(false);
@@ -60,9 +62,11 @@ export default function Navbar() {
   const navLinks = [
     { href: "/", label: "Home" },
     { href: "/groups", label: "Directory" },
-    { href: "/submit", label: "Submit Group" },
+    ...((settings?.allowPublicSubmissions !== false || isWebmaster)
+      ? [{ href: "/submit", label: "Submit Group" }]
+      : []),
     { href: "/about", label: "About" },
-    { href: "/contact", label: "Contact" },
+    ...(settings?.contactFormEnabled !== false ? [{ href: "/contact", label: "Contact" }] : []),
   ];
 
   const isDashboardRoute =
@@ -94,10 +98,20 @@ export default function Navbar() {
             {/* Logo */}
             <div className="flex items-center gap-8">
               <Link href="/" className="flex items-center gap-2 group flex-shrink-0">
-                <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center text-primary-foreground shadow-lg shadow-primary/30 group-hover:scale-105 transition-transform">
-                  <Cloud className="w-4 h-4" />
+                <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center text-primary-foreground shadow-lg shadow-primary/30 group-hover:scale-105 transition-transform overflow-hidden">
+                  {settings?.logoUrl || settings?.siteLogo ? (
+                    <img
+                      src={settings.logoUrl || settings.siteLogo}
+                      alt={settings?.headerTitle || settings?.siteName || "LinkCloud"}
+                      className="w-full h-full object-contain p-1"
+                    />
+                  ) : (
+                    <Cloud className="w-4 h-4" />
+                  )}
                 </div>
-                <span className="font-bold text-lg tracking-tight">LinkCloud</span>
+                <span className="font-bold text-lg tracking-tight">
+                  {settings?.headerTitle || settings?.siteName || "LinkCloud"}
+                </span>
               </Link>
 
               <div className="hidden md:flex items-center gap-1">
@@ -126,25 +140,30 @@ export default function Navbar() {
           {/* Right side */}
           <div className="hidden md:flex items-center gap-3">
             <button
-              onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-              className="p-2 rounded-full hover:bg-muted/50 text-muted-foreground hover:text-foreground transition-colors"
-              aria-label="Toggle theme"
+              onClick={() => {
+                toast.info(`Theme is centrally managed by Webmaster: ${effectiveTheme.toUpperCase()} mode is active.`);
+              }}
+              className="p-2 rounded-full hover:bg-muted/50 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+              aria-label={`Theme: ${effectiveTheme}`}
+              title={`Theme: ${effectiveTheme} (Managed centrally by Webmaster)`}
             >
-              {mounted && theme === "dark" ? (
-                <Sun className="w-4 h-4" />
+              {mounted && effectiveTheme === "dark" ? (
+                <Moon className="w-4 h-4 text-primary" />
               ) : (
-                <Moon className="w-4 h-4" />
+                <Sun className="w-4 h-4 text-amber-500" />
               )}
             </button>
 
             {user ? (
               <>
-                <Link
-                  href="/submit"
-                  className="flex items-center gap-1.5 px-4 py-2 bg-primary text-primary-foreground text-sm font-semibold rounded-xl hover:bg-primary/90 transition-colors shadow-lg shadow-primary/20"
-                >
-                  <Plus className="w-4 h-4" /> Submit
-                </Link>
+                {(settings?.allowPublicSubmissions !== false || isWebmaster) && (
+                  <Link
+                    href="/submit"
+                    className="flex items-center gap-1.5 px-4 py-2 bg-primary text-primary-foreground text-sm font-semibold rounded-xl hover:bg-primary/90 transition-colors shadow-lg shadow-primary/20"
+                  >
+                    <Plus className="w-4 h-4" /> Submit
+                  </Link>
+                )}
 
                 <div className="relative">
                   <button
@@ -378,12 +397,14 @@ export default function Navbar() {
                 >
                   Log in
                 </Link>
-                <Link
-                  href="/submit"
-                  className="flex items-center gap-1.5 px-4 py-2 text-sm font-semibold bg-primary text-primary-foreground hover:bg-primary/90 rounded-xl transition-colors shadow-lg shadow-primary/20"
-                >
-                  <Plus className="w-4 h-4" /> Submit Group
-                </Link>
+                {(settings?.allowPublicSubmissions !== false || isWebmaster) && (
+                  <Link
+                    href="/submit"
+                    className="flex items-center gap-1.5 px-4 py-2 text-sm font-semibold bg-primary text-primary-foreground hover:bg-primary/90 rounded-xl transition-colors shadow-lg shadow-primary/20"
+                  >
+                    <Plus className="w-4 h-4" /> Submit Group
+                  </Link>
+                )}
               </div>
             )}
           </div>
@@ -391,13 +412,17 @@ export default function Navbar() {
           {/* Mobile buttons */}
           <div className="md:hidden flex items-center gap-2">
             <button
-              onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+              onClick={() => {
+                toast.info(`Theme is centrally managed by Webmaster: ${effectiveTheme.toUpperCase()} mode is active.`);
+              }}
               className="p-2 rounded-full text-muted-foreground"
+              aria-label={`Theme: ${effectiveTheme}`}
+              title={`Theme: ${effectiveTheme} (Managed centrally by Webmaster)`}
             >
-              {mounted && theme === "dark" ? (
-                <Sun className="w-4 h-4" />
+              {mounted && effectiveTheme === "dark" ? (
+                <Moon className="w-4 h-4 text-primary" />
               ) : (
-                <Moon className="w-4 h-4" />
+                <Sun className="w-4 h-4 text-amber-500" />
               )}
             </button>
             <button

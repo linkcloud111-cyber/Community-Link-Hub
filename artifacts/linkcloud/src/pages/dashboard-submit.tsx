@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { useLocation, Link } from "wouter";
 import { useAuth } from "@/contexts/AuthContext";
+import { useSiteSettings } from "@/contexts/SiteSettingsContext";
 import { useTaxonomy } from "@/contexts/TaxonomyContext";
 import { useLocation as useAppLocation } from "@/contexts/LocationContext";
 import { createGroup, checkDuplicateGroup } from "@/lib/firestore";
@@ -123,6 +124,7 @@ function getPlatformConfig(platformName: string) {
 
 export default function DashboardSubmit() {
   const { user, isWebmaster, profile } = useAuth();
+  const { settings } = useSiteSettings();
   const [, setLocation] = useLocation();
   usePageTitle("Submit a Community", "Public Directory");
   const {
@@ -507,6 +509,33 @@ export default function DashboardSubmit() {
           >
             Submit Another Group
           </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (
+    (settings?.allowPublicSubmissions === false || settings?.groupSubmissionEnabled === false) &&
+    !isWebmaster
+  ) {
+    return (
+      <div className="max-w-2xl mx-auto py-16 px-4 text-center space-y-5">
+        <div className="w-16 h-16 rounded-2xl bg-amber-500/10 text-amber-500 flex items-center justify-center mx-auto border border-amber-500/20 shadow-lg">
+          <ShieldAlert className="w-8 h-8" />
+        </div>
+        <h1 className="text-2xl sm:text-3xl font-extrabold text-foreground">
+          Community Submissions Closed
+        </h1>
+        <p className="text-sm text-muted-foreground max-w-md mx-auto leading-relaxed">
+          Public submissions are temporarily paused by the webmaster for scheduled database review. Please check back soon or browse existing verified groups.
+        </p>
+        <div className="pt-2">
+          <Link
+            href="/groups"
+            className="px-6 py-2.5 bg-primary text-primary-foreground font-semibold text-sm rounded-xl hover:bg-primary/90 transition inline-block shadow-md"
+          >
+            Browse Verified Communities
+          </Link>
         </div>
       </div>
     );

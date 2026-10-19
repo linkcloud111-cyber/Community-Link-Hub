@@ -2,9 +2,9 @@ import { useState, useEffect, useMemo } from "react";
 import { Link, useSearch } from "wouter";
 import { useTaxonomy } from "@/contexts/TaxonomyContext";
 import { useLocation } from "@/contexts/LocationContext";
+import { useSiteSettings } from "@/contexts/SiteSettingsContext";
 import {
   getApprovedGroups,
-  getSiteSettings,
 } from "@/lib/firestore";
 import type { Group, FilterSettings } from "@/lib/types";
 import GroupCard from "@/components/group-card";
@@ -75,37 +75,35 @@ export default function GroupsPage() {
   // Quick section view filter tabs: 'all', 'featured', 'popular', 'latest'
   const [viewTab, setViewTab] = useState<"all" | "featured" | "popular" | "latest">("all");
 
+  const { settings } = useSiteSettings();
   const [allApprovedGroups, setAllApprovedGroups] = useState<Group[]>([]);
-  const [filterSettings, setFilterSettings] = useState<FilterSettings>({
-    categoryFilterEnabled: true,
-    platformFilterEnabled: true,
-    contentTypeFilterEnabled: true,
-    languageFilterEnabled: true,
-    stateFilterEnabled: true,
-    districtFilterEnabled: true,
-    cityFilterEnabled: true,
-    linkStatusFilterEnabled: true,
-    featuredFilterEnabled: true,
-    popularFilterEnabled: true,
-    newestFilterEnabled: true,
-    verifiedFilterEnabled: true,
-    approvalStatusFilterEnabled: true,
-  });
+
+  const filterSettings: FilterSettings = useMemo(() => {
+    return settings?.filterSettings || {
+      categoryFilterEnabled: true,
+      platformFilterEnabled: true,
+      contentTypeFilterEnabled: true,
+      languageFilterEnabled: true,
+      stateFilterEnabled: true,
+      districtFilterEnabled: true,
+      cityFilterEnabled: true,
+      linkStatusFilterEnabled: true,
+      featuredFilterEnabled: true,
+      popularFilterEnabled: true,
+      newestFilterEnabled: true,
+      verifiedFilterEnabled: true,
+      approvalStatusFilterEnabled: true,
+    };
+  }, [settings?.filterSettings]);
+
   const [loading, setLoading] = useState(true);
   const [showFiltersMobile, setShowFiltersMobile] = useState(false);
   const [searchFocused, setSearchFocused] = useState(false);
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
 
   useEffect(() => {
-    document.title = "Public Group Directory — LinkCloud";
-    async function loadInitialData() {
-      const settings = await getSiteSettings();
-      if (settings?.filterSettings) {
-        setFilterSettings(settings.filterSettings);
-      }
-    }
-    loadInitialData();
-  }, []);
+    document.title = `Public Group Directory — ${settings?.siteName || "LinkCloud"}`;
+  }, [settings?.siteName]);
 
   const availableDistricts = state ? getDistrictsForState(state) : [];
   const availableCities = state ? getCitiesForDistrict(state, district) : [];

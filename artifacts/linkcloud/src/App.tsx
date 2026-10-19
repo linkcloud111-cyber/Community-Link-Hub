@@ -6,6 +6,7 @@ import { ThemeProvider } from 'next-themes';
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 import { TaxonomyProvider } from '@/contexts/TaxonomyContext';
 import { LocationProvider } from '@/contexts/LocationContext';
+import { SiteSettingsProvider, useSiteSettings } from '@/contexts/SiteSettingsContext';
 import { logout } from '@/lib/auth';
 import { auth } from '@/lib/firebase';
 import { Loader2, AlertTriangle, RefreshCw } from 'lucide-react';
@@ -285,21 +286,30 @@ function Router() {
   );
 }
 
+function ThemedApp() {
+  const { effectiveTheme } = useSiteSettings();
+  return (
+    <ThemeProvider attribute="class" forcedTheme={effectiveTheme} enableSystem={false}>
+      <AuthProvider>
+        <TaxonomyProvider>
+          <LocationProvider>
+            <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, '')}>
+              <Router />
+            </WouterRouter>
+            <Toaster theme={effectiveTheme} />
+          </LocationProvider>
+        </TaxonomyProvider>
+      </AuthProvider>
+    </ThemeProvider>
+  );
+}
+
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <ThemeProvider attribute="class" defaultTheme="light" enableSystem={false}>
-        <AuthProvider>
-          <TaxonomyProvider>
-            <LocationProvider>
-              <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, '')}>
-                <Router />
-              </WouterRouter>
-              <Toaster theme="system" />
-            </LocationProvider>
-          </TaxonomyProvider>
-        </AuthProvider>
-      </ThemeProvider>
+      <SiteSettingsProvider>
+        <ThemedApp />
+      </SiteSettingsProvider>
     </QueryClientProvider>
   );
 }

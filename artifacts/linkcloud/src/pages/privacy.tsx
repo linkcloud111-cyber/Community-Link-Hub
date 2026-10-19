@@ -1,9 +1,11 @@
 import { useState, useEffect } from "react";
 import { Shield } from "lucide-react";
-import { getSiteSettings, getStaticPages } from "@/lib/firestore";
+import { getStaticPages } from "@/lib/firestore";
 import { usePageSEO } from "@/lib/page-meta";
+import { useSiteSettings } from "@/contexts/SiteSettingsContext";
 
 export default function PrivacyPage() {
+  const { settings } = useSiteSettings();
   const [customContent, setCustomContent] = useState<string | null>(null);
 
   usePageSEO({
@@ -14,16 +16,21 @@ export default function PrivacyPage() {
   });
 
   useEffect(() => {
-    Promise.all([getSiteSettings(), getStaticPages()])
-      .then(([settings, pages]) => {
-        if (settings?.privacyPolicyContent && settings.privacyPolicyContent.trim().length > 0) {
-          setCustomContent(settings.privacyPolicyContent);
-        } else if (pages?.privacy) {
-          setCustomContent(pages.privacy);
-        }
-      })
-      .catch(console.error);
-  }, []);
+    if (settings?.privacyPolicyContent && settings.privacyPolicyContent.trim().length > 0) {
+      setCustomContent(settings.privacyPolicyContent);
+    } else {
+      getStaticPages()
+        .then((pages) => {
+          if (pages?.privacy) {
+            setCustomContent(pages.privacy);
+          }
+        })
+        .catch(console.error);
+    }
+  }, [settings?.privacyPolicyContent]);
+
+  const supportEmail = settings?.supportEmail || settings?.contactEmail || "linkcloud111@gmail.com";
+  const siteName = settings?.siteName || "LinkCloud";
 
   return (
     <div className="max-w-4xl mx-auto space-y-8 pb-20">
@@ -32,7 +39,7 @@ export default function PrivacyPage() {
           Legal & Trust
         </span>
         <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight">Privacy Policy</h1>
-        <p className="text-xs text-muted-foreground">Last updated: July 2026</p>
+        <p className="text-xs text-muted-foreground">Last updated: {new Date().getFullYear()}</p>
       </div>
 
       <div className="bg-card border border-border/80 rounded-3xl p-6 sm:p-10 shadow-sm space-y-6 text-xs sm:text-sm text-muted-foreground leading-relaxed">
@@ -43,35 +50,26 @@ export default function PrivacyPage() {
             <section className="space-y-2">
               <h2 className="text-base sm:text-lg font-bold text-foreground">1. Introduction</h2>
               <p>
-                Welcome to LinkCloud ("we", "our", or "us"). We respect your privacy and are committed to protecting your personal data. This privacy policy explains how we collect, use, store, and safeguard your information when you visit our website or use our services.
+                Welcome to {siteName} ("we", "our", or "us"). We respect your privacy and are committed to protecting your personal data. This privacy policy explains how we collect, use, store, and safeguard your information when you visit our website or use our services.
               </p>
             </section>
 
             <section className="space-y-2">
               <h2 className="text-base sm:text-lg font-bold text-foreground">2. Information We Collect</h2>
               <p>
-                <strong>Visitor Data:</strong> Visitors can freely browse our public community directory without providing any personal data.
-              </p>
-              <p>
-                <strong>Registered User Data:</strong> When you register an account, we collect your Full Name, Date of Birth, Email Address, Mobile Number, State, District, and City.
-              </p>
-              <p>
-                <strong>Submitted Content:</strong> When you list a community group, we collect the Group Name, Platform, Category, Description, Rules, Tags, Location, and Invite Link.
+                We collect information you provide directly to us when creating an account, submitting a public community link, submitting a grievance, or contacting the webmaster. This may include your display name, email address, mobile number, and community link metadata.
               </p>
             </section>
 
             <section className="space-y-2">
-              <h2 className="text-base sm:text-lg font-bold text-foreground">3. How We Use Your Information</h2>
-              <ul className="list-disc pl-5 space-y-1">
-                <li>To operate, maintain, and provide the features of the LinkCloud index.</li>
-                <li>To verify community submissions and prevent spam, fraud, and illegal content.</li>
-                <li>To communicate with you regarding your account, group approvals, or support inquiries.</li>
-                <li>To comply with statutory legal obligations and law enforcement requests.</li>
-              </ul>
+              <h2 className="text-base sm:text-lg font-bold text-foreground">3. How We Use Information</h2>
+              <p>
+                We use collected information solely to maintain, secure, and operate the {siteName} public community directory, prevent malicious spam submissions, verify community legitimacy, and enforce our Terms of Service.
+              </p>
             </section>
 
             <section className="space-y-2">
-              <h2 className="text-base sm:text-lg font-bold text-foreground">4. Data Storage and Security</h2>
+              <h2 className="text-base sm:text-lg font-bold text-foreground">4. Storage & Security</h2>
               <p>
                 All user data and community listings are securely stored in Google Cloud Firestore infrastructure with strict security rules. We enforce authentication controls and data encryption in transit and at rest.
               </p>
@@ -87,7 +85,7 @@ export default function PrivacyPage() {
             <section className="space-y-2">
               <h2 className="text-base sm:text-lg font-bold text-foreground">6. Contact Us</h2>
               <p>
-                If you have any questions regarding this Privacy Policy, please contact our Compliance Officer at <strong>support@linkcloud.app</strong> or via our Contact Webmaster page.
+                If you have any questions regarding this Privacy Policy, please contact our Compliance Officer at <strong>{supportEmail}</strong> or via our Contact Webmaster page.
               </p>
             </section>
           </>

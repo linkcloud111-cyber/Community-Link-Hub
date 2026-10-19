@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { createComplaint } from "@/lib/firestore";
 import { useAuth } from "@/contexts/AuthContext";
+import { useSiteSettings } from "@/contexts/SiteSettingsContext";
 import { toast } from "sonner";
 import {
   AlertCircle,
@@ -24,6 +25,7 @@ import { validateIndianMobile } from "@/lib/utils";
 export default function ComplaintPage() {
   usePageTitle("Submit a Grievance", "Public Grievance Desk");
   const { user, profile } = useAuth();
+  const { settings } = useSiteSettings();
 
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -95,6 +97,31 @@ export default function ComplaintPage() {
       setSubmitting(false);
     }
   };
+
+  if (settings?.complaintSystemEnabled === false) {
+    const supportEmail = settings?.supportEmail || settings?.contactEmail || "linkcloud111@gmail.com";
+    return (
+      <div className="max-w-2xl mx-auto py-16 px-4 text-center space-y-5">
+        <div className="w-16 h-16 rounded-2xl bg-amber-500/10 text-amber-500 flex items-center justify-center mx-auto border border-amber-500/20 shadow-lg">
+          <ShieldAlert className="w-8 h-8" />
+        </div>
+        <h1 className="text-2xl sm:text-3xl font-extrabold text-foreground">
+          Grievance Desk Currently Offline
+        </h1>
+        <p className="text-sm text-muted-foreground max-w-md mx-auto leading-relaxed">
+          The public grievance desk form is temporarily paused. If you have an urgent grievance or DMCA notice, please email our compliance team directly at:
+        </p>
+        <div className="pt-2">
+          <a
+            href={`mailto:${supportEmail}`}
+            className="px-6 py-2.5 bg-primary text-primary-foreground font-semibold text-sm rounded-xl hover:bg-primary/90 transition inline-flex items-center gap-2 shadow-md"
+          >
+            <Mail className="w-4 h-4" /> {supportEmail}
+          </a>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-3xl mx-auto space-y-6 pb-20">

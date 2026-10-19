@@ -19,6 +19,21 @@ const DEFAULT_SITE_SETTINGS: SiteSettings = {
   logoUrl: "",
   faviconUrl: "",
   theme: "dark",
+  websiteTheme: "dark",
+  contactEmail: "admin@linkcloud.in",
+  heroSectionEnabled: true,
+  featuredGroupsEnabled: true,
+  latestGroupsEnabled: true,
+  popularGroupsEnabled: true,
+  popularCategoriesEnabled: true,
+  popularPlatformsEnabled: true,
+  statisticsSectionEnabled: true,
+  testimonialsEnabled: true,
+  faqSectionEnabled: true,
+  newsletterSectionEnabled: true,
+  footerEnabled: true,
+  heroButtonText: "Explore Groups",
+  heroButtonLink: "/groups",
   primaryColor: "#3b82f6",
   headerTitle: "LinkCloud",
   footerDescription:
@@ -338,11 +353,11 @@ export function SiteSettingsProvider({ children }: { children: React.ReactNode }
 
   // Compute effective theme ('dark' | 'light')
   const effectiveTheme: "dark" | "light" = useMemo(() => {
-    const mode = (settings.theme || "dark").toLowerCase();
-    if (mode === "light") return "light";
-    if (mode === "system") return systemPrefersDark ? "dark" : "light";
+    const raw = (settings.websiteTheme || (settings as any).theme || "dark").toLowerCase();
+    if (raw === "light") return "light";
+    if (raw === "system") return systemPrefersDark ? "dark" : "light";
     return "dark";
-  }, [settings.theme, systemPrefersDark]);
+  }, [settings.websiteTheme, (settings as any).theme, systemPrefersDark]);
 
   // Synchronize Theme, Primary Color, Favicon, and SEO Metadata to DOM in real time
   useEffect(() => {
