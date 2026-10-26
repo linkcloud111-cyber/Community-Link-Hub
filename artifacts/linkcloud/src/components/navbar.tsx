@@ -62,7 +62,7 @@ export default function Navbar() {
   const navLinks = [
     { href: "/", label: "Home" },
     { href: "/groups", label: "Directory" },
-    ...((settings?.allowPublicSubmissions !== false || isWebmaster)
+    ...(((settings?.groupSubmissionEnabled !== false && (settings?.allowPublicSubmissions !== false || user || isWebmaster)) || isWebmaster)
       ? [{ href: "/submit", label: "Submit Group" }]
       : []),
     { href: "/about", label: "About" },
@@ -141,11 +141,15 @@ export default function Navbar() {
           <div className="hidden md:flex items-center gap-3">
             <button
               onClick={() => {
-                toast.info(`Theme is centrally managed by Webmaster: ${effectiveTheme.toUpperCase()} mode is active.`);
+                if ((settings?.websiteTheme || (settings as any)?.theme) === "system") {
+                  toast.info(`Theme is set by Webmaster to follow your device System Preference (${effectiveTheme.toUpperCase()} mode is currently active).`);
+                } else {
+                  toast.info(`Theme is centrally enforced by Webmaster: ${effectiveTheme.toUpperCase()} mode is active.`);
+                }
               }}
               className="p-2 rounded-full hover:bg-muted/50 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-              aria-label={`Theme: ${effectiveTheme}`}
-              title={`Theme: ${effectiveTheme} (Managed centrally by Webmaster)`}
+              aria-label={(settings?.websiteTheme || (settings as any)?.theme) === "system" ? `Theme: System Preference (${effectiveTheme} mode active)` : `Theme: ${effectiveTheme} (Enforced by Webmaster)`}
+              title={(settings?.websiteTheme || (settings as any)?.theme) === "system" ? `Theme: Following System Preference (${effectiveTheme} mode active)` : `Theme: ${effectiveTheme} (Enforced by Webmaster)`}
             >
               {mounted && effectiveTheme === "dark" ? (
                 <Moon className="w-4 h-4 text-primary" />
@@ -156,7 +160,7 @@ export default function Navbar() {
 
             {user ? (
               <>
-                {(settings?.allowPublicSubmissions !== false || isWebmaster) && (
+                {(settings?.groupSubmissionEnabled !== false || isWebmaster) && (
                   <Link
                     href="/submit"
                     className="flex items-center gap-1.5 px-4 py-2 bg-primary text-primary-foreground text-sm font-semibold rounded-xl hover:bg-primary/90 transition-colors shadow-lg shadow-primary/20"
@@ -397,7 +401,7 @@ export default function Navbar() {
                 >
                   Log in
                 </Link>
-                {(settings?.allowPublicSubmissions !== false || isWebmaster) && (
+                {((settings?.groupSubmissionEnabled !== false && settings?.allowPublicSubmissions !== false) || isWebmaster) && (
                   <Link
                     href="/submit"
                     className="flex items-center gap-1.5 px-4 py-2 text-sm font-semibold bg-primary text-primary-foreground hover:bg-primary/90 rounded-xl transition-colors shadow-lg shadow-primary/20"
@@ -413,11 +417,15 @@ export default function Navbar() {
           <div className="md:hidden flex items-center gap-2">
             <button
               onClick={() => {
-                toast.info(`Theme is centrally managed by Webmaster: ${effectiveTheme.toUpperCase()} mode is active.`);
+                if ((settings?.websiteTheme || (settings as any)?.theme) === "system") {
+                  toast.info(`Theme is set by Webmaster to follow your device System Preference (${effectiveTheme.toUpperCase()} mode is currently active).`);
+                } else {
+                  toast.info(`Theme is centrally enforced by Webmaster: ${effectiveTheme.toUpperCase()} mode is active.`);
+                }
               }}
-              className="p-2 rounded-full text-muted-foreground"
-              aria-label={`Theme: ${effectiveTheme}`}
-              title={`Theme: ${effectiveTheme} (Managed centrally by Webmaster)`}
+              className="p-2 rounded-full text-muted-foreground hover:text-foreground transition-colors"
+              aria-label={(settings?.websiteTheme || (settings as any)?.theme) === "system" ? `Theme: System Preference (${effectiveTheme} mode active)` : `Theme: ${effectiveTheme} (Enforced by Webmaster)`}
+              title={(settings?.websiteTheme || (settings as any)?.theme) === "system" ? `Theme: Following System Preference (${effectiveTheme} mode active)` : `Theme: ${effectiveTheme} (Enforced by Webmaster)`}
             >
               {mounted && effectiveTheme === "dark" ? (
                 <Moon className="w-4 h-4 text-primary" />

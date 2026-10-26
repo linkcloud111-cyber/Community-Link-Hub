@@ -75,6 +75,32 @@
         "actorUid": { "type": "string", "maxLength": 128 }
       },
       "required": ["action", "details"]
+    },
+    "VisitorStat": {
+      "title": "VisitorStat",
+      "description": "Daily aggregated visitor hit statistics in /visitor_stats/{dateId}",
+      "type": "object",
+      "properties": {
+        "date": { "type": "string", "maxLength": 20 },
+        "count": { "type": "number" },
+        "lastHitAt": { "type": "string", "maxLength": 50 }
+      },
+      "required": ["date", "count"]
+    },
+    "SearchLog": {
+      "title": "SearchLog",
+      "description": "Aggregated search term analytics in /search_logs/{searchId}",
+      "type": "object",
+      "properties": {
+        "keyword": { "type": "string", "maxLength": 100 },
+        "count": { "type": "number" },
+        "category": { "type": "string", "maxLength": 100 },
+        "platform": { "type": "string", "maxLength": 100 },
+        "language": { "type": "string", "maxLength": 100 },
+        "location": { "type": "string", "maxLength": 100 },
+        "updatedAt": { "type": "string", "maxLength": 50 }
+      },
+      "required": ["keyword", "count"]
     }
   },
   "firestore": {
@@ -97,6 +123,14 @@
     "/audit_logs/{logId}": {
       "schema": "AuditLog",
       "description": "Tamper-proof administrative audit logs"
+    },
+    "/visitor_stats/{dateId}": {
+      "schema": "VisitorStat",
+      "description": "Daily aggregated visitor hit statistics"
+    },
+    "/search_logs/{searchId}": {
+      "schema": "SearchLog",
+      "description": "Aggregated search keyword tracking"
     }
   }
 }

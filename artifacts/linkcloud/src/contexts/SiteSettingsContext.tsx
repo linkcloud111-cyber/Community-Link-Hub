@@ -20,7 +20,7 @@ const DEFAULT_SITE_SETTINGS: SiteSettings = {
   faviconUrl: "",
   theme: "dark",
   websiteTheme: "dark",
-  contactEmail: "admin@linkcloud.in",
+  contactEmail: "support@linkcloud.in",
   heroSectionEnabled: true,
   featuredGroupsEnabled: true,
   latestGroupsEnabled: true,
@@ -56,7 +56,7 @@ const DEFAULT_SITE_SETTINGS: SiteSettings = {
     "To empower students, professionals, local residents, and creators in every corner of India to connect safely through verified community links.",
   aboutVision:
     "Building the largest, cleanest, and safest public index of hyper-local and national digital communities in India.",
-  supportEmail: "linkcloud111@gmail.com",
+  supportEmail: "support@linkcloud.in",
   supportMobile: "+91 79874 10765",
   businessAddress: "Raipur, Chhattisgarh, India",
   officeHours: "Monday – Saturday, 10:00 AM to 6:00 PM IST",

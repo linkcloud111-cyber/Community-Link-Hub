@@ -420,7 +420,9 @@ export default function Home() {
         <section className="bg-card border border-border/80 rounded-3xl p-8 relative overflow-hidden shadow-xl">
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-6 text-center relative z-10">
             <div className="space-y-1">
-              <p className="text-3xl sm:text-4xl font-extrabold text-primary">{allGroupsCount || 500}+</p>
+              <p className="text-3xl sm:text-4xl font-extrabold text-primary">
+                {allGroupsCount > 0 ? `${allGroupsCount.toLocaleString()}+` : "0"}
+              </p>
               <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Active Groups</p>
             </div>
             <div className="space-y-1">
@@ -428,11 +430,13 @@ export default function Home() {
               <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Indian States</p>
             </div>
             <div className="space-y-1">
-              <p className="text-3xl sm:text-4xl font-extrabold text-blue-500">9</p>
+              <p className="text-3xl sm:text-4xl font-extrabold text-blue-500">{platforms.length || 9}</p>
               <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Platforms</p>
             </div>
             <div className="space-y-1">
-              <p className="text-3xl sm:text-4xl font-extrabold text-purple-500">{totalJoins || 12000}+</p>
+              <p className="text-3xl sm:text-4xl font-extrabold text-purple-500">
+                {totalJoins > 0 ? `${totalJoins.toLocaleString()}+` : "0"}
+              </p>
               <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Join Clicks</p>
             </div>
           </div>

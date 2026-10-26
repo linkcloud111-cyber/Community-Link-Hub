@@ -37,6 +37,10 @@ function adminApiPlugin(): Plugin {
         handleAuthProvisionPhoneUser,
         handleAuthCheckRegistration,
       } = await server.ssrLoadModule('/src/server/auth-api.ts');
+      const {
+        handleTelemetryVisitorHit,
+        handleTelemetrySearchQuery,
+      } = await server.ssrLoadModule('/src/server/telemetry-api.ts');
 
       server.middlewares.use((req, res, next) => {
         const url = req.url?.split('?')[0];
@@ -104,6 +108,12 @@ function adminApiPlugin(): Plugin {
         }
         if (url === '/api/email-change/cancel') {
           return handleDevEmailChangeCancel(req, res);
+        }
+        if (url === '/api/telemetry/visitor-hit') {
+          return handleTelemetryVisitorHit(req, res);
+        }
+        if (url === '/api/telemetry/search-query') {
+          return handleTelemetrySearchQuery(req, res);
         }
         next();
       });

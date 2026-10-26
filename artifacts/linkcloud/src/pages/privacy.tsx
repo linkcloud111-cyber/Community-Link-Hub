@@ -29,7 +29,7 @@ export default function PrivacyPage() {
     }
   }, [settings?.privacyPolicyContent]);
 
-  const supportEmail = settings?.supportEmail || settings?.contactEmail || "linkcloud111@gmail.com";
+  const supportEmail = settings?.supportEmail || settings?.contactEmail || "support@linkcloud.in";
   const siteName = settings?.siteName || "LinkCloud";
 
   return (

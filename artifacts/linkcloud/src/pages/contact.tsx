@@ -49,7 +49,7 @@ export default function ContactPage() {
     }
   }, [user, profile]);
 
-  const supportEmail = settings?.supportEmail || settings?.contactEmail || "linkcloud111@gmail.com";
+  const supportEmail = settings?.supportEmail || settings?.contactEmail || "support@linkcloud.in";
   const supportMobile = settings?.supportMobile || "";
   const businessAddress = settings?.businessAddress || "";
   const officeHours = settings?.officeHours || "";

@@ -443,6 +443,15 @@ export async function createGroup(
     submittedByName: string;
   }
 ): Promise<string> {
+  const isWebmaster = await isCurrentUserWebmaster();
+  const siteSettings = await getSiteSettings();
+  if (siteSettings.groupSubmissionEnabled === false && !isWebmaster) {
+    throw new Error("Link submissions are temporarily paused by Webmaster.");
+  }
+  if (!auth?.currentUser && siteSettings.allowPublicSubmissions === false && !isWebmaster) {
+    throw new Error("Guest link submissions are disabled. Please sign in to submit.");
+  }
+
   const { submittedByName, submittedByEmail, ...publicGroupData } = data;
   const ref = await addDoc(collection(db, "groups"), {
     ...publicGroupData,
@@ -3279,12 +3288,12 @@ export async function getSiteSettings(): Promise<SiteSettings> {
     maintenanceMode: false,
 
     // Contact Info
-    contactEmail: "admin@linkcloud.in",
+    contactEmail: "support@linkcloud.in",
     supportEmail: "support@linkcloud.in",
-    supportMobile: "+91 98765 43210",
-    businessAddress: "Connaught Place, New Delhi, India 110001",
-    officeHours: "Monday - Saturday: 09:00 AM - 07:00 PM IST",
-    googleMapUrl: "https://maps.google.com",
+    supportMobile: "+91 79874 10765",
+    businessAddress: "Raipur, Chhattisgarh, India",
+    officeHours: "Monday – Saturday, 10:00 AM to 6:00 PM IST",
+    googleMapUrl: "",
 
     // Social Links
     facebookUrl: "https://facebook.com/linkcloudin",
@@ -3338,7 +3347,7 @@ export async function getSiteSettings(): Promise<SiteSettings> {
     // Legal Pages
     privacyPolicyContent: "LinkCloud respects user privacy. We do not store or inspect private chat content, messages, or member lists.",
     termsContent: "By using LinkCloud, users agree not to submit illegal, spam, copyrighted, or prohibited group links.",
-    dmcaContent: "To file a copyright takedown request under DMCA, please email admin@linkcloud.in with link details.",
+    dmcaContent: "To file a copyright takedown request under DMCA, please email support@linkcloud.in with link details.",
     disclaimerContent: "LinkCloud is a public indexing platform and is not affiliated with WhatsApp, Telegram, Discord, Meta, or Google.",
 
     // SEO Management
@@ -3636,7 +3645,7 @@ export async function toggleAnnouncementEnabled(
 export async function logAuditEvent(
   action: string,
   details: string,
-  adminEmail: string = "admin@linkcloud.in",
+  adminEmail: string = "linkcloud111@gmail.com",
   adminUid: string = "webmaster"
 ): Promise<void> {
   try {
@@ -3791,24 +3800,21 @@ export async function deleteHelpArticle(id: string): Promise<void> {
 export async function logSearchQuery(keyword: string, filters?: { category?: string; platform?: string; language?: string; location?: string }): Promise<void> {
   if (!keyword || keyword.trim().length < 2) return;
   try {
-    const cleanKey = keyword.trim().toLowerCase();
-    const docRef = doc(db, "search_logs", cleanKey);
-    const snap = await getDoc(docRef);
-    if (snap.exists()) {
-      await updateDoc(docRef, { count: increment(1), updatedAt: serverTimestamp() });
-    } else {
-      await setDoc(docRef, {
+    const cleanKey = keyword.trim().toLowerCase().slice(0, 60);
+    // Secure server-authoritative ingestion endpoint
+    await fetch("/api/telemetry/search-query", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
         keyword: cleanKey,
-        category: filters?.category || "",
-        platform: filters?.platform || "",
-        language: filters?.language || "",
-        location: filters?.location || "",
-        count: 1,
-        updatedAt: serverTimestamp(),
-      });
-    }
+        category: filters?.category,
+        platform: filters?.platform,
+        language: filters?.language,
+        location: filters?.location,
+      }),
+    });
   } catch (err) {
-    console.warn("Error logging search query:", err);
+    // Non-fatal analytics telemetry: silently handle to prevent disrupting public search flows
   }
 }
 
@@ -3832,15 +3838,25 @@ export async function getSearchAnalytics(): Promise<import("./types").SearchAnal
 export async function logVisitorHit(): Promise<void> {
   try {
     const today = new Date().toISOString().split("T")[0]; // YYYY-MM-DD
-    const docRef = doc(db, "visitor_stats", today);
-    const snap = await getDoc(docRef);
-    if (snap.exists()) {
-      await updateDoc(docRef, { count: increment(1) });
-    } else {
-      await setDoc(docRef, { date: today, count: 1 });
+    // Session deduplication: prevent quota waste and spamming from repeated re-renders within the same browser session
+    if (typeof window !== "undefined" && window.sessionStorage) {
+      const sessionKey = `lc_vhit_${today}`;
+      if (sessionStorage.getItem(sessionKey)) {
+        return;
+      }
+    }
+
+    // Secure server-authoritative ingestion endpoint: forces server date and atomic increment
+    const res = await fetch("/api/telemetry/visitor-hit", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+    });
+
+    if (res.ok && typeof window !== "undefined" && window.sessionStorage) {
+      sessionStorage.setItem(`lc_vhit_${today}`, "1");
     }
   } catch (err) {
-    console.warn("Error logging visitor hit:", err);
+    // Non-fatal telemetry: prevent network or server errors from bubbling up to user console
   }
 }
 
@@ -4194,7 +4210,7 @@ export async function getGroupsCountForLocation(
 export async function addStateFirestore(
   name: string,
   adminUid = "webmaster",
-  adminEmail = "admin@linkcloud.in"
+  adminEmail = "linkcloud111@gmail.com"
 ): Promise<string> {
   const cleanName = name.trim();
   const id = cleanName.toLowerCase().replace(/[^a-z0-9]+/g, "-");
@@ -4218,7 +4234,7 @@ export async function toggleStateFirestore(
   name: string,
   enabled: boolean,
   adminUid = "webmaster",
-  adminEmail = "admin@linkcloud.in"
+  adminEmail = "linkcloud111@gmail.com"
 ): Promise<void> {
   const docRef = doc(db, "states", id);
   await updateDoc(docRef, {
@@ -4239,7 +4255,7 @@ export async function updateStateFirestore(
   newName: string,
   enabled: boolean,
   adminUid = "webmaster",
-  adminEmail = "admin@linkcloud.in"
+  adminEmail = "linkcloud111@gmail.com"
 ): Promise<void> {
   const docRef = doc(db, "states", id);
   await updateDoc(docRef, {
@@ -4260,7 +4276,7 @@ export async function deleteStateFirestore(
   id: string,
   name: string,
   adminUid = "webmaster",
-  adminEmail = "admin@linkcloud.in"
+  adminEmail = "linkcloud111@gmail.com"
 ): Promise<void> {
   await deleteDoc(doc(db, "states", id));
   await logAuditEvent("Location Updated", `Deleted State "${name}"`, adminEmail, adminUid);
@@ -4272,7 +4288,7 @@ export async function addDistrictFirestore(
   stateName: string,
   name: string,
   adminUid = "webmaster",
-  adminEmail = "admin@linkcloud.in"
+  adminEmail = "linkcloud111@gmail.com"
 ): Promise<string> {
   const cleanName = name.trim();
   const id = `${stateName}-${cleanName}`.toLowerCase().replace(/[^a-z0-9]+/g, "-");
@@ -4302,7 +4318,7 @@ export async function toggleDistrictFirestore(
   name: string,
   enabled: boolean,
   adminUid = "webmaster",
-  adminEmail = "admin@linkcloud.in"
+  adminEmail = "linkcloud111@gmail.com"
 ): Promise<void> {
   const docRef = doc(db, "districts", id);
   await updateDoc(docRef, {
@@ -4323,7 +4339,7 @@ export async function updateDistrictFirestore(
   newName: string,
   enabled: boolean,
   adminUid = "webmaster",
-  adminEmail = "admin@linkcloud.in"
+  adminEmail = "linkcloud111@gmail.com"
 ): Promise<void> {
   const docRef = doc(db, "districts", id);
   await updateDoc(docRef, {
@@ -4345,7 +4361,7 @@ export async function deleteDistrictFirestore(
   name: string,
   stateName: string,
   adminUid = "webmaster",
-  adminEmail = "admin@linkcloud.in"
+  adminEmail = "linkcloud111@gmail.com"
 ): Promise<void> {
   await deleteDoc(doc(db, "districts", id));
   await logAuditEvent(
@@ -4363,7 +4379,7 @@ export async function addCityFirestore(
   districtName: string,
   name: string,
   adminUid = "webmaster",
-  adminEmail = "admin@linkcloud.in"
+  adminEmail = "linkcloud111@gmail.com"
 ): Promise<string> {
   const cleanName = name.trim();
   const id = `${stateName}-${districtName || "all"}-${cleanName}`.toLowerCase().replace(/[^a-z0-9]+/g, "-");
@@ -4393,7 +4409,7 @@ export async function toggleCityFirestore(
   name: string,
   enabled: boolean,
   adminUid = "webmaster",
-  adminEmail = "admin@linkcloud.in"
+  adminEmail = "linkcloud111@gmail.com"
 ): Promise<void> {
   const docRef = doc(db, "cities", id);
   await updateDoc(docRef, {
@@ -4414,7 +4430,7 @@ export async function updateCityFirestore(
   newName: string,
   enabled: boolean,
   adminUid = "webmaster",
-  adminEmail = "admin@linkcloud.in"
+  adminEmail = "linkcloud111@gmail.com"
 ): Promise<void> {
   const docRef = doc(db, "cities", id);
   await updateDoc(docRef, {
@@ -4435,7 +4451,7 @@ export async function deleteCityFirestore(
   id: string,
   name: string,
   adminUid = "webmaster",
-  adminEmail = "admin@linkcloud.in"
+  adminEmail = "linkcloud111@gmail.com"
 ): Promise<void> {
   await deleteDoc(doc(db, "cities", id));
   await logAuditEvent("Location Updated", `Deleted City "${name}"`, adminEmail, adminUid);

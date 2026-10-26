@@ -117,12 +117,12 @@ export default function AdminSettings() {
     websiteTheme: "dark",
     maintenanceMode: false,
 
-    contactEmail: "webmaster@linkcloud.in",
+    contactEmail: "support@linkcloud.in",
     supportEmail: "support@linkcloud.in",
-    supportMobile: "+91 98765 43210",
-    businessAddress: "Connaught Place, New Delhi, India 110001",
-    officeHours: "Monday - Saturday: 09:00 AM - 07:00 PM IST",
-    googleMapUrl: "https://maps.google.com",
+    supportMobile: "+91 79874 10765",
+    businessAddress: "Raipur, Chhattisgarh, India",
+    officeHours: "Monday – Saturday, 10:00 AM to 6:00 PM IST",
+    googleMapUrl: "",
 
     facebookUrl: "https://facebook.com/linkcloudin",
     instagramUrl: "https://instagram.com/linkcloudin",
@@ -154,7 +154,7 @@ export default function AdminSettings() {
 
     privacyPolicyContent: "LinkCloud respects user privacy. We do not store or inspect private chat content, messages, or member lists.",
     termsContent: "By using LinkCloud, users agree not to submit illegal, spam, copyrighted, or prohibited group links.",
-    dmcaContent: "To file a copyright takedown request under DMCA, please email webmaster@linkcloud.in with link details.",
+    dmcaContent: "To file a copyright takedown request under DMCA, please email support@linkcloud.in with link details.",
     disclaimerContent: "LinkCloud is a public indexing platform and is not affiliated with WhatsApp, Telegram, Discord, Meta, or Google.",
 
     metaTitle: "LinkCloud - India's #1 WhatsApp, Telegram & Discord Group Directory",
@@ -644,13 +644,13 @@ export default function AdminSettings() {
                 </div>
 
                 <div>
-                  <label className={labelClass}>Website Default Theme</label>
+                  <label className={labelClass}>Website Theme</label>
                   <select
                     value={settings.websiteTheme}
                     onChange={(e) => setSettings((s) => ({ ...s, websiteTheme: e.target.value as any }))}
                     className={inputClass}
                   >
-                    <option value="dark">Dark Theme (Default)</option>
+                    <option value="dark">Dark Theme</option>
                     <option value="light">Light Theme</option>
                     <option value="system">System Preference</option>
                   </select>
@@ -1391,13 +1391,23 @@ export default function AdminSettings() {
                 />
                 <ToggleCard
                   title="Group Link Submissions"
-                  description="Allow users to submit new community links"
-                  enabled={settings.allowPublicSubmissions}
+                  description="Master platform switch to enable or pause community submissions"
+                  enabled={settings.groupSubmissionEnabled !== false}
                   onToggle={() =>
                     setSettings((s) => ({
                       ...s,
-                      allowPublicSubmissions: !s.allowPublicSubmissions,
-                      groupSubmissionEnabled: !s.allowPublicSubmissions,
+                      groupSubmissionEnabled: s.groupSubmissionEnabled === false ? true : false,
+                    }))
+                  }
+                />
+                <ToggleCard
+                  title="Guest & Public Submissions"
+                  description="Allow unregistered visitors to submit links without signing in"
+                  enabled={settings.allowPublicSubmissions !== false}
+                  onToggle={() =>
+                    setSettings((s) => ({
+                      ...s,
+                      allowPublicSubmissions: s.allowPublicSubmissions === false ? true : false,
                     }))
                   }
                 />

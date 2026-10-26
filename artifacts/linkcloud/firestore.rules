@@ -287,6 +287,49 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
+    // ─── Authentication Forensic Event Logs ───
+    // Append-only telemetry for authentication events (login, OTP, Google, reset, verification).
+    // Strictly forbids storing sensitive credential fields; read restricted to Webmaster; immutable.
+    match /auth_logs/{logId} {
+      allow read: if isWebmaster();
+      allow create: if
+        incoming().keys().hasAll(['event', 'method', 'outcome', 'failureType', 'portal', 'timestampIso']) &&
+        incoming().event is string && incoming().event.size() <= 100 &&
+        incoming().method is string && incoming().method.size() <= 40 &&
+        (incoming().outcome == 'success' || incoming().outcome == 'failure') &&
+        incoming().failureType is string && incoming().failureType.size() <= 60 &&
+        !('password' in incoming()) &&
+        !('pass' in incoming()) &&
+        !('otp' in incoming()) &&
+        !('otpCode' in incoming()) &&
+        !('token' in incoming()) &&
+        !('idToken' in incoming()) &&
+        !('refreshToken' in incoming()) &&
+        !('customToken' in incoming()) &&
+        !('oobCode' in incoming());
+      allow update, delete: if false;
+    }
+
+    match /auth_event_logs/{logId} {
+      allow read: if isWebmaster();
+      allow create: if
+        incoming().keys().hasAll(['event', 'method', 'outcome', 'failureType', 'portal', 'timestampIso']) &&
+        incoming().event is string && incoming().event.size() <= 100 &&
+        incoming().method is string && incoming().method.size() <= 40 &&
+        (incoming().outcome == 'success' || incoming().outcome == 'failure') &&
+        incoming().failureType is string && incoming().failureType.size() <= 60 &&
+        !('password' in incoming()) &&
+        !('pass' in incoming()) &&
+        !('otp' in incoming()) &&
+        !('otpCode' in incoming()) &&
+        !('token' in incoming()) &&
+        !('idToken' in incoming()) &&
+        !('refreshToken' in incoming()) &&
+        !('customToken' in incoming()) &&
+        !('oobCode' in incoming());
+      allow update, delete: if false;
+    }
+
     // ─── Site Settings ───
     match /settings/{settingId} {
       allow read: if true;
@@ -311,16 +354,20 @@ service cloud.firestore {
       allow write: if isWebmaster();
     }
 
-    // ─── Search Logs ───
+    // ─── Search Logs (Aggregated Telemetry) ───
+    // Direct client write is strictly DENIED to prevent count manipulation, document spam, and abuse.
+    // Ingestion occurs exclusively via the server-side telemetry endpoint (/api/telemetry/search-query).
+    // Read is restricted exclusively to authorized Webmaster accounts.
     match /search_logs/{searchId} {
-      allow read: if isWebmaster();
-      allow create, update: if true;
+      allow read, write: if isWebmaster();
     }
 
-    // ─── Visitor Stats ───
+    // ─── Visitor Stats (Aggregated Telemetry) ───
+    // Direct client write is strictly DENIED to prevent count manipulation, document spam, and abuse.
+    // Ingestion occurs exclusively via the server-side telemetry endpoint (/api/telemetry/visitor-hit).
+    // Read is restricted exclusively to authorized Webmaster accounts.
     match /visitor_stats/{dateId} {
-      allow read: if isWebmaster();
-      allow create, update: if true;
+      allow read, write: if isWebmaster();
     }
 
     // ─── Platforms, Content Types & Languages ───
@@ -342,12 +389,12 @@ service cloud.firestore {
     // ─── States, Districts & Cities Collections ───
     match /states/{id} {
       allow read: if true;
-      allow write: if isWebmaster() || !exists(/databases/$(database)/documents/states/andhra-pradesh);
+      allow write: if isWebmaster();
     }
 
     match /districts/{id} {
       allow read: if true;
-      allow write: if isWebmaster() || !exists(/databases/$(database)/documents/states/andhra-pradesh);
+      allow write: if isWebmaster();
     }
 
     match /cities/{id} {

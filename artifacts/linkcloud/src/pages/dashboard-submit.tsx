@@ -439,6 +439,29 @@ export default function DashboardSubmit() {
     );
   }
 
+  // Feature Flag: Group Submissions Disabled
+  if (settings?.groupSubmissionEnabled === false && !isWebmaster && profile?.role !== "webmaster") {
+    return (
+      <div className="max-w-xl mx-auto py-20 px-4 text-center space-y-5">
+        <div className="w-16 h-16 rounded-2xl bg-amber-500/10 text-amber-500 flex items-center justify-center mx-auto border border-amber-500/20 shadow-lg">
+          <ShieldAlert className="w-8 h-8" />
+        </div>
+        <h1 className="text-2xl sm:text-3xl font-extrabold text-foreground">Submissions Temporarily Paused</h1>
+        <p className="text-sm text-muted-foreground leading-relaxed">
+          Community link submissions are currently paused by the webmaster for database review. Please check back later.
+        </p>
+        <div className="pt-2">
+          <Link
+            href="/dashboard"
+            className="px-6 py-2.5 bg-primary text-primary-foreground font-semibold text-sm rounded-xl hover:bg-primary/90 transition inline-block"
+          >
+            Return to Dashboard
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
   // SUCCESS SCREEN VIEW
   if (submittedSuccess) {
     return (

@@ -42,7 +42,7 @@ export default function Footer() {
   }
 
   const siteName = settings?.siteName || "LinkCloud";
-  const supportEmail = settings?.supportEmail || settings?.contactEmail || "linkcloud111@gmail.com";
+  const supportEmail = settings?.supportEmail || settings?.contactEmail || "support@linkcloud.in";
   const supportMobile = settings?.supportMobile || "";
   const footerDesc =
     settings?.footerDescription ||
@@ -148,7 +148,7 @@ export default function Footer() {
                   Browse Communities
                 </Link>
               </li>
-              {settings?.allowPublicSubmissions !== false && (
+              {settings?.groupSubmissionEnabled !== false && settings?.allowPublicSubmissions !== false && (
                 <li>
                   <Link href="/submit" className="hover:text-primary transition-colors">
                     Submit a Community

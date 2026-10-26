@@ -46,6 +46,7 @@ function lazyWithRetry<T extends React.ComponentType<any>>(
 }
 
 // User Dashboard secondary pages
+const PublicSubmitPage = lazyWithRetry(() => import('@/pages/submit'));
 const DashboardSubmit = lazyWithRetry(() => import('@/pages/dashboard-submit'));
 const DashboardEdit = lazyWithRetry(() => import('@/pages/dashboard-edit'));
 
@@ -134,8 +135,8 @@ const ProtectedWebmasterReports = () => <ProtectedRoute component={AdminReports}
 const ProtectedWebmasterContacts = () => <ProtectedRoute component={AdminContacts} webmasterOnly />;
 const ProtectedWebmasterNotifications = () => <ProtectedRoute component={AdminNotifications} webmasterOnly />;
 const ProtectedWebmasterSettings = () => <ProtectedRoute component={AdminSettings} webmasterOnly />;
-const ProtectedWebmasterSecurity = () => <ProtectedRoute component={Dashboard} webmasterOnly />;
-const ProtectedWebmasterChangePassword = () => <ProtectedRoute component={Dashboard} webmasterOnly />;
+const ProtectedWebmasterSecurity = () => <ProtectedRoute component={AdminSettings} webmasterOnly />;
+const ProtectedWebmasterChangePassword = () => <ProtectedRoute component={AdminSettings} webmasterOnly />;
 
 const queryClient = new QueryClient();
 
@@ -240,7 +241,7 @@ function Router() {
               <Route path="/contact" component={ContactPage} />
               <Route path="/complaint" component={ComplaintPage} />
 
-              <Route path="/submit" component={ProtectedDashboardSubmit} />
+              <Route path="/submit" component={PublicSubmitPage} />
               <Route path="/dashboard" component={ProtectedDashboard} />
               <Route path="/my-groups" component={ProtectedDashboard} />
               <Route path="/submitted-groups" component={ProtectedDashboard} />

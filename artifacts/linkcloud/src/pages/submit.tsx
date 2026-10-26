@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { Link } from "wouter";
 import { useAuth } from "@/contexts/AuthContext";
+import { useSiteSettings } from "@/contexts/SiteSettingsContext";
 import { useTaxonomy } from "@/contexts/TaxonomyContext";
 import { useLocation } from "@/contexts/LocationContext";
 import {
@@ -46,6 +47,7 @@ interface FormData {
 
 export default function Submit() {
   const { user, profile, isWebmaster } = useAuth();
+  const { settings } = useSiteSettings();
   const {
     activeCategories: categories,
     activePlatforms: platforms,
@@ -236,6 +238,58 @@ export default function Submit() {
             </button>
           </div>
         </motion.div>
+      </div>
+    );
+  }
+
+  // Feature Flag: Group Submissions Disabled
+  if (settings?.groupSubmissionEnabled === false && !isWebmaster && profile?.role !== "webmaster") {
+    return (
+      <div className="max-w-xl mx-auto py-20 px-4 text-center space-y-5">
+        <div className="w-16 h-16 rounded-2xl bg-amber-500/10 text-amber-500 flex items-center justify-center mx-auto border border-amber-500/20 shadow-lg">
+          <Shield className="w-8 h-8" />
+        </div>
+        <h1 className="text-2xl sm:text-3xl font-extrabold text-foreground">Submissions Temporarily Paused</h1>
+        <p className="text-sm text-muted-foreground leading-relaxed">
+          Community link submissions are currently paused by the webmaster for database review. Please check back later.
+        </p>
+        <div className="pt-2">
+          <Link
+            href="/groups"
+            className="px-6 py-2.5 bg-primary text-primary-foreground font-semibold text-sm rounded-xl hover:bg-primary/90 transition inline-block"
+          >
+            Browse Directory
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  // Feature Flag: Public Guest Submissions Disabled (Sign In Required)
+  if (!user && settings?.allowPublicSubmissions === false) {
+    return (
+      <div className="max-w-xl mx-auto py-20 px-4 text-center space-y-5">
+        <div className="w-16 h-16 rounded-2xl bg-primary/10 text-primary flex items-center justify-center mx-auto border border-primary/20 shadow-lg">
+          <Shield className="w-8 h-8" />
+        </div>
+        <h1 className="text-2xl sm:text-3xl font-extrabold text-foreground">Sign In Required</h1>
+        <p className="text-sm text-muted-foreground leading-relaxed">
+          Guest submissions are disabled. Please sign in or create an account to submit a community listing.
+        </p>
+        <div className="pt-2 flex items-center justify-center gap-3">
+          <Link
+            href="/login"
+            className="px-6 py-2.5 bg-primary text-primary-foreground font-semibold text-sm rounded-xl hover:bg-primary/90 transition inline-block shadow-sm"
+          >
+            Sign In
+          </Link>
+          <Link
+            href="/register"
+            className="px-6 py-2.5 bg-muted text-foreground font-semibold text-sm rounded-xl hover:bg-muted/80 transition inline-block border border-border"
+          >
+            Create Account
+          </Link>
+        </div>
       </div>
     );
   }

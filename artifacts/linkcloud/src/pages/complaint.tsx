@@ -99,7 +99,7 @@ export default function ComplaintPage() {
   };
 
   if (settings?.complaintSystemEnabled === false) {
-    const supportEmail = settings?.supportEmail || settings?.contactEmail || "linkcloud111@gmail.com";
+    const supportEmail = settings?.supportEmail || settings?.contactEmail || "support@linkcloud.in";
     return (
       <div className="max-w-2xl mx-auto py-16 px-4 text-center space-y-5">
         <div className="w-16 h-16 rounded-2xl bg-amber-500/10 text-amber-500 flex items-center justify-center mx-auto border border-amber-500/20 shadow-lg">
