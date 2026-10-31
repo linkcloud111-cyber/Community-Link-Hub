@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useLocation } from "wouter";
 import {
   getSiteSettings,
   updateSiteSettings,
@@ -29,7 +30,8 @@ import type {
   AnnouncementDisplayMode,
 } from "@/lib/types";
 import { clearSiteSettingsCache } from "@/lib/page-meta";
-import { getAuthEventLogs, type AuthEventLogRecord } from "@/lib/auth";
+import { getAuthEventLogs, type AuthEventLogRecord, changePassword, sendPasswordResetLink } from "@/lib/auth";
+import { validatePasswordStrength } from "@/lib/utils";
 import AdminNav from "@/components/admin-nav";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { useAuth } from "@/contexts/AuthContext";
@@ -76,12 +78,18 @@ import {
   Monitor,
   AlertTriangle,
   X,
+  KeyRound,
+  ShieldCheck,
+  Mail,
+  Copy,
+  Check,
 } from "lucide-react";
 
 type SettingsTab =
   | "general"
   | "homepage"
   | "announcements"
+  | "security"
   | "aboutHelp"
   | "faq"
   | "contactSocial"
@@ -95,10 +103,29 @@ type SettingsTab =
 
 export default function AdminSettings() {
   const { user } = useAuth();
-  
-  const [tab, setTab] = useState<SettingsTab>("general");
+  const [location] = useLocation();
+
+  const getInitialTab = (): SettingsTab => {
+    if (typeof window !== "undefined") {
+      const p = window.location.pathname;
+      if (p.includes("/webmaster/security") || p.includes("/webmaster/change-password")) return "security";
+      if (p.includes("/webmaster/announcements")) return "announcements";
+    }
+    return "general";
+  };
+
+  const [tab, setTab] = useState<SettingsTab>(getInitialTab);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+
+  // Sync tab with route location changes
+  useEffect(() => {
+    if (location.includes("/webmaster/security") || location.includes("/webmaster/change-password")) {
+      setTab("security");
+    } else if (location.includes("/webmaster/announcements")) {
+      setTab("announcements");
+    }
+  }, [location]);
 
   // Site Settings State
   const [settings, setSettings] = useState<SiteSettings>({
@@ -213,6 +240,71 @@ export default function AdminSettings() {
   });
   const [previewDevice, setPreviewDevice] = useState<"desktop" | "mobile">("desktop");
   const [announcementSaving, setAnnouncementSaving] = useState(false);
+
+  // Webmaster Security & Password State
+  const [currentWebmasterPass, setCurrentWebmasterPass] = useState("");
+  const [newWebmasterPass, setNewWebmasterPass] = useState("");
+  const [confirmWebmasterPass, setConfirmWebmasterPass] = useState("");
+  const [showCurrentWebmasterPass, setShowCurrentWebmasterPass] = useState(false);
+  const [showNewWebmasterPass, setShowNewWebmasterPass] = useState(false);
+  const [showConfirmWebmasterPass, setShowConfirmWebmasterPass] = useState(false);
+  const [updatingWebmasterPass, setUpdatingWebmasterPass] = useState(false);
+  const [sendingResetEmail, setSendingResetEmail] = useState(false);
+  const [resetEmailCooldown, setResetEmailCooldown] = useState(0);
+  const [copiedUid, setCopiedUid] = useState(false);
+
+  useEffect(() => {
+    if (resetEmailCooldown <= 0) return;
+    const timer = setInterval(() => setResetEmailCooldown((c) => c - 1), 1000);
+    return () => clearInterval(timer);
+  }, [resetEmailCooldown]);
+
+  const handleChangeWebmasterPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!currentWebmasterPass) {
+      toast.error("Please enter your current password.");
+      return;
+    }
+    const check = validatePasswordStrength(newWebmasterPass);
+    if (!check.valid) {
+      toast.error(check.error || "New password does not meet requirements.");
+      return;
+    }
+    if (newWebmasterPass !== confirmWebmasterPass) {
+      toast.error("New passwords do not match.");
+      return;
+    }
+
+    setUpdatingWebmasterPass(true);
+    try {
+      await changePassword(currentWebmasterPass, newWebmasterPass, "webmaster");
+      setCurrentWebmasterPass("");
+      setNewWebmasterPass("");
+      setConfirmWebmasterPass("");
+      toast.success("Webmaster password updated successfully in Firebase Authentication!");
+      const freshLogs = await getAuthEventLogs(40);
+      setAuthEventLogs(freshLogs);
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to update Webmaster password.");
+    } finally {
+      setUpdatingWebmasterPass(false);
+    }
+  };
+
+  const handleSendWebmasterPasswordReset = async () => {
+    if (resetEmailCooldown > 0) return;
+    setSendingResetEmail(true);
+    try {
+      const email = user?.email || "linkcloud111@gmail.com";
+      await sendPasswordResetLink(email);
+      setResetEmailCooldown(60);
+      toast.success(`Password reset email dispatched to ${email}`);
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to dispatch password reset email.");
+    } finally {
+      setSendingResetEmail(false);
+    }
+  };
 
   // FAQ Modal / Input
   const [faqModalOpen, setFaqModalOpen] = useState(false);
@@ -479,7 +571,7 @@ export default function AdminSettings() {
               "Content-Type": "application/json",
               Authorization: `Bearer ${idToken}`,
             },
-            body: JSON.stringify({ id: item.id, ...item, enabled: newEnabled }),
+            body: JSON.stringify({ ...item, enabled: newEnabled }),
           });
           if (res.ok) savedViaApi = true;
         } catch {}
@@ -577,6 +669,7 @@ export default function AdminSettings() {
         <TabButton active={tab === "general"} onClick={() => setTab("general")} icon={Globe} label="Branding & Info" />
         <TabButton active={tab === "homepage"} onClick={() => setTab("homepage")} icon={Layout} label="Homepage Layout" />
         <TabButton active={tab === "announcements"} onClick={() => setTab("announcements")} icon={Megaphone} label="Announcements" />
+        <TabButton active={tab === "security"} onClick={() => setTab("security")} icon={Lock} label="Security & Password" />
         <TabButton active={tab === "aboutHelp"} onClick={() => setTab("aboutHelp")} icon={Info} label="About & Help" />
         <TabButton active={tab === "faq"} onClick={() => setTab("faq")} icon={HelpCircle} label="FAQ Management" />
         <TabButton active={tab === "contactSocial"} onClick={() => setTab("contactSocial")} icon={Phone} label="Contact & Social" />
@@ -855,7 +948,7 @@ export default function AdminSettings() {
                               <div className="flex flex-wrap items-center gap-2">
                                 {/* Type Badge */}
                                 <span
-                                  className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${theme.badge}`}
+                                  className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${theme.badgeBg}`}
                                 >
                                   {item.type}
                                 </span>
@@ -968,6 +1061,297 @@ export default function AdminSettings() {
                       })}
                     </div>
                   )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB: WEBMASTER SECURITY & CHANGE PASSWORD */}
+          {tab === "security" && (
+            <div className="space-y-6 max-w-4xl">
+              {/* 1. Webmaster Identity & Privileged Authority Card */}
+              <div className="bg-card border border-border rounded-3xl p-6 shadow-sm space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-border pb-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-12 h-12 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary">
+                      <ShieldCheck className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <h2 className="font-extrabold text-base text-foreground flex items-center gap-2">
+                        Canonical Webmaster Authority
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                          Root Access Active
+                        </span>
+                      </h2>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        Verified Webmaster identity enforced at Firestore and server-side authentication boundaries.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard.writeText("OXGYTyWBcdYNcHkWyXPbOvVlV2h1");
+                        setCopiedUid(true);
+                        toast.success("Webmaster UID copied to clipboard");
+                        setTimeout(() => setCopiedUid(false), 2000);
+                      }}
+                      className="px-3 py-1.5 bg-muted/60 hover:bg-muted text-foreground text-xs font-semibold rounded-xl border border-border flex items-center gap-1.5 transition"
+                    >
+                      {copiedUid ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+                      <span>Copy Webmaster UID</span>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+                  <div className="p-3.5 rounded-2xl bg-muted/30 border border-border">
+                    <span className="text-[11px] font-medium text-muted-foreground block">Webmaster UID</span>
+                    <span className="font-mono text-xs font-bold text-foreground block mt-1 select-all truncate">
+                      OXGYTyWBcdYNcHkWyXPbOvVlV2h1
+                    </span>
+                  </div>
+                  <div className="p-3.5 rounded-2xl bg-muted/30 border border-border">
+                    <span className="text-[11px] font-medium text-muted-foreground block">Authorized Email</span>
+                    <span className="font-mono text-xs font-bold text-foreground block mt-1 select-all truncate">
+                      linkcloud111@gmail.com
+                    </span>
+                  </div>
+                  <div className="p-3.5 rounded-2xl bg-muted/30 border border-border">
+                    <span className="text-[11px] font-medium text-muted-foreground block">Authorized Mobile</span>
+                    <span className="font-mono text-xs font-bold text-foreground block mt-1 select-all truncate">
+                      +91 79874 10765
+                    </span>
+                  </div>
+                </div>
+
+                <div className="p-4 rounded-2xl bg-primary/5 border border-primary/10 text-xs text-muted-foreground space-y-1">
+                  <p className="font-semibold text-foreground flex items-center gap-1.5">
+                    <Lock className="w-3.5 h-3.5 text-primary" /> Security & Role Immutability Policy
+                  </p>
+                  <p className="leading-relaxed">
+                    LinkCloud enforces a strict zero-admin role hierarchy. The <code className="text-primary font-mono">webmaster</code> role is the only privileged role. Direct writes to <code className="text-primary font-mono">/webmaster</code> are permanently disabled in Firestore rules (<code className="text-primary font-mono">allow write: if false</code>), and user documents disallow role or status elevation.
+                  </p>
+                </div>
+              </div>
+
+              {/* 2. Change Webmaster Password Form */}
+              <div className="bg-card border border-border rounded-3xl p-6 shadow-sm space-y-5">
+                <div className="border-b border-border pb-3 flex items-center justify-between">
+                  <div>
+                    <h2 className="font-bold text-base flex items-center gap-2">
+                      <KeyRound className="w-5 h-5 text-amber-500" /> Change Webmaster Password
+                    </h2>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      Update the password used for email authentication at <code className="font-mono text-foreground">/webmaster/login</code>.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="space-y-4 max-w-lg">
+                  <div>
+                    <label className={labelClass}>Current Password</label>
+                    <div className="relative">
+                      <input
+                        type={showCurrentWebmasterPass ? "text" : "password"}
+                        value={currentWebmasterPass}
+                        onChange={(e) => setCurrentWebmasterPass(e.target.value)}
+                        placeholder="Enter current webmaster password"
+                        className={inputClass}
+                        autoComplete="current-password"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowCurrentWebmasterPass(!showCurrentWebmasterPass)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground p-1"
+                        tabIndex={-1}
+                      >
+                        {showCurrentWebmasterPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className={labelClass}>New Password</label>
+                    <div className="relative">
+                      <input
+                        type={showNewWebmasterPass ? "text" : "password"}
+                        value={newWebmasterPass}
+                        onChange={(e) => setNewWebmasterPass(e.target.value)}
+                        placeholder="Enter robust new password (min. 8 characters)"
+                        className={inputClass}
+                        autoComplete="new-password"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowNewWebmasterPass(!showNewWebmasterPass)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground p-1"
+                        tabIndex={-1}
+                      >
+                        {showNewWebmasterPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                    {newWebmasterPass && (
+                      <div className="mt-2 space-y-1">
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 text-[11px]">
+                          <span className={`flex items-center gap-1 ${newWebmasterPass.length >= 8 ? "text-emerald-500 font-semibold" : "text-muted-foreground"}`}>
+                            {newWebmasterPass.length >= 8 ? "✓" : "○"} 8+ characters
+                          </span>
+                          <span className={`flex items-center gap-1 ${/[A-Z]/.test(newWebmasterPass) ? "text-emerald-500 font-semibold" : "text-muted-foreground"}`}>
+                            {/[A-Z]/.test(newWebmasterPass) ? "✓" : "○"} Uppercase
+                          </span>
+                          <span className={`flex items-center gap-1 ${/[a-z]/.test(newWebmasterPass) ? "text-emerald-500 font-semibold" : "text-muted-foreground"}`}>
+                            {/[a-z]/.test(newWebmasterPass) ? "✓" : "○"} Lowercase
+                          </span>
+                          <span className={`flex items-center gap-1 ${/[0-9!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?]/.test(newWebmasterPass) ? "text-emerald-500 font-semibold" : "text-muted-foreground"}`}>
+                            {/[0-9!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?]/.test(newWebmasterPass) ? "✓" : "○"} Number/Symbol
+                          </span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className={labelClass}>Confirm New Password</label>
+                    <div className="relative">
+                      <input
+                        type={showConfirmWebmasterPass ? "text" : "password"}
+                        value={confirmWebmasterPass}
+                        onChange={(e) => setConfirmWebmasterPass(e.target.value)}
+                        placeholder="Re-enter new password to confirm"
+                        className={inputClass}
+                        autoComplete="new-password"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowConfirmWebmasterPass(!showConfirmWebmasterPass)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground p-1"
+                        tabIndex={-1}
+                      >
+                        {showConfirmWebmasterPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                    {confirmWebmasterPass && newWebmasterPass !== confirmWebmasterPass && (
+                      <p className="text-[11px] text-destructive font-semibold mt-1">
+                        Passwords do not match.
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="pt-2">
+                    <button
+                      type="button"
+                      onClick={handleChangeWebmasterPassword}
+                      disabled={updatingWebmasterPass || !currentWebmasterPass || !newWebmasterPass || newWebmasterPass !== confirmWebmasterPass}
+                      className="px-6 py-2.5 bg-primary text-primary-foreground font-bold text-xs rounded-xl flex items-center justify-center gap-2 shadow-sm hover:bg-primary/90 transition-all disabled:opacity-50"
+                    >
+                      {updatingWebmasterPass ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                      Update Webmaster Password
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* 3. Password Reset Email Flow */}
+              <div className="bg-card border border-border rounded-3xl p-6 shadow-sm space-y-4">
+                <div className="border-b border-border pb-3 flex items-center justify-between">
+                  <div>
+                    <h2 className="font-bold text-base flex items-center gap-2">
+                      <Mail className="w-5 h-5 text-blue-500" /> Webmaster Password Reset Link
+                    </h2>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      Send a secure password recovery link to the canonical Webmaster email address.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-2xl bg-muted/30 border border-border">
+                  <div>
+                    <p className="text-xs font-bold text-foreground">
+                      Recipient: <span className="font-mono text-primary">linkcloud111@gmail.com</span>
+                    </p>
+                    <p className="text-[11px] text-muted-foreground mt-0.5">
+                      LinkCloud uses Firebase Authentication secure email action handlers (<code className="font-mono">/verify-handler?mode=resetPassword</code>).
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleSendWebmasterPasswordReset}
+                    disabled={sendingResetEmail || resetEmailCooldown > 0}
+                    className="px-5 py-2.5 bg-secondary text-secondary-foreground font-bold text-xs rounded-xl hover:bg-secondary/80 transition flex items-center gap-2 flex-shrink-0 disabled:opacity-60"
+                  >
+                    {sendingResetEmail ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Mail className="w-3.5 h-3.5" />
+                    )}
+                    {resetEmailCooldown > 0 ? `Resend in ${resetEmailCooldown}s` : "Dispatch Password Reset Link"}
+                  </button>
+                </div>
+              </div>
+
+              {/* 4. Authentication Audit & Security Logs */}
+              <div className="bg-card border border-border rounded-3xl p-6 shadow-sm space-y-4">
+                <div className="border-b border-border pb-3 flex items-center justify-between">
+                  <div>
+                    <h2 className="font-bold text-base flex items-center gap-2">
+                      <History className="w-5 h-5 text-emerald-500" /> Recent Webmaster Authentication Events
+                    </h2>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      Tamper-proof security audit log recording login attempts, OTP events, and credential updates.
+                    </p>
+                  </div>
+                  <span className="text-[11px] font-mono text-muted-foreground">
+                    Collection: /auth_event_logs
+                  </span>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs text-left">
+                    <thead className="bg-muted/50 text-muted-foreground uppercase font-bold text-[10px]">
+                      <tr>
+                        <th className="p-3 rounded-l-xl">Event</th>
+                        <th className="p-3">Method</th>
+                        <th className="p-3">Outcome</th>
+                        <th className="p-3">Actor / Target</th>
+                        <th className="p-3 rounded-r-xl">Timestamp</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border">
+                      {authEventLogs.slice(0, 10).map((log, idx) => (
+                        <tr key={idx} className="hover:bg-muted/20">
+                          <td className="p-3 font-semibold text-foreground flex items-center gap-2">
+                            <span className={`w-2 h-2 rounded-full ${log.outcome === "success" ? "bg-emerald-500" : "bg-destructive"}`} />
+                            {log.event}
+                          </td>
+                          <td className="p-3 font-mono text-muted-foreground">{log.method}</td>
+                          <td className="p-3">
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                              log.outcome === "success"
+                                ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                                : "bg-destructive/10 text-destructive"
+                            }`}>
+                              {log.outcome}
+                            </span>
+                          </td>
+                          <td className="p-3 font-mono text-muted-foreground truncate max-w-[180px]">
+                            {log.maskedIdentifier || log.identifier || log.uid || "N/A"}
+                          </td>
+                          <td className="p-3 text-muted-foreground whitespace-nowrap">
+                            {log.timestampIso ? new Date(log.timestampIso).toLocaleString("en-IN") : (log.timestamp ? new Date(log.timestamp).toLocaleString("en-IN") : "Just now")}
+                          </td>
+                        </tr>
+                      ))}
+                      {authEventLogs.length === 0 && (
+                        <tr>
+                          <td colSpan={5} className="p-6 text-center text-muted-foreground">
+                            No security authentication logs recorded yet.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
                 </div>
               </div>
             </div>

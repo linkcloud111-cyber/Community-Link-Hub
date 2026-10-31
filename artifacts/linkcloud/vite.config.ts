@@ -217,6 +217,8 @@ export default defineConfig(async ({ command }) => ({
     strictPort: true,
     host: '0.0.0.0',
     allowedHosts: true,
+    hmr: process.env.DISABLE_HMR !== 'true',
+    watch: process.env.DISABLE_HMR === 'true' ? null : {},
     fs: {
       strict: true,
     },

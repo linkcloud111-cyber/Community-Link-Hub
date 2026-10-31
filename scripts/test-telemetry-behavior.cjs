@@ -91,6 +91,17 @@ async function runTests() {
     if (!res.body?.success) throw new Error(`Expected success: true, got ${JSON.stringify(res.body)}`);
   });
 
+  // 7. Search Query: Hindi / Indic Unicode Script Support
+  await assertTest("Search Query: Accepts valid Hindi / Indic Unicode search query", async () => {
+    const res = await makeRequest("/api/telemetry/search-query", "POST", {
+      keyword: "यूपीएससी तैयारी",
+      category: "Education",
+      platform: "Telegram"
+    });
+    if (res.status !== 200) throw new Error(`Expected 200, got ${res.status} (body: ${JSON.stringify(res.body)})`);
+    if (!res.body?.success) throw new Error(`Expected success: true, got ${JSON.stringify(res.body)}`);
+  });
+
   console.log(`\nResults: ${passed} passed, ${failed} failed.`);
   if (failed > 0) {
     process.exit(1);

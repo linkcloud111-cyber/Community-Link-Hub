@@ -1140,31 +1140,96 @@ export async function registerWithEmail(data: {
   }
 }
 
+const PASSWORD_RESET_COOLDOWN_MS = 30000; // 30 seconds
+const PASSWORD_RESET_MAX_PER_HOUR = 5;
+
 export async function sendPasswordResetLink(email: string): Promise<void> {
   const cleanEmail = email ? email.trim() : "";
   if (!cleanEmail) {
     throw new Error("Please enter your email address.");
   }
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(cleanEmail)) {
+    throw new Error("Please enter a valid email address.");
+  }
 
-  try {
-    await safeSendPasswordResetEmail(auth, cleanEmail, `/verify-handler?mode=resetPassword`);
-    await logAuthEvent({
-      event: "PASSWORD_RESET_REQUEST",
-      method: "password_reset",
-      context: "password_reset",
-      outcome: "success",
-      identifier: cleanEmail,
-    });
-  } catch (err: any) {
-    await logAuthEvent({
-      event: "PASSWORD_RESET_REQUEST",
-      method: "password_reset",
-      context: "password_reset",
-      outcome: "failure",
-      error: err,
-      identifier: cleanEmail,
-    });
-    throw new Error(formatAuthError(err, "Unable to process password reset request. Please try again.", "password_reset"));
+  // Client-side rate limiting to prevent abuse
+  if (typeof window !== "undefined" && window.localStorage) {
+    const storageKey = `pwd_reset_timestamps_${cleanEmail.toLowerCase()}`;
+    const raw = window.localStorage.getItem(storageKey);
+    let timestamps: number[] = [];
+    try {
+      if (raw) timestamps = JSON.parse(raw);
+    } catch {}
+
+    const now = Date.now();
+    const pastHourTimestamps = timestamps.filter((t) => now - t < 3600000); // 1 hour
+
+    // 30-second cooldown check
+    const lastSent = pastHourTimestamps[pastHourTimestamps.length - 1];
+    if (lastSent && now - lastSent < PASSWORD_RESET_COOLDOWN_MS) {
+      const waitSec = Math.ceil((PASSWORD_RESET_COOLDOWN_MS - (now - lastSent)) / 1000);
+      throw new Error(`Please wait ${waitSec} seconds before requesting another password reset link.`);
+    }
+
+    // Max 5 emails per hour check
+    if (pastHourTimestamps.length >= PASSWORD_RESET_MAX_PER_HOUR) {
+      throw new Error("Maximum 5 password reset requests per hour limit reached. Please try again later.");
+    }
+
+    try {
+      await safeSendPasswordResetEmail(auth, cleanEmail, `/verify-handler?mode=resetPassword`);
+      pastHourTimestamps.push(now);
+      window.localStorage.setItem(storageKey, JSON.stringify(pastHourTimestamps));
+
+      await logAuthEvent({
+        event: "PASSWORD_RESET_REQUEST",
+        method: "password_reset",
+        context: "password_reset",
+        outcome: "success",
+        identifier: cleanEmail,
+      });
+    } catch (err: any) {
+      await logAuthEvent({
+        event: "PASSWORD_RESET_REQUEST",
+        method: "password_reset",
+        context: "password_reset",
+        outcome: "failure",
+        error: err,
+        identifier: cleanEmail,
+      });
+      const code = err?.code || "";
+      const msg = String(err?.message || "");
+      if (code === "auth/too-many-requests" || msg.includes("too-many-requests")) {
+        throw new Error("Too many password reset requests. Please wait a few minutes before trying again.");
+      }
+      if (code === "auth/user-not-found") {
+        // Do not leak user existence if security sensitive, but give helpful guidance
+        throw new Error("No account found with this email address. Please check your spelling or register.");
+      }
+      throw new Error(formatAuthError(err, "Unable to process password reset request. Please try again.", "password_reset"));
+    }
+  } else {
+    try {
+      await safeSendPasswordResetEmail(auth, cleanEmail, `/verify-handler?mode=resetPassword`);
+      await logAuthEvent({
+        event: "PASSWORD_RESET_REQUEST",
+        method: "password_reset",
+        context: "password_reset",
+        outcome: "success",
+        identifier: cleanEmail,
+      });
+    } catch (err: any) {
+      await logAuthEvent({
+        event: "PASSWORD_RESET_REQUEST",
+        method: "password_reset",
+        context: "password_reset",
+        outcome: "failure",
+        error: err,
+        identifier: cleanEmail,
+      });
+      throw new Error(formatAuthError(err, "Unable to process password reset request. Please try again.", "password_reset"));
+    }
   }
 }
 
@@ -1225,8 +1290,19 @@ export async function resendVerificationEmail(user: User): Promise<void> {
 export async function updateUserPassword(
   user: User,
   currentPass: string,
-  newPass: string
+  newPass: string,
+  portal: "webmaster" | "user" = "user"
 ): Promise<void> {
+  if (!currentPass || !currentPass.trim()) {
+    throw new Error("Current password is required.");
+  }
+  if (!newPass || !newPass.trim()) {
+    throw new Error("New password is required.");
+  }
+  if (currentPass === newPass) {
+    throw new Error("New password must be different from your current password.");
+  }
+
   const passCheck = validatePasswordStrength(newPass);
   if (!passCheck.valid) {
     throw new Error(passCheck.error || "New password does not meet requirements.");
@@ -1248,7 +1324,7 @@ export async function updateUserPassword(
       outcome: "success",
       uid: user.uid,
       identifier: user.email,
-      portal: "user",
+      portal,
     });
   } catch (err: any) {
     await logAuthEvent({
@@ -1259,7 +1335,7 @@ export async function updateUserPassword(
       error: err,
       uid: user.uid,
       identifier: user.email,
-      portal: "user",
+      portal,
     });
     const code = err?.code || "";
     const msg = String(err?.message || "");
@@ -1269,10 +1345,34 @@ export async function updateUserPassword(
       msg.includes("wrong-password") ||
       msg.includes("invalid-credential")
     ) {
-      throw new Error("Incorrect current password.");
+      throw new Error("Incorrect current password. Please re-enter your existing password.");
+    }
+    if (code === "auth/requires-recent-login" || msg.includes("requires-recent-login")) {
+      throw new Error("Your session requires recent verification. Please sign in again and retry.");
+    }
+    if (code === "auth/user-token-expired" || msg.includes("token-expired")) {
+      throw new Error("Your session has expired. Please sign in again.");
+    }
+    if (code === "auth/too-many-requests" || msg.includes("too-many-requests")) {
+      throw new Error("Too many failed attempts. Please wait a few minutes before trying again.");
+    }
+    if (code === "auth/weak-password" || msg.includes("weak-password")) {
+      throw new Error("The chosen password is too weak. Please use a stronger combination of letters, numbers, and symbols.");
     }
     throw new Error(formatAuthError(err));
   }
+}
+
+export async function changePassword(
+  currentPass: string,
+  newPass: string,
+  portal: "webmaster" | "user" = "user"
+): Promise<void> {
+  const currentUser = auth.currentUser;
+  if (!currentUser) {
+    throw new Error("Authentication required. Please sign in to update your password.");
+  }
+  return updateUserPassword(currentUser, currentPass, newPass, portal);
 }
 
 export const EMAIL_CHANGE_TTL_MS = 5 * 60 * 1000; // 5 minutes

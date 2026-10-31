@@ -97,7 +97,7 @@ const DEFAULT_SITE_SETTINGS: SiteSettings = {
   maintenanceMode: false,
   maintenanceMessage:
     "LinkCloud is currently undergoing scheduled system upgrades and database optimization. We will be back online shortly!",
-  allowPublicSubmissions: true,
+  allowPublicSubmissions: false, // Documented fail-closed safe fallback
   requireApproval: true,
   filterSettings: {
     categoryFilterEnabled: true,

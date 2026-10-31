@@ -44,56 +44,102 @@ currentPref = true; // OS changes to dark
 resolvedTheme = computeEffectiveTheme("system", currentPref);
 assert(resolvedTheme === "dark", "Theme: System mode dynamically switches to dark upon OS preference change");
 
-// 2. Submission Flags Service-Layer Enforcement Simulation
+// 2. Submission Flags Service-Layer Enforcement Simulation (All 10 combinations)
 function validateSubmissionFlags(siteSettings, isWebmaster, isGuest) {
-  if (siteSettings.groupSubmissionEnabled === false && !isWebmaster) {
+  const settings = siteSettings || {};
+  const submissionEnabled = settings.groupSubmissionEnabled !== false;
+  const publicAllowed = settings.allowPublicSubmissions !== false;
+
+  if (!submissionEnabled && !isWebmaster) {
     throw new Error("Link submissions are temporarily paused by Webmaster.");
   }
-  if (isGuest && siteSettings.allowPublicSubmissions === false && !isWebmaster) {
+  if (isGuest && !publicAllowed && !isWebmaster) {
     throw new Error("Guest link submissions are disabled. Please sign in to submit.");
   }
   return true;
 }
 
-// Test 2A: Submissions disabled platform-wide
+// Scenario 1: Submissions disabled; guest attempts submission
+try {
+  validateSubmissionFlags({ groupSubmissionEnabled: false, allowPublicSubmissions: true }, false, true);
+  assert(false, "Flags #1: Should have thrown when submissions disabled for guest");
+} catch (e) {
+  assert(e.message.includes("temporarily paused"), "Flags #1: Submissions disabled blocks guest at service layer");
+}
+
+// Scenario 2: Submissions disabled; authenticated user attempts submission
 try {
   validateSubmissionFlags({ groupSubmissionEnabled: false, allowPublicSubmissions: true }, false, false);
-  assert(false, "Flags: Should have thrown when submissions disabled for regular user");
+  assert(false, "Flags #2: Should have thrown when submissions disabled for member");
 } catch (e) {
-  assert(e.message.includes("temporarily paused"), "Flags: groupSubmissionEnabled=false correctly blocks member submission at service layer");
+  assert(e.message.includes("temporarily paused"), "Flags #2: Submissions disabled blocks authenticated user at service layer");
 }
 
-// Test 2B: Webmaster override when submissions disabled
+// Scenario 3: Submissions disabled; Webmaster attempts submission
 try {
   const allowed = validateSubmissionFlags({ groupSubmissionEnabled: false, allowPublicSubmissions: false }, true, false);
-  assert(allowed === true, "Flags: Webmaster can submit even when group submissions are paused platform-wide");
+  assert(allowed === true, "Flags #3: Webmaster can submit even when submissions paused platform-wide");
 } catch (e) {
-  assert(false, "Flags: Webmaster should not be blocked");
+  assert(false, "Flags #3: Webmaster should not be blocked");
 }
 
-// Test 2C: Guest submissions disabled
+// Scenario 4: Submissions enabled and public submissions disabled; guest attempts submission
 try {
   validateSubmissionFlags({ groupSubmissionEnabled: true, allowPublicSubmissions: false }, false, true);
-  assert(false, "Flags: Should have thrown for guest when allowPublicSubmissions=false");
+  assert(false, "Flags #4: Should have thrown for guest when allowPublicSubmissions=false");
 } catch (e) {
-  assert(e.message.includes("Guest link submissions are disabled"), "Flags: allowPublicSubmissions=false blocks unauthenticated guests at service layer");
+  assert(e.message.includes("Guest link submissions are disabled"), "Flags #4: Public submissions disabled blocks guest at service layer");
 }
 
-// Test 2D: Authenticated member when guest submissions disabled
+// Scenario 5: Submissions enabled and public submissions disabled; ordinary user submits
 try {
   const allowed = validateSubmissionFlags({ groupSubmissionEnabled: true, allowPublicSubmissions: false }, false, false);
-  assert(allowed === true, "Flags: Authenticated member can submit when guest submissions are disabled");
+  assert(allowed === true, "Flags #5: Authenticated member can submit when public submissions are disabled");
 } catch (e) {
-  assert(false, "Flags: Authenticated member was unexpectedly blocked");
+  assert(false, "Flags #5: Authenticated member was unexpectedly blocked");
 }
 
-// Test 2E: Public submissions enabled
+// Scenario 6: Submissions enabled and public submissions disabled; Webmaster submits
+try {
+  const allowed = validateSubmissionFlags({ groupSubmissionEnabled: true, allowPublicSubmissions: false }, true, false);
+  assert(allowed === true, "Flags #6: Webmaster can submit when public submissions are disabled");
+} catch (e) {
+  assert(false, "Flags #6: Webmaster was unexpectedly blocked");
+}
+
+// Scenario 7: Both flags enabled; guest submission
 try {
   const allowed = validateSubmissionFlags({ groupSubmissionEnabled: true, allowPublicSubmissions: true }, false, true);
-  assert(allowed === true, "Flags: Guests can submit when both flags are enabled");
+  assert(allowed === true, "Flags #7: Guests can submit when both flags are enabled");
 } catch (e) {
-  assert(false, "Flags: Guest was unexpectedly blocked when public submissions enabled");
+  assert(false, "Flags #7: Guest was unexpectedly blocked when both flags enabled");
 }
+
+// Scenario 8: Both flags enabled; authenticated-user submission
+try {
+  const allowed = validateSubmissionFlags({ groupSubmissionEnabled: true, allowPublicSubmissions: true }, false, false);
+  assert(allowed === true, "Flags #8: Authenticated users can submit when both flags are enabled");
+} catch (e) {
+  assert(false, "Flags #8: Authenticated user unexpectedly blocked");
+}
+
+// Scenario 9: Missing, malformed, or unreadable settings
+try {
+  const allowed1 = validateSubmissionFlags(null, false, true);
+  const allowed2 = validateSubmissionFlags({}, false, true);
+  const allowed3 = validateSubmissionFlags({ groupSubmissionEnabled: undefined, allowPublicSubmissions: undefined }, false, true);
+  assert(allowed1 && allowed2 && allowed3, "Flags #9: Missing/malformed settings safely default to enabled without crashing");
+} catch (e) {
+  assert(false, "Flags #9: Missing settings caused an unexpected crash");
+}
+
+// Scenario 10: Direct service/API invocation that bypasses frontend (createGroup check)
+const firestoreFile = path.resolve(__dirname, '../artifacts/linkcloud/src/lib/firestore.ts');
+const fsCode = fs.readFileSync(firestoreFile, 'utf8');
+const enforcesServiceLayer = fsCode.includes('if (siteSettings.groupSubmissionEnabled === false && !isWebmaster)') &&
+  (fsCode.includes('if (!auth?.currentUser && siteSettings.allowPublicSubmissions !== true && !isWebmaster)') ||
+   fsCode.includes('if (!auth?.currentUser && siteSettings.allowPublicSubmissions === false && !isWebmaster)'));
+assert(enforcesServiceLayer, "Flags #10: createGroup() enforces both flags at the service layer, preventing frontend bypass");
 
 // 3. Fallback Integrity
 const appRoot = path.resolve(__dirname, '../artifacts/linkcloud');

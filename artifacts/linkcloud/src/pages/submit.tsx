@@ -265,8 +265,8 @@ export default function Submit() {
     );
   }
 
-  // Feature Flag: Public Guest Submissions Disabled (Sign In Required)
-  if (!user && settings?.allowPublicSubmissions === false) {
+  // Feature Flag: Public Guest Submissions Disabled (Sign In Required - Fail-Closed)
+  if (!user && settings?.allowPublicSubmissions !== true) {
     return (
       <div className="max-w-xl mx-auto py-20 px-4 text-center space-y-5">
         <div className="w-16 h-16 rounded-2xl bg-primary/10 text-primary flex items-center justify-center mx-auto border border-primary/20 shadow-lg">

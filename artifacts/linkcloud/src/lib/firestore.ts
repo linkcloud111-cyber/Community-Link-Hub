@@ -448,7 +448,7 @@ export async function createGroup(
   if (siteSettings.groupSubmissionEnabled === false && !isWebmaster) {
     throw new Error("Link submissions are temporarily paused by Webmaster.");
   }
-  if (!auth?.currentUser && siteSettings.allowPublicSubmissions === false && !isWebmaster) {
+  if (!auth?.currentUser && siteSettings.allowPublicSubmissions !== true && !isWebmaster) {
     throw new Error("Guest link submissions are disabled. Please sign in to submit.");
   }
 
@@ -3374,7 +3374,7 @@ export async function getSiteSettings(): Promise<SiteSettings> {
     structuredDataJson: "{\n  \"@context\": \"https://schema.org\",\n  \"@type\": \"WebSite\",\n  \"name\": \"LinkCloud\",\n  \"url\": \"https://linkcloud.in\"\n}",
 
     // System Settings
-    allowPublicSubmissions: true,
+    allowPublicSubmissions: false, // Documented fail-closed safe fallback
     groupSubmissionEnabled: true,
     userRegistrationEnabled: true,
     googleLoginEnabled: true,

@@ -14,11 +14,42 @@ export async function onRequestOptions(): Promise<Response> {
   });
 }
 
+const visitorRateMap = new Map<string, { count: number; resetAt: number }>();
+function checkRateLimit(ip: string, limit: number, windowMs: number): boolean {
+  const now = Date.now();
+  const entry = visitorRateMap.get(ip);
+  if (!entry || entry.resetAt <= now) {
+    visitorRateMap.set(ip, { count: 1, resetAt: now + windowMs });
+    return true;
+  }
+  if (entry.count >= limit) {
+    return false;
+  }
+  entry.count++;
+  return true;
+}
+
 export async function onRequestPost(context: {
   request: Request;
   env: Env;
 }): Promise<Response> {
   const { request, env } = context;
+
+  // Rate limiting guard
+  const clientIp =
+    request.headers.get("cf-connecting-ip") ||
+    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+    "unknown";
+
+  if (!checkRateLimit(clientIp, 20, 60000)) {
+    return errorResponse("Too many telemetry requests. Please slow down.", 429);
+  }
+
+  // Request size limit guard
+  const contentLength = Number(request.headers.get("content-length") || "0");
+  if (contentLength > 1024) {
+    return errorResponse("Payload too large", 413);
+  }
 
   try {
     const today = new Date().toISOString().split("T")[0];
@@ -31,7 +62,7 @@ export async function onRequestPost(context: {
     const projectId = serviceAccount.project_id || env.FIREBASE_PROJECT_ID || "linkcloud-5bb2f";
     const docPath = `projects/${projectId}/databases/(default)/documents/visitor_stats/${today}`;
 
-    // Read current doc to atomically increment in REST API
+    // Read current doc to increment in REST API
     const existing = await firestoreGetDoc(`visitor_stats/${today}`, env);
     const currentCount = typeof existing?.count === "number" ? existing.count : 0;
     const newCount = currentCount + 1;

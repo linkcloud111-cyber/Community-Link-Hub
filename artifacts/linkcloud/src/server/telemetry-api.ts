@@ -178,8 +178,8 @@ export async function handleTelemetrySearchQuery(
       return sendJson(res, { error: "Keyword contains invalid characters" }, 400);
     }
 
-    // Strip remaining unsafe characters, allow alphanumeric, spaces, hyphens, underscores
-    const cleanKeyword = rawKeyword.toLowerCase().replace(/[^a-zA-Z0-9\s\-_]/g, "").trim().slice(0, 60);
+    // Strip remaining unsafe characters, allow Unicode letters/marks (Hindi/Indic scripts), numbers, spaces, hyphens, underscores
+    const cleanKeyword = rawKeyword.toLowerCase().normalize("NFC").replace(/[^\p{L}\p{M}\p{N}\s\-_]/gu, "").trim().slice(0, 60);
     if (cleanKeyword.length < 2) {
       return sendJson(res, { error: "Keyword contains only invalid characters" }, 400);
     }

@@ -14,11 +14,42 @@ export async function onRequestOptions(): Promise<Response> {
   });
 }
 
+const searchRateMap = new Map<string, { count: number; resetAt: number }>();
+function checkSearchRateLimit(ip: string, limit: number, windowMs: number): boolean {
+  const now = Date.now();
+  const entry = searchRateMap.get(ip);
+  if (!entry || entry.resetAt <= now) {
+    searchRateMap.set(ip, { count: 1, resetAt: now + windowMs });
+    return true;
+  }
+  if (entry.count >= limit) {
+    return false;
+  }
+  entry.count++;
+  return true;
+}
+
 export async function onRequestPost(context: {
   request: Request;
   env: Env;
 }): Promise<Response> {
   const { request, env } = context;
+
+  // Rate limiting guard
+  const clientIp =
+    request.headers.get("cf-connecting-ip") ||
+    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+    "unknown";
+
+  if (!checkSearchRateLimit(clientIp, 40, 60000)) {
+    return errorResponse("Too many search requests. Please slow down.", 429);
+  }
+
+  // Request size limit guard
+  const contentLength = Number(request.headers.get("content-length") || "0");
+  if (contentLength > 2048) {
+    return errorResponse("Payload too large", 413);
+  }
 
   try {
     const body: any = await request.json().catch(() => ({}));
@@ -32,7 +63,8 @@ export async function onRequestPost(context: {
       return errorResponse("Keyword contains invalid characters", 400);
     }
 
-    const cleanKeyword = rawKeyword.toLowerCase().replace(/[^a-zA-Z0-9\s\-_]/g, "").trim().slice(0, 60);
+    // Strip remaining unsafe characters, allow Unicode letters/marks (Hindi/Indic scripts), numbers, spaces, hyphens, underscores
+    const cleanKeyword = rawKeyword.toLowerCase().normalize("NFC").replace(/[^\p{L}\p{M}\p{N}\s\-_]/gu, "").trim().slice(0, 60);
     if (cleanKeyword.length < 2) {
       return errorResponse("Keyword contains only invalid characters", 400);
     }
