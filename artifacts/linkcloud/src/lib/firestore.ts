@@ -3167,6 +3167,7 @@ export async function getAdminStats() {
     complaintsSnap,
     favoritesSnap,
     deletionsSnap,
+    visitorStatsSnap,
   ] = await Promise.all([
     getDocs(collection(db, "groups")),
     getDocs(collection(db, "users")),
@@ -3176,6 +3177,7 @@ export async function getAdminStats() {
     getDocs(collection(db, "complaints")),
     getDocs(collection(db, "favorites")),
     getDocs(collection(db, "deletionRequests")),
+    getDocs(collection(db, "visitor_stats")).catch(() => ({ docs: [] } as any)),
   ]);
 
   const groups = groupsSnap.docs.map((d) => ({ id: d.id, ...d.data() } as Group));
@@ -3228,8 +3230,14 @@ export async function getAdminStats() {
   const pendingComplaints = complaints.filter((c) => c.status === "pending").length;
   const pendingDeletions = deletionsSnap.docs.filter((d) => d.data().status === "pending").length;
 
+  const realVisitorHits = visitorStatsSnap.docs.reduce(
+    (sum: number, d: any) => sum + (Number(d.data()?.count) || 0),
+    0
+  );
+  const totalVisitors = realVisitorHits > 0 ? realVisitorHits : totalViews;
+
   return {
-    totalVisitors: Math.max(totalViews + 1240, 1500),
+    totalVisitors,
     totalUsers: usersSnap.size,
     totalGroups: groups.length,
     pendingGroups: pending,
