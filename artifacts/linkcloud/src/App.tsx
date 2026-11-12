@@ -137,6 +137,7 @@ const ProtectedWebmasterNotifications = () => <ProtectedRoute component={AdminNo
 const ProtectedWebmasterSettings = () => <ProtectedRoute component={AdminSettings} webmasterOnly />;
 const ProtectedWebmasterSecurity = () => <ProtectedRoute component={AdminSettings} webmasterOnly />;
 const ProtectedWebmasterChangePassword = () => <ProtectedRoute component={AdminSettings} webmasterOnly />;
+const ProtectedWebmasterMyGroups = () => <ProtectedRoute component={Dashboard} webmasterOnly />;
 
 const queryClient = new QueryClient();
 
@@ -275,7 +276,7 @@ function Router() {
               <Route path="/webmaster/announcements" component={ProtectedWebmasterSettings} />
               <Route path="/webmaster/security" component={ProtectedWebmasterSecurity} />
               <Route path="/webmaster/change-password" component={ProtectedWebmasterChangePassword} />
-              <Route path="/webmaster/my-groups" component={ProtectedDashboard} />
+              <Route path="/webmaster/my-groups" component={ProtectedWebmasterMyGroups} />
               
               {/* Legacy Admin Aliases (Webmaster Protected) */}
               <Route path="/admin" component={ProtectedWebmasterOverview} />

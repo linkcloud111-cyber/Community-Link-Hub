@@ -245,6 +245,10 @@ async function runWebmasterBehavioralAudit() {
       "/webmaster/contacts",
       "/webmaster/notifications",
       "/webmaster/settings",
+      "/webmaster/my-groups",
+      "/admin",
+      "/admin/dashboard",
+      "/admin/settings",
       "/api/telemetry/visitor-hit",
       "/api/telemetry/search-query",
     ];
