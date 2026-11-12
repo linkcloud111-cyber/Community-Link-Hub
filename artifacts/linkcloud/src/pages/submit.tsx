@@ -242,8 +242,8 @@ export default function Submit() {
     );
   }
 
-  // Feature Flag: Group Submissions Disabled
-  if (settings?.groupSubmissionEnabled === false && !isWebmaster && profile?.role !== "webmaster") {
+  // Feature Flag: Group Submissions Disabled (Fail-Closed)
+  if (settings?.groupSubmissionEnabled !== true && !isWebmaster && profile?.role !== "webmaster") {
     return (
       <div className="max-w-xl mx-auto py-20 px-4 text-center space-y-5">
         <div className="w-16 h-16 rounded-2xl bg-amber-500/10 text-amber-500 flex items-center justify-center mx-auto border border-amber-500/20 shadow-lg">

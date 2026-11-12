@@ -52,6 +52,7 @@ import {
   performPermanentUserDeletion,
   generateUniqueAccountUid,
   ensureUserAccountUid,
+  getUserProfileByPhone,
 } from "./firestore";
 import type { EmailChangeRequest } from "./types";
 import {
@@ -1204,8 +1205,9 @@ export async function sendPasswordResetLink(email: string): Promise<void> {
         throw new Error("Too many password reset requests. Please wait a few minutes before trying again.");
       }
       if (code === "auth/user-not-found") {
-        // Do not leak user existence if security sensitive, but give helpful guidance
-        throw new Error("No account found with this email address. Please check your spelling or register.");
+        // Account enumeration defense: Suppress existence disclosure to external callers
+        // Log internally, but treat externally as dispatched
+        return;
       }
       throw new Error(formatAuthError(err, "Unable to process password reset request. Please try again.", "password_reset"));
     }
@@ -1228,6 +1230,10 @@ export async function sendPasswordResetLink(email: string): Promise<void> {
         error: err,
         identifier: cleanEmail,
       });
+      const code = err?.code || "";
+      if (code === "auth/user-not-found") {
+        return; // Suppress enumeration
+      }
       throw new Error(formatAuthError(err, "Unable to process password reset request. Please try again.", "password_reset"));
     }
   }

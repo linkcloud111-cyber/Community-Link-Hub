@@ -277,6 +277,19 @@ function Router() {
               <Route path="/webmaster/change-password" component={ProtectedWebmasterChangePassword} />
               <Route path="/webmaster/my-groups" component={ProtectedDashboard} />
               
+              {/* Legacy Admin Aliases (Webmaster Protected) */}
+              <Route path="/admin" component={ProtectedWebmasterOverview} />
+              <Route path="/admin/dashboard" component={ProtectedWebmasterOverview} />
+              <Route path="/admin/groups" component={ProtectedWebmasterGroups} />
+              <Route path="/admin/users" component={ProtectedWebmasterUsers} />
+              <Route path="/admin/categories" component={ProtectedWebmasterCategories} />
+              <Route path="/admin/locations" component={ProtectedWebmasterLocations} />
+              <Route path="/admin/reports" component={ProtectedWebmasterReports} />
+              <Route path="/admin/contacts" component={ProtectedWebmasterContacts} />
+              <Route path="/admin/notifications" component={ProtectedWebmasterNotifications} />
+              <Route path="/admin/settings" component={ProtectedWebmasterSettings} />
+              <Route path="/admin/security" component={ProtectedWebmasterSecurity} />
+              
               <Route component={NotFound} />
             </Switch>
           </Suspense>

@@ -14,6 +14,9 @@ export async function onRequestOptions(): Promise<Response> {
   });
 }
 
+// Isolate-local sliding-window rate limiting map for Cloudflare Pages worker instances.
+// Note: In Cloudflare edge runtime, this map is local to the executing worker isolate.
+// Global distributed rate limiting across all global PoPs would require Cloudflare KV or Durable Objects.
 const visitorRateMap = new Map<string, { count: number; resetAt: number }>();
 function checkRateLimit(ip: string, limit: number, windowMs: number): boolean {
   const now = Date.now();
@@ -35,11 +38,9 @@ export async function onRequestPost(context: {
 }): Promise<Response> {
   const { request, env } = context;
 
-  // Rate limiting guard
-  const clientIp =
-    request.headers.get("cf-connecting-ip") ||
-    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
-    "unknown";
+  // Trusted client-IP mechanism: Cloudflare edge proxy strips any client-provided cf-connecting-ip
+  // and authoritatively attaches the actual socket IP. Do not trust x-forwarded-for, which is easily spoofed.
+  const clientIp = request.headers.get("cf-connecting-ip") || "edge-unknown";
 
   if (!checkRateLimit(clientIp, 20, 60000)) {
     return errorResponse("Too many telemetry requests. Please slow down.", 429);

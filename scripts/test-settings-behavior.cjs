@@ -44,11 +44,13 @@ currentPref = true; // OS changes to dark
 resolvedTheme = computeEffectiveTheme("system", currentPref);
 assert(resolvedTheme === "dark", "Theme: System mode dynamically switches to dark upon OS preference change");
 
-// 2. Submission Flags Service-Layer Enforcement Simulation (All 10 combinations)
+// 2. Submission Flags Service-Layer Enforcement Simulation (All combinations + Fail-Closed)
 function validateSubmissionFlags(siteSettings, isWebmaster, isGuest) {
   const settings = siteSettings || {};
-  const submissionEnabled = settings.groupSubmissionEnabled !== false;
-  const publicAllowed = settings.allowPublicSubmissions !== false;
+  // STRICT FAIL-CLOSED POLICY: groupSubmissionEnabled must explicitly be true
+  const submissionEnabled = settings.groupSubmissionEnabled === true;
+  // STRICT FAIL-CLOSED POLICY: allowPublicSubmissions must explicitly be true
+  const publicAllowed = settings.allowPublicSubmissions === true;
 
   if (!submissionEnabled && !isWebmaster) {
     throw new Error("Link submissions are temporarily paused by Webmaster.");
@@ -123,22 +125,47 @@ try {
   assert(false, "Flags #8: Authenticated user unexpectedly blocked");
 }
 
-// Scenario 9: Missing, malformed, or unreadable settings
+// Scenario 9: Missing, null, malformed, or unreadable settings MUST FAIL-CLOSED
 try {
-  const allowed1 = validateSubmissionFlags(null, false, true);
-  const allowed2 = validateSubmissionFlags({}, false, true);
-  const allowed3 = validateSubmissionFlags({ groupSubmissionEnabled: undefined, allowPublicSubmissions: undefined }, false, true);
-  assert(allowed1 && allowed2 && allowed3, "Flags #9: Missing/malformed settings safely default to enabled without crashing");
+  validateSubmissionFlags(null, false, true);
+  assert(false, "Flags #9A: Missing null settings must NOT allow guest submissions");
 } catch (e) {
-  assert(false, "Flags #9: Missing settings caused an unexpected crash");
+  assert(e.message.includes("temporarily paused"), "Flags #9A: Missing null settings safely reject guest submissions (fail-closed)");
+}
+
+try {
+  validateSubmissionFlags({}, false, true);
+  assert(false, "Flags #9B: Empty settings object must NOT allow guest submissions");
+} catch (e) {
+  assert(e.message.includes("temporarily paused"), "Flags #9B: Empty settings object safely rejects guest submissions (fail-closed)");
+}
+
+try {
+  validateSubmissionFlags({ groupSubmissionEnabled: undefined, allowPublicSubmissions: undefined }, false, true);
+  assert(false, "Flags #9C: Undefined settings flags must NOT allow guest submissions");
+} catch (e) {
+  assert(e.message.includes("temporarily paused"), "Flags #9C: Undefined settings flags safely reject guest submissions (fail-closed)");
+}
+
+try {
+  validateSubmissionFlags({ groupSubmissionEnabled: true, allowPublicSubmissions: undefined }, false, true);
+  assert(false, "Flags #9D: Undefined allowPublicSubmissions must NOT allow guest submissions");
+} catch (e) {
+  assert(e.message.includes("Guest link submissions are disabled"), "Flags #9D: Undefined allowPublicSubmissions safely rejects guest submissions");
+}
+
+try {
+  const wmAllowed = validateSubmissionFlags(null, true, false);
+  assert(wmAllowed === true, "Flags #9E: Authorized Webmaster exception preserved even with missing settings");
+} catch (e) {
+  assert(false, "Flags #9E: Webmaster should be permitted even with missing settings");
 }
 
 // Scenario 10: Direct service/API invocation that bypasses frontend (createGroup check)
 const firestoreFile = path.resolve(__dirname, '../artifacts/linkcloud/src/lib/firestore.ts');
 const fsCode = fs.readFileSync(firestoreFile, 'utf8');
-const enforcesServiceLayer = fsCode.includes('if (siteSettings.groupSubmissionEnabled === false && !isWebmaster)') &&
-  (fsCode.includes('if (!auth?.currentUser && siteSettings.allowPublicSubmissions !== true && !isWebmaster)') ||
-   fsCode.includes('if (!auth?.currentUser && siteSettings.allowPublicSubmissions === false && !isWebmaster)'));
+const enforcesServiceLayer = fsCode.includes('if (siteSettings?.groupSubmissionEnabled !== true && !isWebmaster)') &&
+  fsCode.includes('if (!auth?.currentUser && siteSettings?.allowPublicSubmissions !== true && !isWebmaster)');
 assert(enforcesServiceLayer, "Flags #10: createGroup() enforces both flags at the service layer, preventing frontend bypass");
 
 // 3. Fallback Integrity

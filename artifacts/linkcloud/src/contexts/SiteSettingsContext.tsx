@@ -89,7 +89,7 @@ const DEFAULT_SITE_SETTINGS: SiteSettings = {
   googleLoginEnabled: true,
   emailLoginEnabled: true,
   mobileOtpLoginEnabled: true,
-  groupSubmissionEnabled: true,
+  groupSubmissionEnabled: false, // Documented fail-closed safe fallback (requires explicit true from Firestore)
   favoritesEnabled: true,
   reportSystemEnabled: true,
   complaintSystemEnabled: true,
@@ -97,7 +97,7 @@ const DEFAULT_SITE_SETTINGS: SiteSettings = {
   maintenanceMode: false,
   maintenanceMessage:
     "LinkCloud is currently undergoing scheduled system upgrades and database optimization. We will be back online shortly!",
-  allowPublicSubmissions: false, // Documented fail-closed safe fallback
+  allowPublicSubmissions: false, // Documented fail-closed safe fallback (requires explicit true from Firestore)
   requireApproval: true,
   filterSettings: {
     categoryFilterEnabled: true,

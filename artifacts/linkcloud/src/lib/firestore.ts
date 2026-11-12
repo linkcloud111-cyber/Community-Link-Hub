@@ -445,10 +445,10 @@ export async function createGroup(
 ): Promise<string> {
   const isWebmaster = await isCurrentUserWebmaster();
   const siteSettings = await getSiteSettings();
-  if (siteSettings.groupSubmissionEnabled === false && !isWebmaster) {
+  if (siteSettings?.groupSubmissionEnabled !== true && !isWebmaster) {
     throw new Error("Link submissions are temporarily paused by Webmaster.");
   }
-  if (!auth?.currentUser && siteSettings.allowPublicSubmissions !== true && !isWebmaster) {
+  if (!auth?.currentUser && siteSettings?.allowPublicSubmissions !== true && !isWebmaster) {
     throw new Error("Guest link submissions are disabled. Please sign in to submit.");
   }
 
@@ -3374,8 +3374,8 @@ export async function getSiteSettings(): Promise<SiteSettings> {
     structuredDataJson: "{\n  \"@context\": \"https://schema.org\",\n  \"@type\": \"WebSite\",\n  \"name\": \"LinkCloud\",\n  \"url\": \"https://linkcloud.in\"\n}",
 
     // System Settings
-    allowPublicSubmissions: false, // Documented fail-closed safe fallback
-    groupSubmissionEnabled: true,
+    allowPublicSubmissions: false, // Documented fail-closed safe fallback (requires explicit true from Firestore)
+    groupSubmissionEnabled: false, // Documented fail-closed safe fallback (requires explicit true from Firestore)
     userRegistrationEnabled: true,
     googleLoginEnabled: true,
     emailLoginEnabled: true,
