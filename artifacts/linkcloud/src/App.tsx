@@ -244,7 +244,19 @@ function Router() {
 
               <Route path="/submit" component={PublicSubmitPage} />
               <Route path="/dashboard" component={ProtectedDashboard} />
+              <Route path="/dashboard/groups" component={ProtectedDashboard} />
+              <Route path="/dashboard/saved" component={ProtectedDashboard} />
+              <Route path="/dashboard/profile" component={ProtectedDashboard} />
+              <Route path="/dashboard/settings" component={ProtectedDashboard} />
+              <Route path="/dashboard/security" component={ProtectedDashboard} />
+              <Route path="/dashboard/notifications" component={ProtectedDashboard} />
+              <Route path="/dashboard/messages" component={ProtectedDashboard} />
+              <Route path="/dashboard/activity" component={ProtectedDashboard} />
+              <Route path="/dashboard/help" component={ProtectedDashboard} />
+              <Route path="/dashboard/complaint" component={ProtectedDashboard} />
               <Route path="/my-groups" component={ProtectedDashboard} />
+              <Route path="/profile" component={ProtectedDashboard} />
+              <Route path="/settings" component={ProtectedDashboard} />
               <Route path="/submitted-groups" component={ProtectedDashboard} />
               <Route path="/my-submitted-groups" component={ProtectedDashboard} />
               <Route path="/my-profile" component={ProtectedDashboard} />

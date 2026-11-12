@@ -50,17 +50,17 @@ function resolveTabFromUrl(defaultTab: DashboardTab = "overview"): DashboardTab 
   if (typeof window === "undefined") return defaultTab;
 
   const pathname = window.location.pathname;
-  if (pathname === "/favorites") return "favorites";
-  if (pathname === "/notifications") return "notifications";
-  if (pathname === "/my-profile" || pathname === "/profile") return "profile";
-  if (pathname === "/profile-settings" || pathname === "/settings") return "settings";
-  if (pathname === "/change-password" || pathname === "/webmaster/change-password") return "security";
+  if (pathname === "/favorites" || pathname === "/dashboard/saved" || pathname === "/dashboard/favorites") return "favorites";
+  if (pathname === "/notifications" || pathname === "/dashboard/notifications") return "notifications";
+  if (pathname === "/my-profile" || pathname === "/profile" || pathname === "/dashboard/profile") return "profile";
+  if (pathname === "/profile-settings" || pathname === "/settings" || pathname === "/dashboard/settings") return "settings";
+  if (pathname === "/change-password" || pathname === "/webmaster/change-password" || pathname === "/dashboard/security" || pathname === "/dashboard/change-password") return "security";
   if (pathname === "/account-security" || pathname === "/webmaster/security" || pathname === "/security") return "security";
-  if (pathname === "/my-groups" || pathname === "/submitted-groups" || pathname === "/my-submitted-groups" || pathname === "/webmaster/my-groups") return "my-groups";
-  if (pathname === "/messages" || pathname === "/contact") return "messages";
-  if (pathname === "/activity") return "activity";
-  if (pathname === "/help") return "help";
-  if (pathname === "/complaint") return "complaint";
+  if (pathname === "/my-groups" || pathname === "/submitted-groups" || pathname === "/my-submitted-groups" || pathname === "/webmaster/my-groups" || pathname === "/dashboard/groups") return "my-groups";
+  if (pathname === "/messages" || pathname === "/contact" || pathname === "/dashboard/messages") return "messages";
+  if (pathname === "/activity" || pathname === "/dashboard/activity") return "activity";
+  if (pathname === "/help" || pathname === "/dashboard/help") return "help";
+  if (pathname === "/complaint" || pathname === "/dashboard/complaint") return "complaint";
 
   const searchParams = new URLSearchParams(window.location.search);
   const tabParam = searchParams.get("tab");
