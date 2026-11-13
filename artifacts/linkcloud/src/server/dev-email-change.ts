@@ -170,9 +170,20 @@ export async function handleDevEmailChangeRequest(
         tokenHash,
         expiresAt,
         expiresAtIso: new Date(expiresAt).toISOString(),
-        createdAt: new Date().toISOString(),
+        createdAt: now,
         createdAtMs: now,
+        updatedAt: now,
         status: "pending",
+      });
+
+      const activeRef = firestore.collection("users").doc(uid).collection("emailChanges").doc("active");
+      batch.set(activeRef, {
+        requestId,
+        status: "PENDING",
+        targetEmail: newEmail,
+        createdAt: now,
+        expiresAt,
+        updatedAt: now,
       });
 
       await batch.commit();
@@ -188,7 +199,9 @@ export async function handleDevEmailChangeRequest(
   const verificationLink = `${origin}/verify-handler?mode=verifyAndChangeEmail&reqId=${requestId}&uid=${uid}&token=${rawToken}`;
 
   console.log(`[Dev Server] Email Change Requested for UID ${uid} -> ${newEmail}`);
-  console.log(`[Dev Server] Verification link: ${verificationLink}`);
+  if (!resendApiKey) {
+    console.log(`[Dev Server] Dev Verification link: ${verificationLink}`);
+  }
 
   if (resendApiKey) {
     try {
@@ -217,7 +230,7 @@ export async function handleDevEmailChangeRequest(
     expiresAt,
     newEmail,
     nextAllowedAt: now + EMAIL_RESEND_COOLDOWN_MS,
-    devVerificationLink: verificationLink,
+    ...(resendApiKey ? {} : { devVerificationLink: verificationLink }),
     message: "Verification email sent. Link is valid for 5 minutes.",
   });
 }
@@ -248,11 +261,16 @@ export async function handleDevEmailChangeVerify(
   const rawToken = (body.token || body.rawToken || "").trim();
   const uid = (body.uid || "").trim();
 
+  if (!reqId || !rawToken) {
+    sendJson(res, { error: "Missing required parameters: reqId and token are required." }, 400);
+    return;
+  }
+
   const app = getFirebaseAdminApp();
   const firestore = app ? getFirestore(app) : null;
   const now = Date.now();
 
-  if (!firestore) {
+  if (!firestore || !app) {
     sendJson(res, { error: "Database service unavailable." }, 500);
     return;
   }
@@ -265,38 +283,56 @@ export async function handleDevEmailChangeVerify(
     }
 
     const reqData = reqDoc.data()!;
-    if (reqData.status !== "pending") {
-      if (reqData.status === "verified") {
-        sendJson(res, {
-          success: true,
-          verified: true,
-          completed: true,
-          uid: reqData.userId,
-          newEmail: reqData.newEmail,
-          message: "Email change already completed.",
-        });
-        return;
-      }
-      sendJson(res, { error: `This verification link is no longer valid (${reqData.status}).` }, 400);
+    if (uid && reqData.userId && uid !== reqData.userId) {
+      sendJson(res, { error: "This verification link does not belong to the requested account." }, 403);
       return;
     }
 
-    if (reqData.expiresAt < now) {
-      await reqDoc.ref.update({ status: "expired" });
-      sendJson(res, { error: "This verification link has expired. Please request a new one." }, 410);
+    const reqStatus = String(reqData.status || "").toLowerCase();
+    if (reqStatus === "cancelled") {
+      sendJson(res, { error: "This email change request has been cancelled.", details: { code: "cancelled" } }, 410);
+      return;
+    }
+    if (reqStatus === "superseded") {
+      sendJson(res, { error: "A newer verification email was dispatched.", details: { code: "superseded" } }, 410);
       return;
     }
 
-    // Verify token hash
+    // Verify token hash BEFORE returning completed status or minting customToken
     const expectedHash = hashToken(rawToken);
-    if (reqData.tokenHash !== expectedHash) {
+    if (!reqData.tokenHash || reqData.tokenHash !== expectedHash) {
       sendJson(res, { error: "Invalid verification token." }, 403);
       return;
     }
 
+    if (reqStatus === "verified" || reqStatus === "completed") {
+      let customToken = "";
+      try {
+        customToken = await getAuth(app).createCustomToken(reqData.userId);
+      } catch {}
+      sendJson(res, {
+        success: true,
+        alreadyCompleted: true,
+        verified: true,
+        completed: true,
+        uid: reqData.userId,
+        oldEmail: reqData.oldEmail,
+        newEmail: reqData.newEmail,
+        customToken,
+        message: "Email change already completed.",
+      });
+      return;
+    }
+
+    if (reqStatus === "expired" || reqData.expiresAt < now) {
+      await reqDoc.ref.update({ status: "expired", updatedAt: now });
+      sendJson(res, { error: "This verification link has expired. Please request a new one.", details: { code: "expired" } }, 410);
+      return;
+    }
+
     const targetUid = reqData.userId;
-    const oldEmail = reqData.oldEmail || "";
-    const newEmail = reqData.newEmail;
+    const oldEmail = (reqData.oldEmail || "").trim().toLowerCase();
+    const newEmail = (reqData.newEmail || "").trim().toLowerCase();
 
     // 1. Update Firebase Auth user
     let customToken = "";
@@ -314,31 +350,50 @@ export async function handleDevEmailChangeVerify(
     // 2. Update Firestore documents atomically
     const batch = firestore.batch();
 
-    // Mark request verified
+    // Mark request completed
     batch.update(reqDoc.ref, {
-      status: "verified",
-      verifiedAt: new Date().toISOString(),
+      status: "completed",
+      verifiedAt: now,
+      completedAt: now,
+      updatedAt: now,
     });
 
-    // Update /users/{uid}
+    const activeRef = firestore.collection("users").doc(targetUid).collection("emailChanges").doc("active");
+    batch.set(
+      activeRef,
+      {
+        status: "COMPLETED",
+        targetEmail: newEmail,
+        verifiedAt: now,
+        completedAt: now,
+        updatedAt: now,
+      },
+      { merge: true }
+    );
+
+    // Update /users/{uid} and clear pending flags
     const userDocRef = firestore.collection("users").doc(targetUid);
     batch.set(
       userDocRef,
       {
         email: newEmail,
         emailVerified: true,
+        emailIndex: newEmail,
+        pendingEmail: null,
+        activeEmailChangeRequestId: null,
         updatedAt: new Date().toISOString(),
       },
       { merge: true }
     );
 
     // Update /emailIndex
-    if (oldEmail) {
-      batch.delete(firestore.collection("emailIndex").doc(oldEmail.toLowerCase()));
+    if (oldEmail && oldEmail !== newEmail) {
+      batch.delete(firestore.collection("emailIndex").doc(oldEmail));
     }
-    batch.set(firestore.collection("emailIndex").doc(newEmail.toLowerCase()), {
+    batch.set(firestore.collection("emailIndex").doc(newEmail), {
       uid: targetUid,
       email: newEmail,
+      status: "active",
       updatedAt: new Date().toISOString(),
     });
 
@@ -385,11 +440,14 @@ export async function handleDevEmailChangeSessionRefresh(
     return;
   }
 
-  const body = await parseBody(req);
-  const uid = (body.uid || "").trim();
-
-  if (!uid) {
-    sendJson(res, { error: "Missing required parameter: uid." }, 400);
+  const authHeader = req.headers["authorization"] || "";
+  if (!authHeader.startsWith("Bearer ")) {
+    sendJson(res, { error: "Authentication required: Missing Bearer token." }, 401);
+    return;
+  }
+  const idToken = authHeader.slice("Bearer ".length).trim();
+  if (!idToken) {
+    sendJson(res, { error: "Authentication required: Empty Bearer token." }, 401);
     return;
   }
 
@@ -399,11 +457,76 @@ export async function handleDevEmailChangeSessionRefresh(
     return;
   }
 
+  let decodedUid = "";
   try {
+    const decoded = await getAuth(app).verifyIdToken(idToken);
+    decodedUid = decoded.uid;
+  } catch (authErr: any) {
+    sendJson(res, { error: `Authentication failed: ${authErr.message}` }, 401);
+    return;
+  }
+
+  const body = await parseBody(req);
+  const uid = (body.uid || decodedUid || "").trim();
+  const reqId = (body.reqId || body.requestId || "").trim();
+
+  if (!uid) {
+    sendJson(res, { error: "Missing required parameter: uid." }, 400);
+    return;
+  }
+  if (decodedUid !== uid) {
+    sendJson(res, { error: "Forbidden: Authenticated user does not match requested uid." }, 403);
+    return;
+  }
+
+  try {
+    const firestore = getFirestore(app);
+    let isCompleted = false;
+    let newEmail = "";
+    const now = Date.now();
+    const MAX_REFRESH_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+    if (reqId) {
+      const reqSnap = await firestore.collection("emailChangeRequests").doc(reqId).get();
+      const reqData = reqSnap.data();
+      const st = String(reqData?.status || "").toLowerCase();
+      const verifiedAtMs = typeof reqData?.verifiedAt === "number" ? reqData.verifiedAt : (reqData?.verifiedAt ? new Date(reqData.verifiedAt).getTime() : 0);
+      if (
+        reqSnap.exists &&
+        reqData?.userId === uid &&
+        (st === "completed" || st === "verified") &&
+        (!verifiedAtMs || now - verifiedAtMs <= MAX_REFRESH_WINDOW_MS)
+      ) {
+        isCompleted = true;
+        newEmail = reqData?.newEmail || "";
+      }
+    }
+
+    if (!isCompleted) {
+      const activeSnap = await firestore.collection("users").doc(uid).collection("emailChanges").doc("active").get();
+      const activeData = activeSnap.data();
+      const st = String(activeData?.status || "").toLowerCase();
+      const verifiedAtMs = typeof activeData?.verifiedAt === "number" ? activeData.verifiedAt : (activeData?.verifiedAt ? new Date(activeData.verifiedAt).getTime() : 0);
+      if (
+        activeSnap.exists &&
+        (st === "completed" || st === "verified") &&
+        (!verifiedAtMs || now - verifiedAtMs <= MAX_REFRESH_WINDOW_MS)
+      ) {
+        isCompleted = true;
+        newEmail = activeData?.targetEmail || activeData?.newEmail || "";
+      }
+    }
+
+    if (!isCompleted) {
+      sendJson(res, { error: "No recently completed email change request found for this account." }, 404);
+      return;
+    }
+
     const customToken = await getAuth(app).createCustomToken(uid);
     sendJson(res, {
       success: true,
       uid,
+      newEmail,
       customToken,
       message: "Fresh session custom token generated successfully.",
     });
@@ -426,23 +549,76 @@ export async function handleDevEmailChangeCancel(
     return;
   }
 
-  const body = await parseBody(req);
-  const reqId = (body.reqId || body.requestId || "").trim();
-
-  const app = getFirebaseAdminApp();
-  const firestore = app ? getFirestore(app) : null;
-
-  if (firestore && reqId) {
-    try {
-      await firestore.collection("emailChangeRequests").doc(reqId).update({
-        status: "cancelled",
-        cancelledAt: new Date().toISOString(),
-      });
-    } catch {}
+  const authHeader = req.headers["authorization"] || "";
+  if (!authHeader.startsWith("Bearer ")) {
+    sendJson(res, { error: "Authentication required: Missing Bearer token." }, 401);
+    return;
+  }
+  const idToken = authHeader.slice("Bearer ".length).trim();
+  if (!idToken) {
+    sendJson(res, { error: "Authentication required: Empty Bearer token." }, 401);
+    return;
   }
 
-  sendJson(res, {
-    success: true,
-    message: "Email change cancelled.",
-  });
+  const app = getFirebaseAdminApp();
+  if (!app) {
+    sendJson(res, { error: "Server authentication service unavailable." }, 503);
+    return;
+  }
+
+  let uid = "";
+  try {
+    const decoded = await getAuth(app).verifyIdToken(idToken);
+    uid = decoded.uid;
+  } catch (authErr: any) {
+    sendJson(res, { error: `Authentication failed: ${authErr.message}` }, 401);
+    return;
+  }
+
+  const body = await parseBody(req);
+  const reqId = (body.reqId || body.requestId || "").trim();
+  const firestore = getFirestore(app);
+  const now = Date.now();
+
+  try {
+    const activeRef = firestore.collection("users").doc(uid).collection("emailChanges").doc("active");
+    const activeSnap = await activeRef.get();
+    const targetReqId = reqId || activeSnap.data()?.requestId || "";
+
+    if (targetReqId) {
+      const reqRef = firestore.collection("emailChangeRequests").doc(targetReqId);
+      const reqSnap = await reqRef.get();
+      if (reqSnap.exists) {
+        const reqData = reqSnap.data()!;
+        if (reqData.userId !== uid) {
+          sendJson(res, { error: "Forbidden: Cannot cancel another user's email change request." }, 403);
+          return;
+        }
+        const st = String(reqData.status || "").toLowerCase();
+        if (st === "verified" || st === "completed") {
+          sendJson(res, { error: "Email change has already been verified and cannot be cancelled." }, 400);
+          return;
+        }
+        await reqRef.update({ status: "cancelled", updatedAt: now, cancelledAt: new Date().toISOString() });
+      }
+    }
+
+    await activeRef.set({ status: "CANCELLED", updatedAt: now }, { merge: true });
+    await firestore.collection("users").doc(uid).set(
+      {
+        pendingEmail: null,
+        activeEmailChangeRequestId: null,
+        updatedAt: new Date().toISOString(),
+      },
+      { merge: true }
+    );
+
+    sendJson(res, {
+      success: true,
+      message: "Email change cancelled.",
+    });
+  } catch (err: any) {
+    console.error("[Dev Server] Cancel email change error:", err);
+    sendJson(res, { error: err?.message || "Failed to cancel email change." }, 500);
+  }
 }

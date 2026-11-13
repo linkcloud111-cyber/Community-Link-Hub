@@ -217,12 +217,13 @@ export async function onRequestPost(context: {
   // 5. Audit log
   const auditId = `audit_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
   await firestoreSetDoc(
-    `auditLogs/${auditId}`,
+    `audit_logs/${auditId}`,
     {
       action: "USER_PROVISIONED",
       targetUid: candidateUid,
       actorUid: "system",
       details: { email: cleanEmail, phone: cleanPhone, accountUid: candidateUid },
+      createdAt: nowIso,
       timestamp: nowIso,
     },
     env,

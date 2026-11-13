@@ -270,8 +270,8 @@ export async function handleAuthProvisionUser(
       { merge: true }
     );
 
-    // /auditLogs/{logId}
-    const auditLogRef = firestore.collection("auditLogs").doc();
+    // /audit_logs/{logId}
+    const auditLogRef = firestore.collection("audit_logs").doc();
     batch.set(auditLogRef, {
       action: "USER_PROVISIONED",
       targetUid: canonicalUid,
@@ -281,6 +281,7 @@ export async function handleAuthProvisionUser(
         phone: cleanPhone,
         accountUid: canonicalUid,
       },
+      createdAt: nowIso,
       timestamp: nowIso,
     });
 
@@ -543,12 +544,13 @@ export async function handleAuthProvisionPhoneUser(
     );
 
     // Audit log
-    const auditLogRef = firestore.collection("auditLogs").doc();
+    const auditLogRef = firestore.collection("audit_logs").doc();
     batch.set(auditLogRef, {
       action: "USER_PROVISIONED_PHONE",
       targetUid: canonicalUid,
       actorUid: "system",
       details: { phone: phoneNumber },
+      createdAt: nowIso,
       timestamp: nowIso,
     });
 
@@ -652,7 +654,7 @@ export async function handleAuthCheckRegistration(
 
     const userSnap = await firestore.collection("users").doc(indexData.uid).get();
     const userData = userSnap.data();
-    const isVerified = Boolean(userData?.emailVerified === true || userData?.status === "active");
+    const isVerified = Boolean(userData?.emailVerified === true || userData?.phoneVerified === true);
 
     sendJson(res, {
       registered: true,

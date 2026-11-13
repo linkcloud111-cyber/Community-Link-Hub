@@ -15,11 +15,13 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { useLocation as useAppLocation } from "@/contexts/LocationContext";
+import { useSiteSettings } from "@/contexts/SiteSettingsContext";
 import {
   formatFullName,
   validateFullName,
   validateDob,
   extract10DigitMobile,
+  cleanMobileInput,
   validateIndianMobile,
   validateProfileLocation,
   validateProfileDetails,
@@ -27,13 +29,18 @@ import {
 import { uploadToCloudinary } from "@/lib/cloudinary";
 import type { UserProfile } from "@/lib/types";
 
+const makeAvatarSvg = (bg1: string, bg2: string, label: string) =>
+  `data:image/svg+xml;utf8,${encodeURIComponent(
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="${bg1}"/><stop offset="100%" stop-color="${bg2}"/></linearGradient></defs><rect width="120" height="120" rx="60" fill="url(#g)"/><text x="60" y="72" text-anchor="middle" font-family="system-ui,sans-serif" font-size="40" font-weight="700" fill="#ffffff">${label}</text></svg>`
+  )}`;
+
 const PRESET_AVATARS = [
-  "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=250",
-  "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=250",
-  "https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&q=80&w=250",
-  "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&q=80&w=250",
-  "https://images.unsplash.com/photo-1438761681033-6461ffad8d80?auto=format&fit=crop&q=80&w=250",
-  "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&q=80&w=250",
+  makeAvatarSvg("#7c3aed", "#4f46e5", "LC"),
+  makeAvatarSvg("#0ea5e9", "#2563eb", "IN"),
+  makeAvatarSvg("#10b981", "#059669", "CM"),
+  makeAvatarSvg("#f59e0b", "#d97706", "MB"),
+  makeAvatarSvg("#ec4899", "#db2777", "GR"),
+  makeAvatarSvg("#6366f1", "#8b5cf6", "HUB"),
 ];
 
 interface EditProfileModalProps {
@@ -44,7 +51,8 @@ interface EditProfileModalProps {
 }
 
 export function EditProfileModal({ isOpen, onClose, profile, onSave }: EditProfileModalProps) {
-  const { activeStates, getDistrictsForState } = useAppLocation();
+  const { activeStates, getDistrictsForState, getCitiesForDistrict } = useAppLocation();
+  const { settings } = useSiteSettings();
 
   // Form Fields
   const [fullName, setFullName] = useState("");
@@ -103,6 +111,9 @@ export function EditProfileModal({ isOpen, onClose, profile, onSave }: EditProfi
   if (!isOpen) return null;
 
   const currentDistricts = selectedState ? getDistrictsForState(selectedState).map((d) => d.name) : [];
+  const currentCities = selectedState
+    ? getCitiesForDistrict(selectedState, selectedDistrict).map((c) => c.name)
+    : [];
 
   // ─── 1. Full Name Validation ──────────────────────────────────────────────
   const normalizedName = formatFullName(fullName.trim());
@@ -258,15 +269,19 @@ export function EditProfileModal({ isOpen, onClose, profile, onSave }: EditProfi
       toast.error("Please choose a valid image file (PNG, JPG, WEBP).");
       return;
     }
-    if (file.size > 5 * 1024 * 1024) {
-      toast.error("Image size must be less than 5MB.");
+    if (file.size > 2 * 1024 * 1024) {
+      toast.error("Image size must be less than 2MB.");
       return;
     }
 
     setUploadingImage(true);
     setPhotoTouched(true);
     try {
-      const url = await uploadToCloudinary(file, "linkcloud");
+      const url = await uploadToCloudinary(
+        file,
+        settings?.cloudinaryUploadPreset || "linkcloud",
+        settings?.cloudinaryCloudName
+      );
       setPhotoURL(url);
       toast.success("Profile photo uploaded successfully!");
     } catch (err: any) {
@@ -711,21 +726,48 @@ export function EditProfileModal({ isOpen, onClose, profile, onSave }: EditProfi
                 City / Town <span className="text-rose-500">*</span>
               </label>
               <div className="relative">
-                <input
-                  type="text"
-                  required
-                  value={city}
-                  onChange={(e) => {
-                    setCity(e.target.value);
-                    setCityTouched(true);
-                  }}
-                  onBlur={() => setCityTouched(true)}
-                  placeholder="e.g. Mumbai"
-                  aria-invalid={cityState === "invalid"}
-                  className={`w-full px-3 pr-8 py-2 rounded-xl text-sm border focus:ring-2 focus:ring-purple-600 focus:outline-none min-h-[44px] transition ${getFieldBorderClass(
-                    cityState
-                  )}`}
-                />
+                {currentCities.length > 0 ? (
+                  <select
+                    required
+                    value={city}
+                    onChange={(e) => {
+                      setCity(e.target.value);
+                      setCityTouched(true);
+                    }}
+                    onBlur={() => setCityTouched(true)}
+                    disabled={!selectedState}
+                    aria-invalid={cityState === "invalid"}
+                    className={`w-full px-3 pr-8 py-2 rounded-xl text-sm border focus:ring-2 focus:ring-purple-600 focus:outline-none min-h-[44px] disabled:opacity-50 transition ${getFieldBorderClass(
+                      cityState
+                    )}`}
+                  >
+                    <option value="">Select City / Town</option>
+                    {currentCities.map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
+                    {city && !currentCities.includes(city) && (
+                      <option value={city}>{city}</option>
+                    )}
+                  </select>
+                ) : (
+                  <input
+                    type="text"
+                    required
+                    value={city}
+                    onChange={(e) => {
+                      setCity(e.target.value);
+                      setCityTouched(true);
+                    }}
+                    onBlur={() => setCityTouched(true)}
+                    placeholder="e.g. Mumbai"
+                    aria-invalid={cityState === "invalid"}
+                    className={`w-full px-3 pr-8 py-2 rounded-xl text-sm border focus:ring-2 focus:ring-purple-600 focus:outline-none min-h-[44px] transition ${getFieldBorderClass(
+                      cityState
+                    )}`}
+                  />
+                )}
                 {cityState === "valid" && (
                   <CheckCircle2 className="w-4 h-4 text-emerald-500 absolute right-2.5 top-3 pointer-events-none" />
                 )}

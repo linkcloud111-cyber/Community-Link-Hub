@@ -42,7 +42,8 @@ const SORT_OPTIONS: { value: "latest" | "popular" | "most_viewed" | "most_joined
 const PAGE_SIZE = 12;
 
 export default function GroupsPage() {
-  const queryParams = new URLSearchParams(useSearch());
+  const searchString = useSearch();
+  const queryParams = useMemo(() => new URLSearchParams(searchString), [searchString]);
 
   const {
     activeCategories: categories,
@@ -52,6 +53,26 @@ export default function GroupsPage() {
   } = useTaxonomy();
 
   const { activeStates, getDistrictsForState, getCitiesForDistrict } = useLocation();
+
+  const parseLinkStatus = (val: string | null): "all" | "active" | "inactive" =>
+    val === "active" || val === "inactive" ? val : "all";
+
+  type SortValue = "latest" | "popular" | "most_viewed" | "most_joined" | "featured" | "a-z" | "z-a" | "oldest";
+  const VALID_SORTS: SortValue[] = ["latest", "popular", "most_viewed", "most_joined", "featured", "a-z", "z-a", "oldest"];
+  const parseSort = (val: string | null): SortValue =>
+    val && VALID_SORTS.includes(val as SortValue) ? (val as SortValue) : "latest";
+
+  type TabValue = "all" | "featured" | "popular" | "latest";
+  const parseTab = (val: string | null, isFeat: boolean, sortVal: SortValue): TabValue => {
+    if (val === "all" || val === "featured" || val === "popular" || val === "latest") return val;
+    if (isFeat) return "featured";
+    if (sortVal === "popular" || sortVal === "most_joined") return "popular";
+    return "all";
+  };
+
+  const initialFeatured = queryParams.get("featured") === "true";
+  const initialSort = parseSort(queryParams.get("sort"));
+  const initialTab = parseTab(queryParams.get("tab"), initialFeatured, initialSort);
 
   const [search, setSearch] = useState(queryParams.get("q") || "");
   const [platform, setPlatform] = useState<string>(queryParams.get("platform") || "All");
@@ -68,12 +89,31 @@ export default function GroupsPage() {
   });
   const [district, setDistrict] = useState(queryParams.get("district") || "");
   const [city, setCity] = useState(queryParams.get("city") || "");
-  const [linkStatus, setLinkStatus] = useState<"all" | "active" | "inactive">("all");
-  const [featuredOnly, setFeaturedOnly] = useState(false);
-  const [sortBy, setSortBy] = useState<"latest" | "popular" | "most_viewed" | "most_joined" | "featured" | "a-z" | "z-a" | "oldest">("latest");
+  const [linkStatus, setLinkStatus] = useState<"all" | "active" | "inactive">(parseLinkStatus(queryParams.get("status")));
+  const [featuredOnly, setFeaturedOnly] = useState(initialFeatured);
+  const [sortBy, setSortBy] = useState<SortValue>(initialSort);
 
   // Quick section view filter tabs: 'all', 'featured', 'popular', 'latest'
-  const [viewTab, setViewTab] = useState<"all" | "featured" | "popular" | "latest">("all");
+  const [viewTab, setViewTab] = useState<TabValue>(initialTab);
+
+  // Sync state when external navigation changes the URL search params
+  useEffect(() => {
+    const qFeatured = queryParams.get("featured") === "true";
+    const qSort = parseSort(queryParams.get("sort"));
+    const qTab = parseTab(queryParams.get("tab"), qFeatured, qSort);
+    setSearch(queryParams.get("q") || "");
+    setPlatform(queryParams.get("platform") || "All");
+    setCategoryId(queryParams.get("category") || "");
+    setContentType(queryParams.get("type") || "All");
+    setLanguage(queryParams.get("lang") || "All");
+    setState(queryParams.get("state") || "");
+    setDistrict(queryParams.get("district") || "");
+    setCity(queryParams.get("city") || "");
+    setLinkStatus(parseLinkStatus(queryParams.get("status")));
+    setFeaturedOnly(qFeatured);
+    setSortBy(qSort);
+    setViewTab(qTab);
+  }, [queryParams]);
 
   const { settings } = useSiteSettings();
   const [allApprovedGroups, setAllApprovedGroups] = useState<Group[]>([]);
@@ -236,6 +276,7 @@ export default function GroupsPage() {
     if (district) params.set("district", district);
     if (city) params.set("city", city);
     if (linkStatus && linkStatus !== "all") params.set("status", linkStatus);
+    if (featuredOnly) params.set("featured", "true");
     if (viewTab && viewTab !== "all") params.set("tab", viewTab);
     if (sortBy && sortBy !== "latest") params.set("sort", sortBy);
 
@@ -254,6 +295,7 @@ export default function GroupsPage() {
     district,
     city,
     linkStatus,
+    featuredOnly,
     viewTab,
     sortBy,
   ]);

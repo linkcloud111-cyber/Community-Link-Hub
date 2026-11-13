@@ -153,13 +153,22 @@ const ProtectedRoute = ({
   const { user, profile, isWebmaster, loading, pendingEmail, isSessionHandoff } = useAuth();
   const [, setLocation] = useLocation();
 
+  const activeAuthUser = user || auth.currentUser;
+  const isGoogleAccount = Boolean(
+    activeAuthUser?.providerData?.some((p) => p.providerId === "google.com")
+  );
+  const isPhoneOtpAccount = Boolean(
+    !activeAuthUser?.email &&
+      !profile?.email &&
+      (profile?.phoneVerified || activeAuthUser?.phoneNumber)
+  );
+
   const isEmailVerified = Boolean(
     user?.emailVerified ||
     auth.currentUser?.emailVerified ||
     profile?.emailVerified ||
-    profile?.status === "active" ||
-    profile?.pendingEmail ||
-    pendingEmail ||
+    isGoogleAccount ||
+    isPhoneOtpAccount ||
     isWebmaster ||
     isSessionHandoff
   );

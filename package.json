@@ -20,9 +20,12 @@
     "node": ">=22.0.0"
   },
   "devDependencies": {
+    "@firebase/eslint-plugin-security-rules": "^0.0.2",
     "@replit/connectors-sdk": "^0.4.1",
     "esbuild": "^0.28.2",
+    "eslint": "^10.14.0",
     "firebase-admin": "^14.2.0",
+    "playwright-core": "^1.65.0",
     "prettier": "^3.9.6",
     "typescript": "~5.9.3"
   }

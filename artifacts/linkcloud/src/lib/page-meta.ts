@@ -132,7 +132,7 @@ export function usePageSEO({
       window.location.origin &&
       !window.location.origin.includes("localhost")
         ? window.location.origin
-        : "https://community-link-hub.pages.dev";
+        : "https://linkcloud.in";
     const configuredCanonical = settings?.canonicalUrl?.trim();
     const canonicalBase = (
       configuredCanonical && configuredCanonical !== "https://linkcloud.in"

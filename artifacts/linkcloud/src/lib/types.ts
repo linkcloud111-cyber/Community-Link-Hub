@@ -143,7 +143,7 @@ export interface UserProfile {
   displayName: string;
   email: string;
   phone: string;
-  dob: string;
+  dob?: string;
   photoURL: string;
 
   // Location
@@ -153,8 +153,8 @@ export interface UserProfile {
   address?: string;
 
   // Verification
-  emailVerified: boolean;
-  phoneVerified: boolean;
+  emailVerified?: boolean;
+  phoneVerified?: boolean;
 
   // Persisted authorization roles are ONLY 'user' | 'webmaster'
   role: PersistedUserRole;
@@ -193,8 +193,8 @@ export interface UserProfile {
   deletionCooldownUntil?: Timestamp;
 
   // Dates
-  createdAt: Timestamp;
-  updatedAt: Timestamp;
+  createdAt?: Timestamp | any;
+  updatedAt?: Timestamp | any;
 }
 
 export interface LocationState {
@@ -342,17 +342,24 @@ export interface SiteSettings {
   // Website Settings
   siteName: string;
   siteTagline: string;
+  siteDescription?: string;
+  headerTitle?: string;
   siteLogo?: string;
+  logoUrl?: string;
   favicon?: string;
+  faviconUrl?: string;
+  primaryColor?: string;
   homepageBanner?: string;
   heroTitle: string;
   heroSubtitle: string;
+  searchPlaceholder?: string;
   heroButtonText: string;
   heroButtonLink: string;
   footerLogo?: string;
   footerDescription: string;
   copyrightText: string;
   websiteTheme: "light" | "dark" | "system";
+  theme?: "light" | "dark" | "system";
   maintenanceMode: boolean;
   maintenanceMessage?: string;
 
@@ -385,6 +392,11 @@ export interface SiteSettings {
   popularGroupsEnabled: boolean;
   popularCategoriesEnabled: boolean;
   popularPlatformsEnabled: boolean;
+  featuredSectionEnabled?: boolean;
+  categoriesSectionEnabled?: boolean;
+  platformsSectionEnabled?: boolean;
+  popularGroupsSectionEnabled?: boolean;
+  recentGroupsSectionEnabled?: boolean;
   statisticsSectionEnabled: boolean;
   testimonialsEnabled: boolean;
   faqSectionEnabled: boolean;
@@ -424,6 +436,7 @@ export interface SiteSettings {
   // System Settings / Toggles
   allowPublicSubmissions: boolean;
   groupSubmissionEnabled?: boolean;
+  requireApproval?: boolean;
   userRegistrationEnabled: boolean;
   googleLoginEnabled: boolean;
   emailLoginEnabled: boolean;
@@ -432,11 +445,20 @@ export interface SiteSettings {
   reportSystemEnabled: boolean;
   complaintSystemEnabled: boolean;
   contactFormEnabled: boolean;
-  notificationsEnabled: boolean;
+  notificationsEnabled?: boolean;
 
   // Cloudinary
   cloudinaryCloudName?: string;
   cloudinaryUploadPreset?: string;
+  cloudinarySettings?: {
+    enabled?: boolean;
+    cloudName?: string;
+    uploadPreset?: string;
+    apiKey?: string;
+    assetFolder?: string;
+    maxFileSizeMb?: number;
+    allowedFormats?: string[];
+  };
 
   updatedAt?: Timestamp;
 }

@@ -19,7 +19,7 @@ import { motion } from "framer-motion";
 import { PageBreadcrumb } from "@/components/page-breadcrumb";
 import { CharacterCounter } from "@/components/character-counter";
 import { usePageTitle } from "@/lib/page-meta";
-import { validateIndianMobile } from "@/lib/utils";
+import { cleanMobileInput, extract10DigitMobile, validateIndianMobile } from "@/lib/utils";
 
 export default function ContactPage() {
   usePageTitle("Contact Webmaster", "Support & Inquiries");
@@ -43,8 +43,9 @@ export default function ContactPage() {
       if (profile?.email || user?.email) {
         setEmail((prev) => prev || profile?.email || user?.email || "");
       }
-      if (profile?.mobile) {
-        setPhone((prev) => prev || profile.mobile);
+      const savedPhone = extract10DigitMobile(profile?.phone || "");
+      if (savedPhone) {
+        setPhone((prev) => prev || savedPhone);
       }
     }
   }, [user, profile]);
@@ -61,7 +62,7 @@ export default function ContactPage() {
       return;
     }
 
-    if (phone.trim() && !validateIndianMobile(phone.trim())) {
+    if (phone.trim() && !validateIndianMobile(phone.trim()).valid) {
       toast.error("Please enter a valid 10-digit Indian mobile number (6000000000 - 9999999999).");
       return;
     }
@@ -241,8 +242,9 @@ export default function ContactPage() {
                   </label>
                   <input
                     type="tel"
+                    inputMode="numeric"
                     value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
+                    onChange={(e) => setPhone(cleanMobileInput(e.target.value))}
                     placeholder="e.g. 9876543210"
                     maxLength={10}
                     className="w-full px-4 py-3 bg-background border border-border rounded-xl text-sm focus:ring-2 focus:ring-primary outline-none transition"

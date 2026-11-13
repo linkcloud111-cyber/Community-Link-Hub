@@ -6,7 +6,10 @@ import { useTaxonomy } from "@/contexts/TaxonomyContext";
 import { useLocation } from "@/contexts/LocationContext";
 import {
   createGroup,
+  checkDuplicateGroup,
 } from "@/lib/firestore";
+import { uploadToCloudinary } from "@/lib/cloudinary";
+import { getPlatformLinkHints, normalizePlatformKey, validateInviteLink } from "@/lib/utils";
 import { toast } from "sonner";
 import {
   Loader2,
@@ -56,9 +59,11 @@ export default function Submit() {
     loading: loadingCats,
   } = useTaxonomy();
 
-  const { activeStates, getDistrictsForState } = useLocation();
+  const { activeStates, getDistrictsForState, getCitiesForDistrict } = useLocation();
 
   const [submitting, setSubmitting] = useState(false);
+  const [logoUploading, setLogoUploading] = useState(false);
+  const [checkingDuplicates, setCheckingDuplicates] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [termsAccepted, setTermsAccepted] = useState(false);
@@ -83,6 +88,28 @@ export default function Submit() {
   });
 
   const districts = form.state ? getDistrictsForState(form.state) : [];
+  const cities = form.state ? getCitiesForDistrict(form.state, form.district) : [];
+  const activePlatform = platforms.find(
+    (p) =>
+      p.name.toLowerCase() === (form.platform || "").toLowerCase() ||
+      normalizePlatformKey(p.name) === normalizePlatformKey(form.platform)
+  );
+  const linkHints = getPlatformLinkHints(
+    form.platform,
+    activePlatform?.helpText,
+    activePlatform?.errorText
+  );
+
+  // Sync submitter details if auth/profile settles after initial mount
+  useEffect(() => {
+    if (user || profile) {
+      setForm((f) => ({
+        ...f,
+        submitterName: f.submitterName || profile?.displayName || user?.displayName || "",
+        submitterEmail: f.submitterEmail || profile?.email || user?.email || "",
+      }));
+    }
+  }, [user, profile]);
 
   // Sync form defaults with active taxonomy items when loaded
   useEffect(() => {
@@ -103,6 +130,34 @@ export default function Submit() {
   const update = (key: keyof FormData, value: string) =>
     setForm((f) => ({ ...f, [key]: value }));
 
+  const handleLogoFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!["image/jpeg", "image/jpg", "image/png", "image/webp"].includes(file.type)) {
+      toast.error("Invalid file format. Please upload JPG, JPEG, PNG, or WEBP image.");
+      return;
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      toast.error("Logo file size must be less than 2 MB.");
+      return;
+    }
+    setLogoUploading(true);
+    try {
+      const uploadedUrl = await uploadToCloudinary(
+        file,
+        settings?.cloudinaryUploadPreset,
+        settings?.cloudinaryCloudName
+      );
+      update("logoUrl", uploadedUrl);
+      toast.success("Logo uploaded successfully!");
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to upload logo image.");
+    } finally {
+      setLogoUploading(false);
+      e.target.value = "";
+    }
+  };
+
   const validate = (): string | null => {
     if (!form.name.trim()) return "1. Group Name is required";
     if (form.name.trim().length < 3) return "Group Name must be at least 3 characters";
@@ -115,7 +170,8 @@ export default function Submit() {
     if (!form.district) return "10. District is required";
     if (!form.city.trim()) return "11. City is required";
     if (!form.joinUrl.trim()) return "14. Invite Link is required";
-    if (!form.joinUrl.startsWith("http")) return "Invite Link must be a valid URL (starting with http:// or https://)";
+    const linkCheck = validateInviteLink(form.joinUrl, form.platform, activePlatform?.invitePattern);
+    if (!linkCheck.valid) return linkCheck.error || linkHints.exampleError;
     if (!termsAccepted) return "15. Please confirm the Terms & Conditions checkbox";
     if (!user && !form.submitterName.trim()) return "Your name is required";
     if (!user && !form.submitterEmail.trim()) return "Your email is required";
@@ -124,14 +180,28 @@ export default function Submit() {
     return null;
   };
 
-  const handleOpenPreview = (e: React.FormEvent) => {
+  const handleOpenPreview = async (e: React.FormEvent) => {
     e.preventDefault();
     const error = validate();
     if (error) {
       toast.error(error);
       return;
     }
-    setPreviewOpen(true);
+    setCheckingDuplicates(true);
+    try {
+      const dup = await checkDuplicateGroup(form.name, form.joinUrl);
+      if (dup.duplicateName) {
+        toast.error("A community with this exact name already exists in LinkCloud.");
+        return;
+      }
+      if (dup.duplicateUrl) {
+        toast.error("This Invite Link has already been submitted to LinkCloud.");
+        return;
+      }
+      setPreviewOpen(true);
+    } finally {
+      setCheckingDuplicates(false);
+    }
   };
 
   const handleFinalSubmit = async () => {
@@ -514,15 +584,28 @@ export default function Submit() {
             {/* FIELD 8: Group Logo (Optional) */}
             <div>
               <label className={labelClass}>8. Group Logo (Optional)</label>
-              <input
-                type="url"
-                value={form.logoUrl}
-                onChange={(e) => update("logoUrl", e.target.value)}
-                className={inputClass}
-                placeholder="https://example.com/logo.png"
-              />
+              <div className="flex flex-col sm:flex-row gap-3">
+                <input
+                  type="url"
+                  value={form.logoUrl}
+                  onChange={(e) => update("logoUrl", e.target.value)}
+                  className={inputClass}
+                  placeholder="https://example.com/logo.png"
+                />
+                <label className="px-4 py-3 bg-primary text-primary-foreground text-xs font-bold rounded-xl cursor-pointer hover:bg-primary/90 transition inline-flex items-center justify-center gap-1.5 whitespace-nowrap flex-shrink-0">
+                  {logoUploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <CloudUpload className="w-4 h-4" />}
+                  {logoUploading ? "Uploading..." : "Upload Logo"}
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/jpg,image/png,image/webp"
+                    onChange={handleLogoFileUpload}
+                    disabled={logoUploading}
+                    className="hidden"
+                  />
+                </label>
+              </div>
               <p className="text-[11px] text-muted-foreground mt-1">
-                Image URL. If no logo URL is provided, LinkCloud will automatically display the official {form.platform} icon.
+                Paste an image URL or upload JPG/PNG/WEBP (max 2MB). Otherwise, LinkCloud shows the official {form.platform} icon.
               </p>
             </div>
           </div>
@@ -587,13 +670,32 @@ export default function Submit() {
             {/* FIELD 11: City * */}
             <div>
               <label className={labelClass}>11. City *</label>
-              <input
-                required
-                value={form.city}
-                onChange={(e) => update("city", e.target.value)}
-                className={inputClass}
-                placeholder="e.g. Mumbai, Bengaluru, Connaught Place"
-              />
+              {cities.length > 0 ? (
+                <select
+                  required
+                  value={form.city}
+                  onChange={(e) => update("city", e.target.value)}
+                  className={`${inputClass} cursor-pointer`}
+                >
+                  <option value="">Select City</option>
+                  {cities.map((c) => (
+                    <option key={c.id} value={c.name}>
+                      {c.name}
+                    </option>
+                  ))}
+                  {form.city && !cities.some((c) => c.name === form.city) && (
+                    <option value={form.city}>{form.city}</option>
+                  )}
+                </select>
+              ) : (
+                <input
+                  required
+                  value={form.city}
+                  onChange={(e) => update("city", e.target.value)}
+                  className={inputClass}
+                  placeholder="e.g. Mumbai, Bengaluru, Connaught Place"
+                />
+              )}
             </div>
           </div>
         </div>
@@ -676,11 +778,11 @@ export default function Submit() {
               type="url"
               value={form.joinUrl}
               onChange={(e) => update("joinUrl", e.target.value)}
-              placeholder="https://chat.whatsapp.com/..."
+              placeholder={linkHints.placeholder}
               className={inputClass}
             />
             <p className="text-xs text-muted-foreground">
-              Paste the direct invite link for your community
+              {linkHints.hint}
             </p>
           </div>
         </div>
@@ -786,10 +888,15 @@ export default function Submit() {
 
             <button
               type="submit"
-              disabled={!termsAccepted}
+              disabled={!termsAccepted || checkingDuplicates || logoUploading}
               className="w-full sm:w-auto flex items-center justify-center gap-2 px-8 py-3.5 bg-primary text-primary-foreground font-extrabold rounded-2xl hover:bg-primary/90 transition shadow-lg shadow-primary/20 disabled:opacity-50"
             >
-              <Eye className="w-4 h-4" /> 16. Preview & Confirm Submission
+              {checkingDuplicates ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Eye className="w-4 h-4" />
+              )}
+              {" "}16. Preview & Confirm Submission
             </button>
           </div>
         </div>

@@ -135,7 +135,7 @@ export default function AdminSettings() {
     favicon: "",
     homepageBanner: "",
     heroTitle: "Discover & Join India's Most Active WhatsApp & Telegram Communities",
-    heroSubtitle: "Verified group links across 28 states, 50+ categories, and multiple platforms.",
+    heroSubtitle: "Verified group links across 36 states & UTs, 50+ categories, and multiple platforms.",
     heroButtonText: "Explore Groups",
     heroButtonLink: "/groups",
     footerLogo: "",
@@ -1336,10 +1336,10 @@ export default function AdminSettings() {
                             </span>
                           </td>
                           <td className="p-3 font-mono text-muted-foreground truncate max-w-[180px]">
-                            {log.maskedIdentifier || log.identifier || log.uid || "N/A"}
+                            {log.maskedIdentifier || log.uid || "N/A"}
                           </td>
                           <td className="p-3 text-muted-foreground whitespace-nowrap">
-                            {log.timestampIso ? new Date(log.timestampIso).toLocaleString("en-IN") : (log.timestamp ? new Date(log.timestamp).toLocaleString("en-IN") : "Just now")}
+                            {log.timestampIso ? new Date(log.timestampIso).toLocaleString("en-IN") : "Just now"}
                           </td>
                         </tr>
                       ))}

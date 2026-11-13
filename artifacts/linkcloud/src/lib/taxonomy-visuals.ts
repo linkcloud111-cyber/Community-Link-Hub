@@ -136,7 +136,7 @@ export const COMMON_ICON_OPTIONS = [
 
 // ─── 1. ICON REGISTRY ─────────────────────────────────────────────────────────
 
-export const ICON_REGISTRY: Record<string, React.ComponentType<{ className?: string }>> = {
+export const ICON_REGISTRY: Record<string, React.ComponentType<{ className?: string; style?: React.CSSProperties }>> = {
   // Official Brand Icons (ALWAYS precedence for platforms)
   whatsapp: SiWhatsapp,
   telegram: SiTelegram,
@@ -214,7 +214,7 @@ export const ICON_REGISTRY: Record<string, React.ComponentType<{ className?: str
 
 export const DEFAULT_PLATFORM_VISUALS: Record<
   string,
-  { name: string; iconName: string; color: string; IconComponent: React.ComponentType<{ className?: string }> }
+  { name: string; iconName: string; color: string; IconComponent: React.ComponentType<{ className?: string; style?: React.CSSProperties }> }
 > = {
   whatsapp: { name: "WhatsApp", iconName: "whatsapp", color: "#25D366", IconComponent: SiWhatsapp },
   telegram: { name: "Telegram", iconName: "telegram", color: "#229ED9", IconComponent: SiTelegram },
@@ -251,7 +251,7 @@ export const DEFAULT_PLATFORM_VISUALS: Record<
 
 export const DEFAULT_CATEGORY_VISUALS: Record<
   string,
-  { name: string; iconName: string; color: string; IconComponent: React.ComponentType<{ className?: string }> }
+  { name: string; iconName: string; color: string; IconComponent: React.ComponentType<{ className?: string; style?: React.CSSProperties }> }
 > = {
   technology: { name: "Technology", iconName: "Cpu", color: "#3B82F6", IconComponent: Cpu },
   tech: { name: "Technology", iconName: "Cpu", color: "#3B82F6", IconComponent: Cpu },
@@ -287,7 +287,7 @@ export const DEFAULT_CATEGORY_VISUALS: Record<
 
 export const DEFAULT_CONTENT_TYPE_VISUALS: Record<
   string,
-  { name: string; iconName: string; color: string; IconComponent: React.ComponentType<{ className?: string }> }
+  { name: string; iconName: string; color: string; IconComponent: React.ComponentType<{ className?: string; style?: React.CSSProperties }> }
 > = {
   "general discussion": { name: "General Discussion", iconName: "MessageCircle", color: "#3B82F6", IconComponent: MessageCircle },
   "news & updates": { name: "News & Updates", iconName: "Newspaper", color: "#EF4444", IconComponent: Newspaper },
@@ -307,7 +307,7 @@ export const DEFAULT_CONTENT_TYPE_VISUALS: Record<
 
 export const DEFAULT_LANGUAGE_VISUALS: Record<
   string,
-  { name: string; iconName: string; color: string; IconComponent: React.ComponentType<{ className?: string }> }
+  { name: string; iconName: string; color: string; IconComponent: React.ComponentType<{ className?: string; style?: React.CSSProperties }> }
 > = {
   hindi: { name: "Hindi", iconName: "Languages", color: "#F97316", IconComponent: Languages },
   hi: { name: "Hindi", iconName: "Languages", color: "#F97316", IconComponent: Languages },
@@ -380,7 +380,7 @@ export function normalizeHexColor(color?: string | null, fallback = DEFAULT_FALL
 /**
  * Gets icon component by icon name or returns null
  */
-export function getIconComponentByName(iconName?: string | null): React.ComponentType<{ className?: string }> | null {
+export function getIconComponentByName(iconName?: string | null): React.ComponentType<{ className?: string; style?: React.CSSProperties }> | null {
   if (!iconName || typeof iconName !== "string") return null;
   const cleanKey = iconName.trim().toLowerCase().replace(/[^a-z0-9]/g, "");
   return ICON_REGISTRY[cleanKey] || null;
@@ -391,7 +391,7 @@ export interface TaxonomyVisualResult {
   bgColor: string;
   borderColor: string;
   iconName: string;
-  IconComponent: React.ComponentType<{ className?: string }>;
+  IconComponent: React.ComponentType<{ className?: string; style?: React.CSSProperties }>;
   badgeStyle: React.CSSProperties;
   iconStyle: React.CSSProperties;
   containerStyle: React.CSSProperties;
@@ -462,7 +462,7 @@ export function getPlatformVisual(
     else if (cleanKey.startsWith("slack")) matchedDefault = DEFAULT_PLATFORM_VISUALS["slack"];
   }
 
-  let IconComp: React.ComponentType<{ className?: string }> | null = null;
+  let IconComp: React.ComponentType<{ className?: string; style?: React.CSSProperties }> | null = null;
   let iconName = "Share2";
 
   if (matchedDefault) {

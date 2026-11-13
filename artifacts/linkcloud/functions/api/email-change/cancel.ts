@@ -46,8 +46,9 @@ export async function onRequestPost(context: {
     // Check active request
     const activeDoc = await firestoreGetDoc(`users/${uid}/emailChanges/active`, env);
     if (activeDoc && activeDoc.requestId) {
-      // If already verified, do not allow cancelling
-      if (activeDoc.status === "VERIFIED" || activeDoc.status === "verified") {
+      const st = String(activeDoc.status || "").toLowerCase();
+      // If already verified or completed, do not allow cancelling
+      if (st === "verified" || st === "completed") {
         return errorResponse("Email change has already been verified and cannot be cancelled.", 400);
       }
 
@@ -63,6 +64,16 @@ export async function onRequestPost(context: {
       { status: "CANCELLED", updatedAt: now },
       env
     );
+
+    await firestoreSetDoc(
+      `users/${uid}`,
+      {
+        pendingEmail: null,
+        activeEmailChangeRequestId: null,
+        updatedAt: new Date().toISOString(),
+      },
+      env
+    ).catch(() => {});
 
     return jsonResponse({
       success: true,

@@ -43,13 +43,17 @@ export function getOptimizedCloudinaryUrl(url: string, width = 800, quality = "a
  * Validates image type and size strictly before uploading.
  * Falls back safely to Firebase Storage if Cloudinary is unavailable.
  */
-export async function uploadToCloudinary(file: File, customPreset?: string): Promise<string> {
+export async function uploadToCloudinary(
+  file: File,
+  customPreset?: string,
+  customCloudName?: string
+): Promise<string> {
   const validation = validateImageFile(file);
   if (!validation.valid) {
     throw new Error(validation.error || "Invalid file");
   }
 
-  const cloudName = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME || "linkcloud";
+  const cloudName = customCloudName || import.meta.env.VITE_CLOUDINARY_CLOUD_NAME || "linkcloud";
   const uploadPreset = customPreset || import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET || "linkcloud";
 
   try {

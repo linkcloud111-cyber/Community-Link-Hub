@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { Link, useLocation } from "wouter";
 import { useTaxonomy } from "@/contexts/TaxonomyContext";
+import { useLocation as useAppLocation } from "@/contexts/LocationContext";
 import {
   getApprovedGroups,
   getTrendingGroups,
@@ -51,6 +52,7 @@ export default function Home() {
     activeCategories: categories,
     activePlatforms: platforms,
   } = useTaxonomy();
+  const { activeStates } = useAppLocation();
 
   const [search, setSearch] = useState("");
   const [featured, setFeatured] = useState<Group[]>([]);
@@ -227,11 +229,17 @@ export default function Home() {
                         onClick={() => setShowSuggestions(false)}
                         className="flex items-center gap-3 p-3.5 hover:bg-muted/60 transition-colors group"
                       >
-                        <img
-                          src={g.logoUrl || "https://images.unsplash.com/photo-1522071820081-009f0129c71c?w=100"}
-                          alt={g.name}
-                          className="w-8 h-8 rounded-xl object-cover border border-border"
-                        />
+                        {g.logoUrl ? (
+                          <img
+                            src={g.logoUrl}
+                            alt={g.name}
+                            className="w-8 h-8 rounded-xl object-cover border border-border flex-shrink-0"
+                          />
+                        ) : (
+                          <div className="w-8 h-8 rounded-xl bg-muted border border-border flex items-center justify-center flex-shrink-0">
+                            <PlatformIcon platform={g.platform} className="w-4 h-4" />
+                          </div>
+                        )}
                         <div className="flex-1 min-w-0">
                           <p className="font-bold text-xs text-foreground group-hover:text-primary truncate">{g.name}</p>
                           <p className="text-[10px] text-muted-foreground truncate">{g.platform} • {g.categoryName}</p>
@@ -426,8 +434,8 @@ export default function Home() {
               <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Active Groups</p>
             </div>
             <div className="space-y-1">
-              <p className="text-3xl sm:text-4xl font-extrabold text-emerald-500">28</p>
-              <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Indian States</p>
+              <p className="text-3xl sm:text-4xl font-extrabold text-emerald-500">{activeStates.length || 36}</p>
+              <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Indian States & UTs</p>
             </div>
             <div className="space-y-1">
               <p className="text-3xl sm:text-4xl font-extrabold text-blue-500">{platforms.length || 9}</p>

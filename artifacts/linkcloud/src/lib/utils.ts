@@ -423,7 +423,116 @@ export function validateEmail(email: string): boolean {
 
 // ─── Platform Invite Link Validation ───────────────────────────────────────
 
-export function validateInviteLink(url: string, platform: Platform): { valid: boolean; error?: string } {
+export interface PlatformLinkHints {
+  placeholder: string;
+  hint: string;
+  exampleError: string;
+}
+
+export function normalizePlatformKey(platform: string): string {
+  const p = String(platform || "").trim().toLowerCase();
+  if (p.includes("whatsapp")) return "whatsapp";
+  if (p.includes("telegram")) return "telegram";
+  if (p.includes("discord")) return "discord";
+  if (p.includes("facebook")) return "facebook";
+  if (p.includes("instagram")) return "instagram";
+  if (p === "x" || p.includes("x communit") || p.includes("twitter")) return "x";
+  if (p.includes("linkedin")) return "linkedin";
+  if (p.includes("youtube")) return "youtube";
+  if (p.includes("reddit")) return "reddit";
+  if (p.includes("signal")) return "signal";
+  if (p.includes("snapchat")) return "snapchat";
+  if (p.includes("slack")) return "slack";
+  return p;
+}
+
+export function getPlatformLinkHints(
+  platform: string,
+  customHelp?: string,
+  customError?: string
+): PlatformLinkHints {
+  const key = normalizePlatformKey(platform);
+  const map: Record<string, PlatformLinkHints> = {
+    whatsapp: {
+      placeholder: "https://chat.whatsapp.com/ABC123xyz",
+      hint: "WhatsApp group invite (chat.whatsapp.com/...) or channel (whatsapp.com/channel/...).",
+      exampleError: "Invalid WhatsApp link format. Example: https://chat.whatsapp.com/Code or https://whatsapp.com/channel/Code",
+    },
+    telegram: {
+      placeholder: "https://t.me/yourchannel",
+      hint: "Telegram public/private link (t.me/..., telegram.me/...).",
+      exampleError: "Invalid Telegram link format. Example: https://t.me/yourchannel",
+    },
+    discord: {
+      placeholder: "https://discord.gg/yourcode",
+      hint: "Discord invite URL (discord.gg/... or discord.com/invite/...).",
+      exampleError: "Invalid Discord invite link format. Example: https://discord.gg/yourcode",
+    },
+    facebook: {
+      placeholder: "https://www.facebook.com/groups/groupname",
+      hint: "Facebook group URL containing /groups/.",
+      exampleError: "Invalid Facebook Group link format. Example: https://facebook.com/groups/groupname",
+    },
+    instagram: {
+      placeholder: "https://www.instagram.com/j/code/",
+      hint: "Instagram broadcast channel link (instagram.com/j/... or /channel/...).",
+      exampleError: "Invalid Instagram Broadcast link format. Example: https://instagram.com/j/code/",
+    },
+    x: {
+      placeholder: "https://x.com/i/communities/123456",
+      hint: "X (Twitter) Community URL containing /communities/.",
+      exampleError: "Invalid X Community link format. Example: https://x.com/i/communities/123456",
+    },
+    linkedin: {
+      placeholder: "https://www.linkedin.com/groups/123456",
+      hint: "LinkedIn Group URL containing /groups/.",
+      exampleError: "Invalid LinkedIn Group link format. Example: https://linkedin.com/groups/123456",
+    },
+    youtube: {
+      placeholder: "https://www.youtube.com/@channelname",
+      hint: "YouTube Channel URL (/@handle, /channel/..., /c/...).",
+      exampleError: "Invalid YouTube Channel link format. Example: https://youtube.com/@channelname",
+    },
+    reddit: {
+      placeholder: "https://www.reddit.com/r/communityname",
+      hint: "Reddit community URL containing /r/.",
+      exampleError: "Invalid Reddit Community link format. Example: https://reddit.com/r/communityname",
+    },
+    signal: {
+      placeholder: "https://signal.group/#...",
+      hint: "Signal group invite link (signal.group/#...).",
+      exampleError: "Invalid Signal link format. Example: https://signal.group/#...",
+    },
+    snapchat: {
+      placeholder: "https://www.snapchat.com/invite/...",
+      hint: "Snapchat community/group invite URL (snapchat.com/...).",
+      exampleError: "Invalid Snapchat invite link format. Example: https://www.snapchat.com/invite/code",
+    },
+    slack: {
+      placeholder: "https://join.slack.com/t/workspace/shared_invite/...",
+      hint: "Slack workspace invite URL (*.slack.com or join.slack.com/t/...).",
+      exampleError: "Invalid Slack invite link format. Example: https://join.slack.com/t/workspace/shared_invite/...",
+    },
+  };
+
+  const base = map[key] || {
+    placeholder: "https://...",
+    hint: `Provide a valid HTTPS invite link for ${platform || "this community"}.`,
+    exampleError: `Invalid invite link format for ${platform || "selected platform"}.`,
+  };
+
+  return {
+    placeholder: base.placeholder,
+    hint: customHelp?.trim() ? customHelp : base.hint,
+    exampleError: customError?.trim() ? customError : base.exampleError,
+  };
+}
+
+export function validateInviteLink(
+  url: string,
+  platform: Platform | string,
+  customPattern?: string
+): { valid: boolean; error?: string } {
   const cleanUrl = sanitizeString(url);
   if (!cleanUrl) {
     return { valid: false, error: "Invite link URL is required" };
@@ -431,70 +540,111 @@ export function validateInviteLink(url: string, platform: Platform): { valid: bo
 
   try {
     const parsed = new URL(cleanUrl);
+    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
+      return { valid: false, error: "Invite link must start with https:// or http://" };
+    }
+
+    if (customPattern && customPattern.trim()) {
+      try {
+        const regex = new RegExp(customPattern.trim(), "i");
+        if (!regex.test(cleanUrl)) {
+          return {
+            valid: false,
+            error: getPlatformLinkHints(platform).exampleError,
+          };
+        }
+        return { valid: true };
+      } catch {
+        // Ignore malformed dynamic regex and fall back to built-in rules
+      }
+    }
+
     const host = parsed.hostname.toLowerCase();
     const pathname = parsed.pathname;
+    const key = normalizePlatformKey(platform);
+    const hints = getPlatformLinkHints(platform);
 
-    switch (platform) {
-      case "WhatsApp":
+    switch (key) {
+      case "whatsapp":
         if (
           (host.includes("whatsapp.com") && pathname.startsWith("/channel/")) ||
           (host === "chat.whatsapp.com" && pathname.length > 1) ||
-          (host.includes("whatsapp.com") && pathname.startsWith("/chat/"))
+          (host.includes("whatsapp.com") && pathname.startsWith("/chat/")) ||
+          (host === "wa.me" && pathname.length > 1)
         ) {
           return { valid: true };
         }
-        return { valid: false, error: "Invalid WhatsApp link format. Example: https://chat.whatsapp.com/Code or https://whatsapp.com/channel/Code" };
+        return { valid: false, error: hints.exampleError };
 
-      case "Telegram":
+      case "telegram":
         if ((host === "t.me" || host === "telegram.me" || host.includes("telegram.org")) && pathname.length > 1) {
           return { valid: true };
         }
-        return { valid: false, error: "Invalid Telegram link format. Example: https://t.me/yourchannel" };
+        return { valid: false, error: hints.exampleError };
 
-      case "Discord":
+      case "discord":
         if ((host === "discord.gg" && pathname.length > 1) || (host.includes("discord.com") && pathname.startsWith("/invite/"))) {
           return { valid: true };
         }
-        return { valid: false, error: "Invalid Discord invite link format. Example: https://discord.gg/yourcode" };
+        return { valid: false, error: hints.exampleError };
 
-      case "Facebook Groups":
-        if (host.includes("facebook.com") && pathname.includes("/groups/")) {
+      case "facebook":
+        if ((host.includes("facebook.com") || host === "fb.com" || host === "m.me") && (pathname.includes("/groups/") || pathname.length > 1)) {
           return { valid: true };
         }
-        return { valid: false, error: "Invalid Facebook Group link format. Example: https://facebook.com/groups/groupname" };
+        return { valid: false, error: hints.exampleError };
 
-      case "Instagram Broadcast":
-        if (host.includes("instagram.com") && (pathname.includes("/j/") || pathname.includes("/channel/"))) {
+      case "instagram":
+        if ((host.includes("instagram.com") || host === "ig.me") && (pathname.includes("/j/") || pathname.includes("/channel/") || pathname.length > 1)) {
           return { valid: true };
         }
-        return { valid: false, error: "Invalid Instagram Broadcast link format. Example: https://instagram.com/j/code/" };
+        return { valid: false, error: hints.exampleError };
 
-      case "X Communities":
+      case "x":
         if ((host.includes("x.com") || host.includes("twitter.com")) && pathname.includes("/communities/")) {
           return { valid: true };
         }
-        return { valid: false, error: "Invalid X Community link format. Example: https://x.com/i/communities/123456" };
+        return { valid: false, error: hints.exampleError };
 
-      case "LinkedIn Groups":
+      case "linkedin":
         if (host.includes("linkedin.com") && pathname.includes("/groups/")) {
           return { valid: true };
         }
-        return { valid: false, error: "Invalid LinkedIn Group link format. Example: https://linkedin.com/groups/123456" };
+        return { valid: false, error: hints.exampleError };
 
-      case "YouTube Channels":
+      case "youtube":
         if (
-          host.includes("youtube.com") &&
-          (pathname.startsWith("/@") || pathname.startsWith("/c/") || pathname.startsWith("/channel/") || pathname.startsWith("/user/"))
+          (host.includes("youtube.com") &&
+            (pathname.startsWith("/@") || pathname.startsWith("/c/") || pathname.startsWith("/channel/") || pathname.startsWith("/user/"))) ||
+          (host === "youtu.be" && pathname.length > 1)
         ) {
           return { valid: true };
         }
-        return { valid: false, error: "Invalid YouTube Channel link format. Example: https://youtube.com/@channelname" };
+        return { valid: false, error: hints.exampleError };
 
-      case "Reddit":
+      case "reddit":
         if (host.includes("reddit.com") && pathname.includes("/r/")) {
           return { valid: true };
         }
-        return { valid: false, error: "Invalid Reddit Community link format. Example: https://reddit.com/r/communityname" };
+        return { valid: false, error: hints.exampleError };
+
+      case "signal":
+        if ((host === "signal.group" || host.includes("signal.org")) && (pathname.length > 1 || parsed.hash.length > 1)) {
+          return { valid: true };
+        }
+        return { valid: false, error: hints.exampleError };
+
+      case "snapchat":
+        if (host.includes("snapchat.com") && pathname.length > 1) {
+          return { valid: true };
+        }
+        return { valid: false, error: hints.exampleError };
+
+      case "slack":
+        if (host.endsWith("slack.com") && pathname.length > 1) {
+          return { valid: true };
+        }
+        return { valid: false, error: hints.exampleError };
 
       default:
         return { valid: true };

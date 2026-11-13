@@ -157,11 +157,22 @@ export default function VerifyEmailPage() {
       if (urlParams.get("oobCode")) return; // Don't redirect while oobCode is pending
     }
 
+    const activeAuthUser = user || auth.currentUser;
+    const isGoogleAccount = Boolean(
+      activeAuthUser?.providerData?.some((p) => p.providerId === "google.com")
+    );
+    const isPhoneOtpAccount = Boolean(
+      !activeAuthUser?.email &&
+        !profile?.email &&
+        (profile?.phoneVerified || activeAuthUser?.phoneNumber)
+    );
+
     const isVerified = Boolean(
       user?.emailVerified ||
       auth.currentUser?.emailVerified ||
       profile?.emailVerified ||
-      profile?.status === "active" ||
+      isGoogleAccount ||
+      isPhoneOtpAccount ||
       isWebmaster
     );
 

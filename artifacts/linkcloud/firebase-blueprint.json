@@ -115,7 +115,7 @@
         "email": { "type": "string" },
         "phone": { "type": "string" },
         "subject": { "type": "string", "maxLength": 150 },
-        "message": { "type": "string", "maxLength": 1000 },
+        "message": { "type": "string", "maxLength": 1500 },
         "status": { "type": "string", "enum": ["pending", "reviewed", "resolved"] }
       },
       "required": ["name", "email", "subject", "message", "status"]
@@ -155,7 +155,7 @@
         "email": { "type": "string" },
         "phone": { "type": "string" },
         "reason": { "type": "string", "maxLength": 500 },
-        "status": { "type": "string", "enum": ["pending", "approved", "rejected"] }
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected", "cancelled"] }
       },
       "required": ["uid", "email", "reason", "status"]
     },
@@ -167,7 +167,8 @@
         "action": { "type": "string" },
         "details": { "type": "string" },
         "adminEmail": { "type": "string" },
-        "adminUid": { "type": "string" }
+        "adminUid": { "type": "string" },
+        "actorUid": { "type": "string" }
       },
       "required": ["action", "details"]
     },
@@ -178,7 +179,9 @@
       "properties": {
         "siteName": { "type": "string" },
         "siteTagline": { "type": "string" },
-        "maintenanceMode": { "type": "boolean" }
+        "maintenanceMode": { "type": "boolean" },
+        "groupSubmissionEnabled": { "type": "boolean" },
+        "allowPublicSubmissions": { "type": "boolean" }
       }
     },
     "Announcement": {
@@ -201,6 +204,63 @@
         "updatedBy": { "type": "string" }
       },
       "required": ["title", "message", "type", "displayMode", "priority", "enabled", "dismissible"]
+    },
+    "WebmasterRecord": {
+      "title": "WebmasterRecord",
+      "description": "Authoritative webmaster record stored in /webmaster/{webmasterId}",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "accountUid": { "type": "string" },
+        "email": { "type": "string" },
+        "role": { "type": "string", "enum": ["webmaster"] },
+        "status": { "type": "string", "enum": ["active", "inactive"] }
+      },
+      "required": ["uid", "role", "status"]
+    },
+    "GroupOwnership": {
+      "title": "GroupOwnership",
+      "description": "Private submitter metadata isolated from public /groups documents",
+      "type": "object",
+      "properties": {
+        "groupId": { "type": "string" },
+        "submittedBy": { "type": "string" },
+        "submitterUid": { "type": "string" },
+        "ownerUid": { "type": "string" },
+        "submittedByName": { "type": "string", "maxLength": 100 },
+        "submittedByEmail": { "type": "string", "maxLength": 150 }
+      },
+      "required": ["groupId", "submittedBy"]
+    },
+    "EmailChangeRequest": {
+      "title": "EmailChangeRequest",
+      "description": "Cryptographically hashed email change verification lifecycle",
+      "type": "object",
+      "properties": {
+        "requestId": { "type": "string" },
+        "userId": { "type": "string" },
+        "oldEmail": { "type": "string" },
+        "newEmail": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "verified", "cancelled", "superseded", "expired"] },
+        "createdAt": { "type": "number" },
+        "expiresAt": { "type": "number" },
+        "updatedAt": { "type": "number" }
+      },
+      "required": ["requestId", "userId", "oldEmail", "newEmail", "status"]
+    },
+    "AuthEventLog": {
+      "title": "AuthEventLog",
+      "description": "Append-only credential-free authentication forensic telemetry",
+      "type": "object",
+      "properties": {
+        "event": { "type": "string", "maxLength": 100 },
+        "method": { "type": "string", "maxLength": 40 },
+        "outcome": { "type": "string", "enum": ["success", "failure"] },
+        "failureType": { "type": "string", "maxLength": 60 },
+        "portal": { "type": "string", "enum": ["user", "webmaster", "system"] },
+        "timestampIso": { "type": "string", "maxLength": 40 }
+      },
+      "required": ["event", "method", "outcome", "failureType", "portal", "timestampIso"]
     }
   },
   "firestore": {
@@ -212,9 +272,33 @@
       "schema": { "$ref": "#/entities/Group" },
       "description": "Public and user submitted group directory"
     },
+    "/groupOwnership/{groupId}": {
+      "schema": { "$ref": "#/entities/GroupOwnership" },
+      "description": "Private submitter ownership and PII isolated from public directory"
+    },
     "/users/{userId}": {
       "schema": { "$ref": "#/entities/UserProfile" },
       "description": "User profile document"
+    },
+    "/users/{userId}/email_history/{historyId}": {
+      "schema": "object",
+      "description": "User email change audit trail"
+    },
+    "/users/{userId}/emailChanges/{changeId}": {
+      "schema": "object",
+      "description": "Active user email change state projection"
+    },
+    "/webmaster/{webmasterId}": {
+      "schema": { "$ref": "#/entities/WebmasterRecord" },
+      "description": "Authoritative webmaster directory"
+    },
+    "/counters/{counterId}": {
+      "schema": "object",
+      "description": "Server-managed atomic sequence counters"
+    },
+    "/legacyIdentityMap/{legacyUid}": {
+      "schema": "object",
+      "description": "Server-managed mapping for legacy user UIDs"
     },
     "/favorites/{favoriteId}": {
       "schema": { "$ref": "#/entities/Favorite" },
@@ -244,9 +328,41 @@
       "schema": { "$ref": "#/entities/DeletionRequest" },
       "description": "Account deletion requests"
     },
+    "/emailChangeRequests/{requestId}": {
+      "schema": { "$ref": "#/entities/EmailChangeRequest" },
+      "description": "Hashed email change verification requests"
+    },
+    "/accountUidRegistry/{accountUid}": {
+      "schema": "object",
+      "description": "Unique canonical linkcloud UID registry"
+    },
+    "/emailIndex/{email}": {
+      "schema": "object",
+      "description": "Normalized email uniqueness index"
+    },
+    "/mobileIndex/{phone}": {
+      "schema": "object",
+      "description": "Normalized Indian mobile uniqueness index"
+    },
+    "/deletedAccounts/{docId}": {
+      "schema": "object",
+      "description": "Deleted account tombstones"
+    },
+    "/pendingRegistrations/{uid}": {
+      "schema": "object",
+      "description": "Unverified registration cleanup staging records"
+    },
     "/audit_logs/{logId}": {
       "schema": { "$ref": "#/entities/AuditLog" },
       "description": "Webmaster administrative audit logs"
+    },
+    "/auth_logs/{logId}": {
+      "schema": { "$ref": "#/entities/AuthEventLog" },
+      "description": "Append-only authentication telemetry logs"
+    },
+    "/auth_event_logs/{logId}": {
+      "schema": { "$ref": "#/entities/AuthEventLog" },
+      "description": "Append-only authentication forensic event logs"
     },
     "/settings/{settingId}": {
       "schema": { "$ref": "#/entities/SiteSettings" },
@@ -270,15 +386,27 @@
     },
     "/platforms/{platformId}": {
       "schema": "object",
-      "description": "Custom platforms"
+      "description": "Dynamic community platforms (all 12 default platforms + custom)"
     },
     "/contentTypes/{typeId}": {
       "schema": "object",
-      "description": "Custom content types"
+      "description": "Dynamic content types"
     },
     "/languages/{langId}": {
       "schema": "object",
-      "description": "Custom languages"
+      "description": "Dynamic languages"
+    },
+    "/states/{stateId}": {
+      "schema": "object",
+      "description": "India states & UTs"
+    },
+    "/districts/{districtId}": {
+      "schema": "object",
+      "description": "India districts"
+    },
+    "/cities/{cityId}": {
+      "schema": "object",
+      "description": "India cities"
     }
   }
 }

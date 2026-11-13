@@ -147,7 +147,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           email: cleanEmail,
           emailVerified: Boolean(isEmailVerified),
           pendingEmail: null,
-          status: "active",
+          status: isEmailVerified ? "active" : "pending_verification",
         });
         p = {
           uid,
@@ -156,6 +156,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           phone: "",
           photoURL: "",
           role: "user",
+          status: isEmailVerified ? "active" : "pending_verification",
           groupCount: 0,
           createdAt: null as any,
           emailVerified: Boolean(isEmailVerified),
@@ -380,9 +381,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [fetchAndCheckProfile]
   );
 
-  const login = useCallback(async (email: string, password: string, remember: boolean = true): Promise<User> => {
+  const login = useCallback(async (email: string, password: string, _remember: boolean = true): Promise<User> => {
     try {
-      const loggedInUser = await loginUser(email, password, remember);
+      const loggedInUser = await loginUser(email, password);
       await logAuthEvent({
         event: "AUTH_CONTEXT_LOGIN_SUCCESS",
         method: "email_password",
@@ -446,7 +447,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const loginWithGoogle = useCallback(async (mode: "login" | "register" = "login"): Promise<User> => {
     try {
-      const googleUser = await signInWithGoogleAuth(mode);
+      const googleUser = await signInWithGoogleAuth();
       await logAuthEvent({
         event: mode === "register" ? "AUTH_CONTEXT_GOOGLE_SIGNUP_SUCCESS" : "AUTH_CONTEXT_GOOGLE_LOGIN_SUCCESS",
         method: "google",

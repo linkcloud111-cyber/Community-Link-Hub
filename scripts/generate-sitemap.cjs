@@ -17,7 +17,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const PRODUCTION_DOMAIN = process.env.PUBLIC_DOMAIN || 'https://community-link-hub.pages.dev';
+const PRODUCTION_DOMAIN = process.env.PUBLIC_DOMAIN || 'https://linkcloud.in';
 
 // Core public informational pages with their crawl priority and change frequency
 const PUBLIC_PAGES = [

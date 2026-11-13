@@ -154,6 +154,7 @@ async function handleUpdateSettings(context: {
         details: "Updated platform settings & SEO configuration via Webmaster API",
         actorUid: auth.uid || "webmaster",
         actorEmail: auth.email || "webmaster@linkcloud.in",
+        createdAt: nowIso,
         timestamp: nowIso,
       },
       env,

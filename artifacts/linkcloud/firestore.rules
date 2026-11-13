@@ -22,7 +22,11 @@ service cloud.firestore {
     }
 
     function isValidId(id) {
-      return id is string && id.size() > 0 && id.size() <= 128;
+      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidIndexId(id) {
+      return id is string && id.size() > 0 && id.size() <= 160;
     }
 
     function incoming() {
@@ -31,6 +35,49 @@ service cloud.firestore {
 
     function existing() {
       return resource.data;
+    }
+
+    function getSiteSettings() {
+      return get(/databases/$(database)/documents/settings/site).data;
+    }
+
+    function submissionsGloballyEnabled() {
+      return exists(/databases/$(database)/documents/settings/site) &&
+        getSiteSettings().groupSubmissionEnabled == true;
+    }
+
+    function guestSubmissionsAllowed() {
+      return submissionsGloballyEnabled() &&
+        getSiteSettings().allowPublicSubmissions == true;
+    }
+
+    function isGroupOwner(groupId) {
+      return isSignedIn() && (
+        existing().get('submittedBy', '') == request.auth.uid ||
+        existing().get('submitterUid', '') == request.auth.uid ||
+        (
+          exists(/databases/$(database)/documents/groupOwnership/$(groupId)) &&
+          get(/databases/$(database)/documents/groupOwnership/$(groupId)).data.submittedBy == request.auth.uid
+        )
+      );
+    }
+
+    function isValidGroupStrings() {
+      return incoming().name is string && incoming().name.size() >= 2 && incoming().name.size() <= 100
+        && incoming().platform is string && incoming().platform.size() > 0 && incoming().platform.size() <= 60
+        && incoming().joinUrl is string && incoming().joinUrl.size() > 0 && incoming().joinUrl.size() <= 500
+        && incoming().description is string && incoming().description.size() >= 10 && incoming().description.size() <= 600
+        && (!('categoryId' in incoming()) || (incoming().categoryId is string && incoming().categoryId.size() <= 128))
+        && (!('categoryName' in incoming()) || (incoming().categoryName is string && incoming().categoryName.size() <= 100))
+        && (!('contentType' in incoming()) || (incoming().contentType is string && incoming().contentType.size() <= 100))
+        && (!('language' in incoming()) || (incoming().language is string && incoming().language.size() <= 80))
+        && (!('minimumAge' in incoming()) || (incoming().minimumAge is string && incoming().minimumAge.size() <= 40))
+        && (!('state' in incoming()) || (incoming().state is string && incoming().state.size() <= 100))
+        && (!('district' in incoming()) || (incoming().district is string && incoming().district.size() <= 100))
+        && (!('city' in incoming()) || (incoming().city is string && incoming().city.size() <= 100))
+        && (!('rules' in incoming()) || (incoming().rules is string && incoming().rules.size() <= 1000))
+        && (!('logoUrl' in incoming()) || (incoming().logoUrl is string && incoming().logoUrl.size() <= 1000))
+        && (!('tags' in incoming()) || (incoming().tags is list && incoming().tags.size() <= 20));
     }
 
     // ─── Default Deny Catch-All ───
@@ -63,66 +110,144 @@ service cloud.firestore {
     match /users/{userId} {
       allow get: if isUser(userId) || isWebmaster();
       allow list: if isWebmaster();
-      allow create: if isWebmaster() || (
-        isUser(userId) &&
-        (!('role' in incoming()) || incoming().role == 'user') &&
-        (!('status' in incoming()) || incoming().status == 'pending_verification' || incoming().status == 'active')
-      );
-      allow update: if (
-        isWebmaster() && (
-          request.auth.uid != userId ||
-          (!('role' in incoming()) || incoming().role == 'webmaster')
+      allow create: if isValidId(userId) && (
+        isWebmaster() || (
+          isUser(userId) &&
+          (!('role' in incoming()) || incoming().role == 'user') &&
+          (!('status' in incoming()) || incoming().status == 'pending_verification' || incoming().status == 'active') &&
+          (!('emailVerified' in incoming()) || incoming().emailVerified == false || (
+            request.auth.token.email_verified == true &&
+            (!('email' in incoming()) || incoming().email == request.auth.token.email)
+          )) &&
+          (!('phoneVerified' in incoming()) || incoming().phoneVerified == false || request.auth.token.phone_number != null)
         )
-      ) || (
-        isUser(userId) &&
-        (!('uid' in incoming()) || incoming().uid == existing().uid) &&
-        (!('accountUid' in incoming()) || incoming().accountUid == existing().accountUid) &&
-        (!('role' in incoming()) || incoming().role == existing().role) &&
-        (!('status' in incoming()) || incoming().status == existing().status) &&
-        (!('email' in incoming()) || incoming().email == existing().email || incoming().email == request.auth.token.email)
+      );
+      allow update: if isValidId(userId) && (
+        (
+          isWebmaster() && (
+            request.auth.uid != userId ||
+            (!('role' in incoming()) || incoming().role == 'webmaster')
+          )
+        ) || (
+          isUser(userId) &&
+          (!('uid' in incoming()) || incoming().uid == existing().uid) &&
+          (!('accountUid' in incoming()) || !('accountUid' in existing()) || incoming().accountUid == existing().accountUid) &&
+          (!('role' in incoming()) || incoming().role == existing().role) &&
+          (
+            !('status' in incoming()) ||
+            incoming().status == existing().status ||
+            (
+              existing().get('status', '') == 'pending_verification' &&
+              incoming().status == 'active' &&
+              (request.auth.token.email_verified == true || request.auth.token.phone_number != null)
+            )
+          ) &&
+          (!('email' in incoming()) || incoming().email == existing().email || (
+            request.auth.token.email_verified == true &&
+            incoming().email == request.auth.token.email
+          )) &&
+          (!('emailVerified' in incoming()) || incoming().emailVerified == existing().get('emailVerified', false) || (
+            request.auth.token.email_verified == true &&
+            incoming().emailVerified == true
+          )) &&
+          (!('phoneVerified' in incoming()) || incoming().phoneVerified == existing().get('phoneVerified', false) || (
+            request.auth.token.phone_number != null &&
+            incoming().phoneVerified == true
+          ))
+        )
       );
       allow delete: if isWebmaster() && request.auth.uid != userId;
 
       // Subcollection: Email Change History
       match /email_history/{historyId} {
-        allow read, create, update: if isUser(userId) || isWebmaster();
+        allow read: if isUser(userId) || isWebmaster();
+        allow create, update: if isValidId(historyId) && (isUser(userId) || isWebmaster());
+        allow delete: if isWebmaster();
+      }
+
+      // Subcollection: Active Email Change Projection
+      match /emailChanges/{changeId} {
+        allow read: if isUser(userId) || isWebmaster();
+        allow create, update: if isValidId(changeId) && (isUser(userId) || isWebmaster());
         allow delete: if isWebmaster();
       }
     }
 
     // ─── Groups Collection (Public Safe Projection) ───
     match /groups/{groupId} {
-      allow get: if (existing().status == 'approved' && existing().hidden != true)
+      allow get: if isValidId(groupId) && (
+        (existing().status == 'approved' && existing().get('hidden', false) != true)
         || isWebmaster()
-        || (isSignedIn() && (
-            (existing().submittedBy == request.auth.uid) ||
-            (exists(/databases/$(database)/documents/groupOwnership/$(groupId)) && get(/databases/$(database)/documents/groupOwnership/$(groupId)).data.submittedBy == request.auth.uid)
-          ));
-
-      allow list: if true; // Directory queries filtered by status == 'approved' or owner
-
-      allow create: if isSignedIn()
-        && incoming().name is string
-        && incoming().name.size() >= 2
-        && incoming().joinUrl is string
-        && incoming().description is string;
-
-      allow update: if isWebmaster() || (
-        isSignedIn()
-        && (
-          (existing().submittedBy == request.auth.uid) ||
-          (exists(/databases/$(database)/documents/groupOwnership/$(groupId)) && get(/databases/$(database)/documents/groupOwnership/$(groupId)).data.submittedBy == request.auth.uid)
-        )
-        && (existing().status == 'pending' || existing().allowResubmit == true)
+        || isGroupOwner(groupId)
       );
 
-      allow delete: if isWebmaster() || (
-        isSignedIn()
-        && (
-          (existing().submittedBy == request.auth.uid) ||
-          (exists(/databases/$(database)/documents/groupOwnership/$(groupId)) && get(/databases/$(database)/documents/groupOwnership/$(groupId)).data.submittedBy == request.auth.uid)
+      allow list: if resource.data.status == 'approved'
+        || isWebmaster()
+        || (isSignedIn() && (
+          resource.data.submittedBy == request.auth.uid ||
+          resource.data.submitterUid == request.auth.uid ||
+          resource.data.userId == request.auth.uid
+        ));
+
+      allow create: if isValidId(groupId) && isValidGroupStrings() && (
+        isWebmaster() || (
+          submissionsGloballyEnabled() &&
+          incoming().submittedBy is string && incoming().submittedBy.size() <= 128 &&
+          incoming().status == 'pending' &&
+          incoming().get('featured', false) == false &&
+          incoming().get('pinned', false) == false &&
+          incoming().get('hidden', false) == false &&
+          incoming().get('viewsCount', 0) == 0 &&
+          incoming().get('joinCount', 0) == 0 &&
+          incoming().get('reportCount', 0) == 0 &&
+          (
+            (isSignedIn() && incoming().submittedBy == request.auth.uid) ||
+            (!isSignedIn() && guestSubmissionsAllowed() && incoming().submittedBy == '')
+          )
         )
-        && existing().status == 'pending'
+      );
+
+      allow update: if isValidId(groupId) && (
+        isWebmaster() ||
+        (
+          isGroupOwner(groupId) &&
+          isValidGroupStrings() &&
+          (existing().status == 'pending' || existing().get('allowResubmit', false) == true) &&
+          incoming().status == 'pending' &&
+          incoming().get('submittedBy', '') == existing().get('submittedBy', '') &&
+          incoming().get('featured', false) == existing().get('featured', false) &&
+          incoming().get('pinned', false) == existing().get('pinned', false) &&
+          incoming().get('hidden', false) == existing().get('hidden', false) &&
+          incoming().get('viewsCount', 0) == existing().get('viewsCount', 0) &&
+          incoming().get('joinCount', 0) == existing().get('joinCount', 0) &&
+          incoming().get('reportCount', 0) == existing().get('reportCount', 0)
+        ) ||
+        (
+          existing().status == 'approved' &&
+          existing().get('hidden', false) != true &&
+          (
+            (
+              incoming().diff(existing()).affectedKeys().hasOnly(['viewsCount']) &&
+              incoming().viewsCount is int &&
+              incoming().viewsCount == existing().get('viewsCount', 0) + 1
+            ) ||
+            (
+              incoming().diff(existing()).affectedKeys().hasOnly(['joinCount']) &&
+              incoming().joinCount is int &&
+              incoming().joinCount == existing().get('joinCount', 0) + 1
+            ) ||
+            (
+              incoming().diff(existing()).affectedKeys().hasOnly(['reportCount']) &&
+              incoming().reportCount is int &&
+              incoming().reportCount == existing().get('reportCount', 0) + 1
+            )
+          )
+        )
+      );
+
+      allow delete: if isValidId(groupId) && (
+        isWebmaster() ||
+        (isGroupOwner(groupId) && existing().status == 'pending')
       );
     }
 
@@ -130,43 +255,76 @@ service cloud.firestore {
     // Protects submitter PII from public extraction
     match /groupOwnership/{groupId} {
       allow read: if isWebmaster() || (isSignedIn() && resource.data.submittedBy == request.auth.uid);
-      allow create: if isWebmaster() || (isSignedIn() && incoming().submittedBy == request.auth.uid);
-      allow update, delete: if isWebmaster() || (isSignedIn() && resource.data.submittedBy == request.auth.uid);
+      allow create: if isValidId(groupId) && (
+        isWebmaster() ||
+        (submissionsGloballyEnabled() && isSignedIn() && incoming().submittedBy == request.auth.uid) ||
+        (guestSubmissionsAllowed() && !isSignedIn() && incoming().submittedBy == '')
+      );
+      allow update, delete: if isValidId(groupId) && (
+        isWebmaster() ||
+        (isSignedIn() && resource.data.submittedBy == request.auth.uid)
+      );
     }
 
     // ─── Favorites Collection ───
     match /favorites/{favoriteId} {
       allow read: if isSignedIn() && (existing().userId == request.auth.uid || isWebmaster());
-      allow create: if isSignedIn() && incoming().userId == request.auth.uid;
-      allow delete: if isSignedIn() && (existing().userId == request.auth.uid || isWebmaster());
+      allow create: if isValidId(favoriteId) && isSignedIn() && incoming().userId == request.auth.uid;
+      allow delete: if isValidId(favoriteId) && isSignedIn() && (existing().userId == request.auth.uid || isWebmaster());
     }
 
     // ─── Notifications Collection ───
     match /notifications/{notificationId} {
       allow read: if isSignedIn() && (existing().userId == request.auth.uid || isWebmaster());
-      allow update, delete: if isSignedIn() && (existing().userId == request.auth.uid || isWebmaster());
-      allow create: if isWebmaster() || (isSignedIn() && incoming().userId == request.auth.uid);
+      allow update, delete: if isValidId(notificationId) && isSignedIn() && (existing().userId == request.auth.uid || isWebmaster());
+      allow create: if isValidId(notificationId) && (isWebmaster() || (isSignedIn() && incoming().userId == request.auth.uid));
     }
 
     // ─── Reports Collection ───
     match /reports/{reportId} {
       allow read: if isWebmaster();
-      allow create: if true; // Visitors and users can submit reports
-      allow update, delete: if isWebmaster();
+      allow create: if isValidId(reportId) &&
+        incoming().keys().hasAll(['groupId', 'reportedBy', 'reason', 'details', 'status']) &&
+        incoming().groupId is string && incoming().groupId.size() > 0 && incoming().groupId.size() <= 128 &&
+        incoming().reportedBy is string && incoming().reportedBy.size() <= 128 &&
+        (!('reportedByName' in incoming()) || (incoming().reportedByName is string && incoming().reportedByName.size() <= 100)) &&
+        (!('groupName' in incoming()) || (incoming().groupName is string && incoming().groupName.size() <= 150)) &&
+        incoming().reason is string && incoming().reason.size() > 0 && incoming().reason.size() <= 150 &&
+        incoming().details is string && incoming().details.size() <= 500 &&
+        incoming().status == 'pending' &&
+        (
+          (!isSignedIn() && incoming().reportedBy == '') ||
+          (isSignedIn() && (incoming().reportedBy == '' || incoming().reportedBy == request.auth.uid))
+        );
+      allow update, delete: if isValidId(reportId) && isWebmaster();
     }
 
     // ─── Complaints Collection ───
     match /complaints/{complaintId} {
       allow read: if isWebmaster() || (isSignedIn() && existing().email == request.auth.token.email);
-      allow create: if true; // Visitors & users can submit complaints
-      allow update, delete: if isWebmaster();
+      allow create: if isValidId(complaintId) &&
+        incoming().keys().hasAll(['name', 'email', 'subject', 'message', 'status']) &&
+        incoming().name is string && incoming().name.size() > 0 && incoming().name.size() <= 100 &&
+        incoming().email is string && incoming().email.size() > 2 && incoming().email.size() <= 150 &&
+        (!('phone' in incoming()) || (incoming().phone is string && incoming().phone.size() <= 20)) &&
+        incoming().subject is string && incoming().subject.size() > 0 && incoming().subject.size() <= 150 &&
+        incoming().message is string && incoming().message.size() >= 20 && incoming().message.size() <= 1500 &&
+        incoming().status == 'pending';
+      allow update, delete: if isValidId(complaintId) && isWebmaster();
     }
 
     // ─── Contact Messages Collection ───
     match /contacts/{contactId} {
       allow read: if isWebmaster() || (isSignedIn() && existing().email == request.auth.token.email);
-      allow create: if true; // Visitors & users can send contact messages
-      allow update, delete: if isWebmaster();
+      allow create: if isValidId(contactId) &&
+        incoming().keys().hasAll(['name', 'email', 'subject', 'message', 'status']) &&
+        incoming().name is string && incoming().name.size() > 0 && incoming().name.size() <= 100 &&
+        incoming().email is string && incoming().email.size() > 2 && incoming().email.size() <= 150 &&
+        (!('phone' in incoming()) || (incoming().phone is string && incoming().phone.size() <= 20)) &&
+        incoming().subject is string && incoming().subject.size() > 0 && incoming().subject.size() <= 150 &&
+        incoming().message is string && incoming().message.size() >= 20 && incoming().message.size() <= 1000 &&
+        incoming().status == 'unread';
+      allow update, delete: if isValidId(contactId) && isWebmaster();
     }
 
     // ─── Categories Collection ───
@@ -178,54 +336,61 @@ service cloud.firestore {
     // ─── Account Deletion Requests ───
     match /deletionRequests/{requestId} {
       allow read: if isWebmaster() || (isSignedIn() && existing().uid == request.auth.uid);
-      allow create: if isSignedIn() && incoming().uid == request.auth.uid;
-      allow update: if isWebmaster() || (isSignedIn() && existing().uid == request.auth.uid && incoming().status == 'cancelled');
-      allow delete: if isWebmaster();
+      allow create: if isValidId(requestId) && isSignedIn() && incoming().uid == request.auth.uid;
+      allow update: if isValidId(requestId) && (
+        isWebmaster() ||
+        (isSignedIn() && existing().uid == request.auth.uid && incoming().status == 'cancelled')
+      );
+      allow delete: if isValidId(requestId) && isWebmaster();
     }
 
     // ─── Email Change Requests ───
     match /emailChangeRequests/{requestId} {
       // Allow get by document ID for verification link processing & terminal validation
-      allow get: if true;
+      allow get: if isValidId(requestId);
       // Restrict collection listing to Webmaster or owner querying their own requests
       allow list: if isWebmaster() || (isSignedIn() && resource.data.userId == request.auth.uid);
 
       // Authenticated user creating their own request
-      allow create: if isWebmaster() || (
-        isSignedIn() &&
-        incoming().userId == request.auth.uid &&
-        incoming().requestId == requestId &&
-        incoming().status == 'pending'
+      allow create: if isValidId(requestId) && (
+        isWebmaster() || (
+          isSignedIn() &&
+          incoming().userId == request.auth.uid &&
+          incoming().requestId == requestId &&
+          incoming().status == 'pending'
+        )
       );
 
       // Update: Webmaster full access OR owner managing own request OR terminal verification status transition
-      allow update: if isWebmaster() || (
-        // Authenticated owner managing own request (cancelling/superseding) with sensitive fields preserved
-        (
-          isSignedIn() &&
-          existing().userId == request.auth.uid &&
-          incoming().userId == existing().userId &&
-          incoming().requestId == existing().requestId &&
-          incoming().oldEmail == existing().oldEmail &&
-          incoming().newEmail == existing().newEmail &&
-          incoming().createdAt == existing().createdAt &&
-          incoming().expiresAt == existing().expiresAt
-        ) ||
-        // Terminal verification flow transitioning pending -> verified / expired while locking sensitive fields
-        (
-          existing().status == 'pending' &&
-          (incoming().status == 'verified' || incoming().status == 'expired') &&
-          incoming().userId == existing().userId &&
-          incoming().requestId == existing().requestId &&
-          incoming().oldEmail == existing().oldEmail &&
-          incoming().newEmail == existing().newEmail &&
-          incoming().createdAt == existing().createdAt &&
-          incoming().expiresAt == existing().expiresAt
+      allow update: if isValidId(requestId) && (
+        isWebmaster() || (
+          // Authenticated owner managing own request (cancelling/superseding) with sensitive fields preserved
+          (
+            isSignedIn() &&
+            existing().userId == request.auth.uid &&
+            incoming().userId == existing().userId &&
+            incoming().requestId == existing().requestId &&
+            incoming().oldEmail == existing().oldEmail &&
+            incoming().newEmail == existing().newEmail &&
+            incoming().createdAt == existing().createdAt &&
+            incoming().expiresAt == existing().expiresAt
+          ) ||
+          // Terminal verification flow transitioning pending -> verified / expired while locking sensitive fields
+          (
+            existing().status == 'pending' &&
+            (incoming().status == 'verified' || incoming().status == 'expired') &&
+            incoming().userId == existing().userId &&
+            incoming().requestId == existing().requestId &&
+            incoming().oldEmail == existing().oldEmail &&
+            incoming().newEmail == existing().newEmail &&
+            incoming().createdAt == existing().createdAt &&
+            incoming().expiresAt == existing().expiresAt
+          )
         )
       );
 
       // Delete: only Webmaster or authenticated owner
-      allow delete: if isWebmaster() || (isSignedIn() && existing().userId == request.auth.uid);
+      allow delete: if isValidId(requestId) && (isWebmaster() || (isSignedIn() && existing().userId == request.auth.uid));
     }
 
     // ─── Account UID Registry ───
@@ -237,12 +402,14 @@ service cloud.firestore {
 
     // ─── Email Index ───
     match /emailIndex/{email} {
-      allow get: if true;
+      allow get: if isValidIndexId(email);
       allow list: if isWebmaster();
-      allow create: if isWebmaster() || (
-        isSignedIn() &&
-        incoming().uid == request.auth.uid &&
-        !exists(/databases/$(database)/documents/emailIndex/$(email))
+      allow create: if isValidIndexId(email) && (
+        isWebmaster() || (
+          isSignedIn() &&
+          incoming().uid == request.auth.uid &&
+          !exists(/databases/$(database)/documents/emailIndex/$(email))
+        )
       );
       allow update: if isWebmaster();
       allow delete: if isWebmaster() || (isSignedIn() && existing().uid == request.auth.uid);
@@ -250,12 +417,14 @@ service cloud.firestore {
 
     // ─── Mobile Index ───
     match /mobileIndex/{phone} {
-      allow get: if true;
+      allow get: if isValidIndexId(phone);
       allow list: if isWebmaster();
-      allow create: if isWebmaster() || (
-        isSignedIn() &&
-        incoming().uid == request.auth.uid &&
-        !exists(/databases/$(database)/documents/mobileIndex/$(phone))
+      allow create: if isValidIndexId(phone) && (
+        isWebmaster() || (
+          isSignedIn() &&
+          incoming().uid == request.auth.uid &&
+          !exists(/databases/$(database)/documents/mobileIndex/$(phone))
+        )
       );
       allow update: if isWebmaster();
       allow delete: if isWebmaster() || (isSignedIn() && existing().uid == request.auth.uid);
@@ -278,12 +447,18 @@ service cloud.firestore {
     // Tamper-proof security audit log: Append-only by Webmaster or authenticated actors; update and delete are strictly forbidden.
     match /audit_logs/{logId} {
       allow read: if isWebmaster();
-      allow create: if isWebmaster() || (isSignedIn() && incoming().actorUid == request.auth.uid);
+      allow create: if isValidId(logId) && (
+        isWebmaster() ||
+        (isSignedIn() && (incoming().get('actorUid', '') == request.auth.uid || incoming().get('adminUid', '') == request.auth.uid))
+      );
       allow update, delete: if false;
     }
     match /auditLogs/{logId} {
       allow read: if isWebmaster();
-      allow create: if isWebmaster() || (isSignedIn() && incoming().actorUid == request.auth.uid);
+      allow create: if isValidId(logId) && (
+        isWebmaster() ||
+        (isSignedIn() && (incoming().get('actorUid', '') == request.auth.uid || incoming().get('adminUid', '') == request.auth.uid))
+      );
       allow update, delete: if false;
     }
 
@@ -292,7 +467,7 @@ service cloud.firestore {
     // Strictly forbids storing sensitive credential fields; read restricted to Webmaster; immutable.
     match /auth_logs/{logId} {
       allow read: if isWebmaster();
-      allow create: if
+      allow create: if isValidId(logId) &&
         incoming().keys().hasAll(['event', 'method', 'outcome', 'failureType', 'portal', 'timestampIso']) &&
         incoming().event is string && incoming().event.size() <= 100 &&
         incoming().method is string && incoming().method.size() <= 40 &&
@@ -312,7 +487,7 @@ service cloud.firestore {
 
     match /auth_event_logs/{logId} {
       allow read: if isWebmaster();
-      allow create: if
+      allow create: if isValidId(logId) &&
         incoming().keys().hasAll(['event', 'method', 'outcome', 'failureType', 'portal', 'timestampIso']) &&
         incoming().event is string && incoming().event.size() <= 100 &&
         incoming().method is string && incoming().method.size() <= 40 &&

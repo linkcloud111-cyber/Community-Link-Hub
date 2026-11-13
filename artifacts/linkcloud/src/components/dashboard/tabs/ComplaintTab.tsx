@@ -177,11 +177,11 @@ export function ComplaintTab({ complaints, onSubmitComplaint }: ComplaintTabProp
                     </div>
 
                     <p className="text-xs text-slate-600 dark:text-slate-300 line-clamp-2">
-                      {c.description}
+                      {c.message || (c as any).description}
                     </p>
 
                     <div className="flex items-center justify-between text-[10px] text-slate-400 pt-1">
-                      <span className="font-mono">{c.ticketNumber || c.id.slice(0, 8)}</span>
+                      <span className="font-mono">{(c as any).ticketNumber || c.id.slice(0, 8)}</span>
                       <span>{formatDate(c.createdAt)}</span>
                     </div>
                   </div>

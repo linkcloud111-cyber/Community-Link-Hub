@@ -181,7 +181,7 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
     return source.filter((c) => {
       const stateMatch = c.stateName.toLowerCase().trim() === stateName.toLowerCase().trim();
       if (!districtName) return stateMatch;
-      return stateMatch && c.districtName.toLowerCase().trim() === districtName.toLowerCase().trim();
+      return stateMatch && (c.districtName || "").toLowerCase().trim() === districtName.toLowerCase().trim();
     });
   };
 

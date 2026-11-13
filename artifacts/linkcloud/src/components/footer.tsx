@@ -13,22 +13,13 @@ import {
 } from "react-icons/si";
 import { Linkedin } from "lucide-react";
 import { useSiteSettings } from "@/contexts/SiteSettingsContext";
-
-const PLATFORMS = [
-  { name: "WhatsApp", icon: SiWhatsapp, color: "text-green-500" },
-  { name: "Telegram", icon: SiTelegram, color: "text-blue-400" },
-  { name: "Discord", icon: SiDiscord, color: "text-indigo-500" },
-  { name: "Facebook Groups", icon: SiFacebook, color: "text-blue-600" },
-  { name: "Instagram Broadcast", icon: SiInstagram, color: "text-pink-500" },
-  { name: "X Communities", icon: SiX, color: "text-foreground" },
-  { name: "LinkedIn Groups", icon: Linkedin, color: "text-blue-700" },
-  { name: "YouTube Channels", icon: SiYoutube, color: "text-red-500" },
-  { name: "Reddit", icon: SiReddit, color: "text-orange-500" },
-];
+import { useTaxonomy } from "@/contexts/TaxonomyContext";
+import { PlatformIcon } from "@/components/platform-icon";
 
 export default function Footer() {
   const [location] = useLocation();
   const { settings } = useSiteSettings();
+  const { activePlatforms } = useTaxonomy();
   const year = new Date().getFullYear();
 
   // Hide global footer on Webmaster Login page
@@ -234,13 +225,18 @@ export default function Footer() {
               Platforms
             </h4>
             <ul className="space-y-2 text-sm text-muted-foreground">
-              {PLATFORMS.map((p) => (
-                <li key={p.name}>
+              {activePlatforms.map((p) => (
+                <li key={p.id || p.name}>
                   <Link
                     href={`/groups?platform=${encodeURIComponent(p.name)}`}
                     className="flex items-center gap-2 hover:text-primary transition-colors group"
                   >
-                    <p.icon className={`w-4 h-4 ${p.color}`} />
+                    <PlatformIcon
+                      platform={p.name}
+                      color={p.themeColor}
+                      icon={p.icon}
+                      className="w-4 h-4 flex-shrink-0"
+                    />
                     {p.name}
                   </Link>
                 </li>

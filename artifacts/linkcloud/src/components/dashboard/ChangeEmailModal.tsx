@@ -642,19 +642,25 @@ export function ChangeEmailModal({
         // Request fresh session via Custom Token from server
         startSessionHandoff();
         try {
-          const res = await fetch("/api/email-change/session-refresh", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              uid: user.uid,
-              requestId: activeRequestId || `req_${user.uid}`,
-            }),
-          });
-          const data = await res.json();
-          if (res.ok && data?.customToken) {
-            console.log("[REFRESH STATUS READ-ONLY] Fresh custom token received, establishing valid session...");
-            await signInWithCustomToken(auth, data.customToken);
-            await refreshProfile();
+          const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
+          if (idToken) {
+            const res = await fetch("/api/email-change/session-refresh", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${idToken}`,
+              },
+              body: JSON.stringify({
+                uid: user.uid,
+                requestId: activeRequestId || "",
+              }),
+            });
+            const data = await res.json();
+            if (res.ok && data?.customToken) {
+              console.log("[REFRESH STATUS READ-ONLY] Fresh custom token received, establishing valid session...");
+              await signInWithCustomToken(auth, data.customToken);
+              await refreshProfile();
+            }
           }
         } catch (tokenErr) {
           console.warn("[REFRESH STATUS READ-ONLY] Session refresh token notice:", tokenErr);

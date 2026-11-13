@@ -574,7 +574,7 @@ export default function Dashboard() {
         confirmText="Yes, Delete Community"
         cancelText="Cancel"
         variant="destructive"
-        isLoading={isDeletingGroup}
+        loading={isDeletingGroup}
         onConfirm={handleConfirmDeleteGroup}
       />
 

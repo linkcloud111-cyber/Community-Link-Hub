@@ -20,7 +20,7 @@ import { motion } from "framer-motion";
 import { PageBreadcrumb } from "@/components/page-breadcrumb";
 import { CharacterCounter } from "@/components/character-counter";
 import { usePageTitle } from "@/lib/page-meta";
-import { validateIndianMobile } from "@/lib/utils";
+import { cleanMobileInput, extract10DigitMobile, validateIndianMobile } from "@/lib/utils";
 
 export default function ComplaintPage() {
   usePageTitle("Submit a Grievance", "Public Grievance Desk");
@@ -46,8 +46,9 @@ export default function ComplaintPage() {
       if (profile?.email || user?.email) {
         setEmail((prev) => prev || profile?.email || user?.email || "");
       }
-      if (profile?.mobile) {
-        setPhone((prev) => prev || profile.mobile);
+      const savedPhone = extract10DigitMobile(profile?.phone || "");
+      if (savedPhone) {
+        setPhone((prev) => prev || savedPhone);
       }
     }
   }, [user, profile]);
@@ -67,7 +68,7 @@ export default function ComplaintPage() {
       return;
     }
 
-    if (!validateIndianMobile(phone.trim())) {
+    if (!validateIndianMobile(phone.trim()).valid) {
       toast.error("Please enter a valid 10-digit Indian mobile number (e.g. 9876543210).");
       return;
     }
@@ -228,9 +229,10 @@ export default function ComplaintPage() {
                 </label>
                 <input
                   type="tel"
+                  inputMode="numeric"
                   required
                   value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
+                  onChange={(e) => setPhone(cleanMobileInput(e.target.value))}
                   placeholder="10-digit mobile (e.g. 9876543210)"
                   maxLength={10}
                   className="w-full px-4 py-3 bg-background border border-border rounded-xl text-sm focus:ring-2 focus:ring-destructive outline-none transition"

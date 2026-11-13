@@ -1,136 +1,412 @@
 {
   "entities": {
-    "UserProfile": {
-      "title": "UserProfile",
-      "description": "User profile document stored in /users/{userId}",
+    "Group": {
+      "title": "Group",
+      "description": "Public social messaging group or channel submission",
       "type": "object",
       "properties": {
-        "uid": { "type": "string", "maxLength": 128 },
-        "accountUid": { "type": "string", "maxLength": 64 },
-        "email": { "type": "string", "format": "email", "maxLength": 128 },
-        "displayName": { "type": "string", "maxLength": 100 },
-        "phone": { "type": "string", "maxLength": 20 },
-        "role": { "type": "string", "enum": ["visitor", "user", "webmaster"] },
-        "status": { "type": "string", "enum": ["active", "pending_verification", "suspended", "banned", "deleted"] },
-        "emailVerified": { "type": "boolean" }
+        "name": { "type": "string", "minLength": 2, "maxLength": 100 },
+        "platform": { "type": "string" },
+        "categoryId": { "type": "string" },
+        "categoryName": { "type": "string" },
+        "state": { "type": "string" },
+        "district": { "type": "string" },
+        "city": { "type": "string" },
+        "language": { "type": "string" },
+        "contentType": { "type": "string" },
+        "linkStatus": { "type": "string", "enum": ["active", "inactive"] },
+        "minimumAge": { "type": "string" },
+        "description": { "type": "string", "maxLength": 500 },
+        "rules": { "type": "string", "maxLength": 500 },
+        "tags": { "type": "array" },
+        "joinUrl": { "type": "string" },
+        "logoUrl": { "type": "string" },
+        "submittedBy": { "type": "string" },
+        "submittedByName": { "type": "string" },
+        "submittedByEmail": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected"] },
+        "featured": { "type": "boolean" },
+        "pinned": { "type": "boolean" },
+        "hidden": { "type": "boolean" },
+        "trending": { "type": "boolean" },
+        "memberCount": { "type": "number" },
+        "joinCount": { "type": "number" },
+        "viewsCount": { "type": "number" },
+        "reportCount": { "type": "number" },
+        "rejectionReason": { "type": "string" },
+        "changesRequested": { "type": "boolean" },
+        "changesRequestedMessage": { "type": "string" },
+        "allowResubmit": { "type": "boolean" }
       },
-      "required": ["uid", "role", "status"]
+      "required": ["name", "platform", "joinUrl", "description", "submittedBy", "status"]
+    },
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "User profile and account information",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "accountUid": { "type": "string" },
+        "displayName": { "type": "string", "maxLength": 100 },
+        "email": { "type": "string" },
+        "phone": { "type": "string" },
+        "dob": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "state": { "type": "string" },
+        "district": { "type": "string" },
+        "city": { "type": "string" },
+        "address": { "type": "string" },
+        "emailVerified": { "type": "boolean" },
+        "phoneVerified": { "type": "boolean" },
+        "role": { "type": "string", "enum": ["visitor", "user", "webmaster"] },
+        "status": { "type": "string", "enum": ["active", "suspended", "banned", "deleted"] },
+        "groupCount": { "type": "number" },
+        "bio": { "type": "string", "maxLength": 500 },
+        "deletionRequested": { "type": "boolean" },
+        "deletionReason": { "type": "string" }
+      },
+      "required": ["displayName", "email", "role", "status"]
+    },
+    "Favorite": {
+      "title": "Favorite",
+      "description": "User favorite group bookmark",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "groupId": { "type": "string" }
+      },
+      "required": ["userId", "groupId"]
+    },
+    "Notification": {
+      "title": "Notification",
+      "description": "User notification alert",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "title": { "type": "string", "maxLength": 150 },
+        "message": { "type": "string", "maxLength": 500 },
+        "type": { "type": "string", "enum": ["approval", "rejection", "report", "system"] },
+        "groupId": { "type": "string" },
+        "read": { "type": "boolean" }
+      },
+      "required": ["userId", "title", "message", "read"]
+    },
+    "Report": {
+      "title": "Report",
+      "description": "Report submitted for a group",
+      "type": "object",
+      "properties": {
+        "groupId": { "type": "string" },
+        "groupName": { "type": "string" },
+        "reportedBy": { "type": "string" },
+        "reportedByName": { "type": "string" },
+        "reason": { "type": "string" },
+        "details": { "type": "string", "maxLength": 500 },
+        "status": { "type": "string", "enum": ["pending", "reviewed", "dismissed"] }
+      },
+      "required": ["groupId", "reportedBy", "reason", "details", "status"]
+    },
+    "Complaint": {
+      "title": "Complaint",
+      "description": "General complaint submitted by user or visitor",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "maxLength": 100 },
+        "email": { "type": "string" },
+        "phone": { "type": "string" },
+        "subject": { "type": "string", "maxLength": 150 },
+        "message": { "type": "string", "maxLength": 1500 },
+        "status": { "type": "string", "enum": ["pending", "reviewed", "resolved"] }
+      },
+      "required": ["name", "email", "subject", "message", "status"]
+    },
+    "ContactMessage": {
+      "title": "ContactMessage",
+      "description": "Contact form submission",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "maxLength": 100 },
+        "email": { "type": "string" },
+        "phone": { "type": "string" },
+        "subject": { "type": "string", "maxLength": 150 },
+        "message": { "type": "string", "maxLength": 1000 },
+        "status": { "type": "string", "enum": ["unread", "read", "replied"] }
+      },
+      "required": ["name", "email", "subject", "message", "status"]
+    },
+    "Category": {
+      "title": "Category",
+      "description": "Group category",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "maxLength": 100 },
+        "icon": { "type": "string" },
+        "groupCount": { "type": "number" }
+      },
+      "required": ["name"]
+    },
+    "DeletionRequest": {
+      "title": "DeletionRequest",
+      "description": "User account deletion request",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "displayName": { "type": "string" },
+        "email": { "type": "string" },
+        "phone": { "type": "string" },
+        "reason": { "type": "string", "maxLength": 500 },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected", "cancelled"] }
+      },
+      "required": ["uid", "email", "reason", "status"]
+    },
+    "AuditLog": {
+      "title": "AuditLog",
+      "description": "System event audit log",
+      "type": "object",
+      "properties": {
+        "action": { "type": "string" },
+        "details": { "type": "string" },
+        "adminEmail": { "type": "string" },
+        "adminUid": { "type": "string" },
+        "actorUid": { "type": "string" }
+      },
+      "required": ["action", "details"]
+    },
+    "SiteSettings": {
+      "title": "SiteSettings",
+      "description": "Global website configuration and settings",
+      "type": "object",
+      "properties": {
+        "siteName": { "type": "string" },
+        "siteTagline": { "type": "string" },
+        "maintenanceMode": { "type": "boolean" },
+        "groupSubmissionEnabled": { "type": "boolean" },
+        "allowPublicSubmissions": { "type": "boolean" }
+      }
+    },
+    "Announcement": {
+      "title": "Announcement",
+      "description": "Website-wide public banner or scrolling ticker announcement",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "maxLength": 100 },
+        "message": { "type": "string", "maxLength": 500 },
+        "type": { "type": "string", "enum": ["info", "announcement", "important", "warning", "maintenance", "success"] },
+        "displayMode": { "type": "string", "enum": ["banner", "ticker"] },
+        "priority": { "type": "number" },
+        "enabled": { "type": "boolean" },
+        "dismissible": { "type": "boolean" },
+        "actionLabel": { "type": "string", "maxLength": 50 },
+        "actionUrl": { "type": "string", "maxLength": 300 },
+        "startAt": { "type": "string" },
+        "endAt": { "type": "string" },
+        "createdBy": { "type": "string" },
+        "updatedBy": { "type": "string" }
+      },
+      "required": ["title", "message", "type", "displayMode", "priority", "enabled", "dismissible"]
     },
     "WebmasterRecord": {
       "title": "WebmasterRecord",
-      "description": "Authoritative webmaster authority record in /webmaster/{webmasterId}",
+      "description": "Authoritative webmaster record stored in /webmaster/{webmasterId}",
       "type": "object",
       "properties": {
-        "uid": { "type": "string", "maxLength": 128 },
-        "accountUid": { "type": "string", "maxLength": 64 },
-        "email": { "type": "string", "format": "email", "maxLength": 128 },
+        "uid": { "type": "string" },
+        "accountUid": { "type": "string" },
+        "email": { "type": "string" },
         "role": { "type": "string", "enum": ["webmaster"] },
         "status": { "type": "string", "enum": ["active", "inactive"] }
       },
       "required": ["uid", "role", "status"]
     },
+    "GroupOwnership": {
+      "title": "GroupOwnership",
+      "description": "Private submitter metadata isolated from public /groups documents",
+      "type": "object",
+      "properties": {
+        "groupId": { "type": "string" },
+        "submittedBy": { "type": "string" },
+        "submitterUid": { "type": "string" },
+        "ownerUid": { "type": "string" },
+        "submittedByName": { "type": "string", "maxLength": 100 },
+        "submittedByEmail": { "type": "string", "maxLength": 150 }
+      },
+      "required": ["groupId", "submittedBy"]
+    },
+    "EmailChangeRequest": {
+      "title": "EmailChangeRequest",
+      "description": "Cryptographically hashed email change verification lifecycle",
+      "type": "object",
+      "properties": {
+        "requestId": { "type": "string" },
+        "userId": { "type": "string" },
+        "oldEmail": { "type": "string" },
+        "newEmail": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "verified", "cancelled", "superseded", "expired"] },
+        "createdAt": { "type": "number" },
+        "expiresAt": { "type": "number" },
+        "updatedAt": { "type": "number" }
+      },
+      "required": ["requestId", "userId", "oldEmail", "newEmail", "status"]
+    },
     "AuthEventLog": {
       "title": "AuthEventLog",
-      "description": "Append-only credential-free authentication event record in /auth_event_logs/{logId}",
+      "description": "Append-only credential-free authentication forensic telemetry",
       "type": "object",
       "properties": {
         "event": { "type": "string", "maxLength": 100 },
-        "method": {
-          "type": "string",
-          "maxLength": 40,
-          "enum": [
-            "email_password",
-            "mobile_otp",
-            "mobile_password",
-            "google",
-            "email_verification",
-            "password_reset",
-            "password_change",
-            "email_change",
-            "registration",
-            "session"
-          ]
-        },
-        "context": { "type": "string", "maxLength": 40 },
+        "method": { "type": "string", "maxLength": 40 },
         "outcome": { "type": "string", "enum": ["success", "failure"] },
         "failureType": { "type": "string", "maxLength": 60 },
-        "errorCode": { "type": "string", "maxLength": 100 },
-        "errorMessage": { "type": "string", "maxLength": 300 },
-        "uid": { "type": "string", "maxLength": 128 },
-        "maskedIdentifier": { "type": "string", "maxLength": 128 },
         "portal": { "type": "string", "enum": ["user", "webmaster", "system"] },
-        "route": { "type": "string", "maxLength": 120 },
         "timestampIso": { "type": "string", "maxLength": 40 }
       },
       "required": ["event", "method", "outcome", "failureType", "portal", "timestampIso"]
-    },
-    "AuditLog": {
-      "title": "AuditLog",
-      "description": "Tamper-proof administrative audit log record in /audit_logs/{logId}",
-      "type": "object",
-      "properties": {
-        "action": { "type": "string", "maxLength": 100 },
-        "details": { "type": "string", "maxLength": 500 },
-        "adminEmail": { "type": "string", "maxLength": 128 },
-        "actorUid": { "type": "string", "maxLength": 128 }
-      },
-      "required": ["action", "details"]
-    },
-    "VisitorStat": {
-      "title": "VisitorStat",
-      "description": "Daily aggregated visitor hit statistics in /visitor_stats/{dateId}",
-      "type": "object",
-      "properties": {
-        "date": { "type": "string", "maxLength": 20 },
-        "count": { "type": "number" },
-        "lastHitAt": { "type": "string", "maxLength": 50 }
-      },
-      "required": ["date", "count"]
-    },
-    "SearchLog": {
-      "title": "SearchLog",
-      "description": "Aggregated search term analytics in /search_logs/{searchId}",
-      "type": "object",
-      "properties": {
-        "keyword": { "type": "string", "maxLength": 100 },
-        "count": { "type": "number" },
-        "category": { "type": "string", "maxLength": 100 },
-        "platform": { "type": "string", "maxLength": 100 },
-        "language": { "type": "string", "maxLength": 100 },
-        "location": { "type": "string", "maxLength": 100 },
-        "updatedAt": { "type": "string", "maxLength": 50 }
-      },
-      "required": ["keyword", "count"]
     }
   },
   "firestore": {
+    "/announcements/{announcementId}": {
+      "schema": { "$ref": "#/entities/Announcement" },
+      "description": "Website-wide public announcements"
+    },
+    "/groups/{groupId}": {
+      "schema": { "$ref": "#/entities/Group" },
+      "description": "Public and user submitted group directory"
+    },
+    "/groupOwnership/{groupId}": {
+      "schema": { "$ref": "#/entities/GroupOwnership" },
+      "description": "Private submitter ownership and PII isolated from public directory"
+    },
     "/users/{userId}": {
-      "schema": "UserProfile",
-      "description": "User profile collection"
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "User profile document"
+    },
+    "/users/{userId}/email_history/{historyId}": {
+      "schema": "object",
+      "description": "User email change audit trail"
+    },
+    "/users/{userId}/emailChanges/{changeId}": {
+      "schema": "object",
+      "description": "Active user email change state projection"
     },
     "/webmaster/{webmasterId}": {
-      "schema": "WebmasterRecord",
-      "description": "Authoritative webmaster collection"
+      "schema": { "$ref": "#/entities/WebmasterRecord" },
+      "description": "Authoritative webmaster directory"
     },
-    "/auth_logs/{logId}": {
-      "schema": "AuthEventLog",
-      "description": "Append-only authentication event logs without sensitive credentials"
+    "/counters/{counterId}": {
+      "schema": "object",
+      "description": "Server-managed atomic sequence counters"
     },
-    "/auth_event_logs/{logId}": {
-      "schema": "AuthEventLog",
-      "description": "Append-only authentication forensic event logs without sensitive credentials"
+    "/legacyIdentityMap/{legacyUid}": {
+      "schema": "object",
+      "description": "Server-managed mapping for legacy user UIDs"
+    },
+    "/favorites/{favoriteId}": {
+      "schema": { "$ref": "#/entities/Favorite" },
+      "description": "User saved favorite groups"
+    },
+    "/notifications/{notificationId}": {
+      "schema": { "$ref": "#/entities/Notification" },
+      "description": "User notifications"
+    },
+    "/reports/{reportId}": {
+      "schema": { "$ref": "#/entities/Report" },
+      "description": "Submitted reports for groups"
+    },
+    "/complaints/{complaintId}": {
+      "schema": { "$ref": "#/entities/Complaint" },
+      "description": "Submitted user complaints"
+    },
+    "/contacts/{contactId}": {
+      "schema": { "$ref": "#/entities/ContactMessage" },
+      "description": "Submitted contact messages"
+    },
+    "/categories/{categoryId}": {
+      "schema": { "$ref": "#/entities/Category" },
+      "description": "Group categories"
+    },
+    "/deletionRequests/{requestId}": {
+      "schema": { "$ref": "#/entities/DeletionRequest" },
+      "description": "Account deletion requests"
+    },
+    "/emailChangeRequests/{requestId}": {
+      "schema": { "$ref": "#/entities/EmailChangeRequest" },
+      "description": "Hashed email change verification requests"
+    },
+    "/accountUidRegistry/{accountUid}": {
+      "schema": "object",
+      "description": "Unique canonical linkcloud UID registry"
+    },
+    "/emailIndex/{email}": {
+      "schema": "object",
+      "description": "Normalized email uniqueness index"
+    },
+    "/mobileIndex/{phone}": {
+      "schema": "object",
+      "description": "Normalized Indian mobile uniqueness index"
+    },
+    "/deletedAccounts/{docId}": {
+      "schema": "object",
+      "description": "Deleted account tombstones"
+    },
+    "/pendingRegistrations/{uid}": {
+      "schema": "object",
+      "description": "Unverified registration cleanup staging records"
     },
     "/audit_logs/{logId}": {
-      "schema": "AuditLog",
-      "description": "Tamper-proof administrative audit logs"
+      "schema": { "$ref": "#/entities/AuditLog" },
+      "description": "Webmaster administrative audit logs"
     },
-    "/visitor_stats/{dateId}": {
-      "schema": "VisitorStat",
-      "description": "Daily aggregated visitor hit statistics"
+    "/auth_logs/{logId}": {
+      "schema": { "$ref": "#/entities/AuthEventLog" },
+      "description": "Append-only authentication telemetry logs"
+    },
+    "/auth_event_logs/{logId}": {
+      "schema": { "$ref": "#/entities/AuthEventLog" },
+      "description": "Append-only authentication forensic event logs"
+    },
+    "/settings/{settingId}": {
+      "schema": { "$ref": "#/entities/SiteSettings" },
+      "description": "Webmaster site settings documents"
+    },
+    "/faqs/{faqId}": {
+      "schema": "object",
+      "description": "Frequently asked questions"
+    },
+    "/help_articles/{articleId}": {
+      "schema": "object",
+      "description": "Help center articles"
     },
     "/search_logs/{searchId}": {
-      "schema": "SearchLog",
-      "description": "Aggregated search keyword tracking"
+      "schema": "object",
+      "description": "Search analytics logs"
+    },
+    "/visitor_stats/{dateId}": {
+      "schema": "object",
+      "description": "Daily visitor traffic statistics"
+    },
+    "/platforms/{platformId}": {
+      "schema": "object",
+      "description": "Dynamic community platforms (all 12 default platforms + custom)"
+    },
+    "/contentTypes/{typeId}": {
+      "schema": "object",
+      "description": "Dynamic content types"
+    },
+    "/languages/{langId}": {
+      "schema": "object",
+      "description": "Dynamic languages"
+    },
+    "/states/{stateId}": {
+      "schema": "object",
+      "description": "India states & UTs"
+    },
+    "/districts/{districtId}": {
+      "schema": "object",
+      "description": "India districts"
+    },
+    "/cities/{cityId}": {
+      "schema": "object",
+      "description": "India cities"
     }
   }
 }

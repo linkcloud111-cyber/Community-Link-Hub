@@ -297,8 +297,9 @@ export async function onRequestPost(context: {
 
     // G. Write audit log (Monotonic counter is NEVER touched / decremented)
     const auditId = `audit_cleanup_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+    const cleanedAtIso = new Date().toISOString();
     await firestoreSetDoc(
-      `auditLogs/${auditId}`,
+      `audit_logs/${auditId}`,
       {
         action: "UNVERIFIED_PROVISIONAL_EXPIRED_CLEANUP",
         targetUid: uid,
@@ -307,10 +308,11 @@ export async function onRequestPost(context: {
           email: cleanEmail,
           accountUid: uid,
           registeredAt: regTimestampStr,
-          cleanedAt: new Date().toISOString(),
+          cleanedAt: cleanedAtIso,
           reason: "Unverified provisional registration expired after 4-hour threshold",
         },
-        timestamp: new Date().toISOString(),
+        createdAt: cleanedAtIso,
+        timestamp: cleanedAtIso,
       },
       env,
       false

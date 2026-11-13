@@ -258,11 +258,12 @@ export async function handleAdminUserStatusRequest(
     );
 
     // Write audit log
-    await firestore.collection("auditLogs").add({
+    await firestore.collection("audit_logs").add({
       action: shouldDisable ? "USER_SUSPENDED" : "USER_STATUS_UPDATED",
       targetUid,
       actorUid: callerUid,
       details: { newStatus: status, disabled: shouldDisable, actorEmail: callerEmail },
+      createdAt: nowIso,
       timestamp: nowIso,
     });
 
@@ -406,7 +407,7 @@ export async function handleAdminUserDeleteRequest(
     batch.delete(userDocRef);
 
     // Audit log
-    const auditLogRef = firestore.collection("auditLogs").doc();
+    const auditLogRef = firestore.collection("audit_logs").doc();
     batch.set(auditLogRef, {
       action: "USER_DELETED_ADMIN",
       targetUid,
@@ -417,6 +418,7 @@ export async function handleAdminUserDeleteRequest(
         actorEmail: callerEmail,
         reason: reason || "Webmaster administrative deletion",
       },
+      createdAt: nowIso,
       timestamp: nowIso,
     });
 
@@ -796,7 +798,8 @@ export async function handleAdminCleanupUnverifiedRequest(
       batch.delete(firestore.collection("pendingRegistrations").doc(uid));
 
       // Monotonic UID counter is NOT decremented
-      const auditRef = firestore.collection("auditLogs").doc();
+      const cleanedNowIso = new Date().toISOString();
+      const auditRef = firestore.collection("audit_logs").doc();
       batch.set(auditRef, {
         action: "UNVERIFIED_PROVISIONAL_EXPIRED_CLEANUP",
         targetUid: uid,
@@ -805,10 +808,11 @@ export async function handleAdminCleanupUnverifiedRequest(
           email: cleanEmail,
           accountUid: uid,
           registeredAt: regTimestampStr,
-          cleanedAt: new Date().toISOString(),
+          cleanedAt: cleanedNowIso,
           reason: "Unverified provisional registration expired after 4-hour threshold",
         },
-        timestamp: new Date().toISOString(),
+        createdAt: cleanedNowIso,
+        timestamp: cleanedNowIso,
       });
 
       await batch.commit();
@@ -1027,6 +1031,7 @@ export async function handleAdminSettingsUpdateRequest(
       details: "Updated platform settings & SEO configuration via Webmaster API",
       actorUid: authResult.uid || "webmaster",
       actorEmail: authResult.email || "webmaster@linkcloud.in",
+      createdAt: nowIso,
       timestamp: nowIso,
     });
 
@@ -1187,7 +1192,7 @@ export async function handleAnnouncementsGetRequest(
 
     snap.forEach((doc) => {
       const data = doc.data();
-      const item = {
+      const item: Record<string, any> = {
         id: doc.id,
         ...data,
       };
@@ -1319,6 +1324,7 @@ export async function handleAdminAnnouncementCreateRequest(
       details: `Created site-wide announcement: "${cleaned.title}" [${cleaned.type}, ${cleaned.displayMode}, priority ${cleaned.priority}]`,
       actorUid: auth.uid || "webmaster",
       actorEmail: auth.email || "webmaster@linkcloud.in",
+      createdAt: nowIso,
       timestamp: nowIso,
     });
 
@@ -1398,6 +1404,7 @@ export async function handleAdminAnnouncementUpdateRequest(
       details: `Updated site-wide announcement "${cleaned.title}" (ID: ${id})`,
       actorUid: auth.uid || "webmaster",
       actorEmail: auth.email || "webmaster@linkcloud.in",
+      createdAt: nowIso,
       timestamp: nowIso,
     });
 
@@ -1457,12 +1464,14 @@ export async function handleAdminAnnouncementDeleteRequest(
     await docRef.delete();
 
     // Audit log
+    const deletedAtIso = new Date().toISOString();
     await firestore.collection("audit_logs").add({
       action: "Announcement Deleted",
       details: `Deleted site-wide announcement "${title}" (ID: ${id})`,
       actorUid: auth.uid || "webmaster",
       actorEmail: auth.email || "webmaster@linkcloud.in",
-      timestamp: new Date().toISOString(),
+      createdAt: deletedAtIso,
+      timestamp: deletedAtIso,
     });
 
     sendJson(res, {

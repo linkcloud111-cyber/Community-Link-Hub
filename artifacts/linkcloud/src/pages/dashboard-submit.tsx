@@ -6,6 +6,7 @@ import { useTaxonomy } from "@/contexts/TaxonomyContext";
 import { useLocation as useAppLocation } from "@/contexts/LocationContext";
 import { createGroup, checkDuplicateGroup } from "@/lib/firestore";
 import { uploadToCloudinary } from "@/lib/cloudinary";
+import { getPlatformLinkHints, normalizePlatformKey, validateInviteLink } from "@/lib/utils";
 import { toast } from "sonner";
 import {
   Loader2,
@@ -35,92 +36,6 @@ import { usePageTitle } from "@/lib/page-meta";
 const AGE_OPTIONS = ["All Ages", "13+", "16+", "18+", "21+"];
 
 const DRAFT_KEY = "linkcloud_submit_draft";
-
-const DEFAULT_PLATFORM_CONFIG = {
-  pattern: /^https?:\/\/.+/i,
-  errorText: "Invite Link must be a valid URL starting with http:// or https://",
-  placeholder: "https://...",
-  helpText: "Paste your community invite or join link",
-  example: "https://example.com/join",
-};
-
-const PLATFORM_CONFIGS: Record<string, typeof DEFAULT_PLATFORM_CONFIG> = {
-  whatsapp: {
-    pattern: /^(https?:\/\/)?(chat\.whatsapp\.com|wa\.me)\/.+/i,
-    errorText: "Invalid WhatsApp URL. Must start with chat.whatsapp.com or wa.me",
-    placeholder: "https://chat.whatsapp.com/...",
-    helpText: "Paste your WhatsApp Group invite link",
-    example: "https://chat.whatsapp.com/L1234567890abcdef",
-  },
-  telegram: {
-    pattern: /^(https?:\/\/)?(t\.me|telegram\.me)\/.+/i,
-    errorText: "Invalid Telegram URL. Must start with t.me or telegram.me",
-    placeholder: "https://t.me/...",
-    helpText: "Paste your Telegram channel or group link",
-    example: "https://t.me/mygroup",
-  },
-  discord: {
-    pattern: /^(https?:\/\/)?(discord\.(gg|com\/invite))\/.+/i,
-    errorText: "Invalid Discord URL. Must start with discord.gg or discord.com/invite",
-    placeholder: "https://discord.gg/...",
-    helpText: "Paste your Discord server invite link",
-    example: "https://discord.gg/abc123xyz",
-  },
-  signal: {
-    pattern: /^(https?:\/\/)?(signal\.(group|me))\/.+/i,
-    errorText: "Invalid Signal URL. Must start with signal.group",
-    placeholder: "https://signal.group/#...",
-    helpText: "Paste your Signal group invite link",
-    example: "https://signal.group/#CjQK...",
-  },
-  facebook: {
-    pattern: /^(https?:\/\/)?(www\.)?facebook\.com\/.+/i,
-    errorText: "Invalid Facebook URL. Must be a facebook.com link",
-    placeholder: "https://facebook.com/groups/...",
-    helpText: "Paste your Facebook Group or Page link",
-    example: "https://facebook.com/groups/mygroup",
-  },
-  instagram: {
-    pattern: /^(https?:\/\/)?(www\.)?instagram\.com\/.+/i,
-    errorText: "Invalid Instagram URL. Must be an instagram.com link",
-    placeholder: "https://instagram.com/...",
-    helpText: "Paste your Instagram channel or account link",
-    example: "https://instagram.com/myaccount",
-  },
-  youtube: {
-    pattern: /^(https?:\/\/)?(www\.)?(youtube\.com|youtu\.be)\/.+/i,
-    errorText: "Invalid YouTube URL. Must be a youtube.com link",
-    placeholder: "https://youtube.com/@...",
-    helpText: "Paste your YouTube channel link",
-    example: "https://youtube.com/@mychannel",
-  },
-  twitter: {
-    pattern: /^(https?:\/\/)?(www\.)?(twitter\.com|x\.com)\/.+/i,
-    errorText: "Invalid X/Twitter URL. Must be a twitter.com or x.com link",
-    placeholder: "https://x.com/...",
-    helpText: "Paste your X/Twitter profile or community link",
-    example: "https://x.com/i/communities/123",
-  },
-  linkedin: {
-    pattern: /^(https?:\/\/)?(www\.)?linkedin\.com\/.+/i,
-    errorText: "Invalid LinkedIn URL. Must be a linkedin.com link",
-    placeholder: "https://linkedin.com/groups/...",
-    helpText: "Paste your LinkedIn Group or Page link",
-    example: "https://linkedin.com/groups/123456",
-  },
-  reddit: {
-    pattern: /^(https?:\/\/)?(www\.)?reddit\.com\/r\/.+/i,
-    errorText: "Invalid Reddit URL. Must start with reddit.com/r/",
-    placeholder: "https://reddit.com/r/...",
-    helpText: "Paste your Subreddit link",
-    example: "https://reddit.com/r/mycommunity",
-  },
-};
-
-function getPlatformConfig(platformName: string) {
-  const key = (platformName || "").toLowerCase().trim();
-  return PLATFORM_CONFIGS[key] || DEFAULT_PLATFORM_CONFIG;
-}
 
 export default function DashboardSubmit() {
   const { user, isWebmaster, profile } = useAuth();
@@ -204,22 +119,34 @@ export default function DashboardSubmit() {
     }
   }, [draftKey]);
 
-  const { activeStates, getDistrictsForState } = useAppLocation();
+  const { activeStates, getDistrictsForState, getCitiesForDistrict } = useAppLocation();
   const districts = state ? getDistrictsForState(state) : [];
+  const cities = state ? getCitiesForDistrict(state, district) : [];
+
+  const activePlatform = platforms.find(
+    (p) =>
+      p.name.toLowerCase() === (platform || "").toLowerCase() ||
+      normalizePlatformKey(p.name) === normalizePlatformKey(platform)
+  );
+  const currentPlatformHints = getPlatformLinkHints(
+    platform,
+    activePlatform?.helpText,
+    activePlatform?.errorText
+  );
 
   // Update Platform URL validation when platform or joinUrl changes
   useEffect(() => {
-    const config = getPlatformConfig(platform);
     if (joinUrl.trim()) {
-      if (!config.pattern.test(joinUrl.trim())) {
-        setUrlFormatError(config.errorText);
+      const check = validateInviteLink(joinUrl, platform, activePlatform?.invitePattern);
+      if (!check.valid) {
+        setUrlFormatError(check.error || currentPlatformHints.exampleError);
       } else {
         setUrlFormatError("");
       }
     } else {
       setUrlFormatError("");
     }
-  }, [platform, joinUrl]);
+  }, [platform, joinUrl, activePlatform?.invitePattern, currentPlatformHints.exampleError]);
 
   // Debounced real-time duplicate checking
   useEffect(() => {
@@ -382,7 +309,11 @@ export default function DashboardSubmit() {
     try {
       let logoUrl = "";
       if (logoFile) {
-        logoUrl = await uploadToCloudinary(logoFile);
+        logoUrl = await uploadToCloudinary(
+          logoFile,
+          settings?.cloudinaryUploadPreset,
+          settings?.cloudinaryCloudName
+        );
       }
 
       const categoryName = categories.find((c) => c.id === categoryId)?.name || "";
@@ -561,7 +492,6 @@ export default function DashboardSubmit() {
     );
   }
 
-  const currentPlatformConfig = getPlatformConfig(platform);
   const inputClass =
     "w-full p-3.5 bg-background border border-border rounded-xl focus:ring-2 focus:ring-primary outline-none text-sm font-medium transition placeholder:text-muted-foreground/60";
   const labelClass = "block text-xs font-bold uppercase tracking-wider text-muted-foreground mb-1.5";
@@ -922,13 +852,32 @@ export default function DashboardSubmit() {
             {/* FIELD 11: City * */}
             <div>
               <label className={labelClass}>11. City *</label>
-              <input
-                required
-                value={city}
-                onChange={(e) => setCity(e.target.value)}
-                className={inputClass}
-                placeholder="e.g. Mumbai, Bengaluru, Connaught Place"
-              />
+              {cities.length > 0 ? (
+                <select
+                  required
+                  value={city}
+                  onChange={(e) => setCity(e.target.value)}
+                  className={`${inputClass} cursor-pointer`}
+                >
+                  <option value="">Select City</option>
+                  {cities.map((c) => (
+                    <option key={c.id} value={c.name}>
+                      {c.name}
+                    </option>
+                  ))}
+                  {city && !cities.some((c) => c.name === city) && (
+                    <option value={city}>{city}</option>
+                  )}
+                </select>
+              ) : (
+                <input
+                  required
+                  value={city}
+                  onChange={(e) => setCity(e.target.value)}
+                  className={inputClass}
+                  placeholder="e.g. Mumbai, Bengaluru, Connaught Place"
+                />
+              )}
             </div>
           </div>
         </div>
@@ -1011,7 +960,7 @@ export default function DashboardSubmit() {
               type="url"
               value={joinUrl}
               onChange={(e) => setJoinUrl(e.target.value)}
-              placeholder={currentPlatformConfig.placeholder}
+              placeholder={currentPlatformHints.placeholder}
               className={`${inputClass} ${
                 urlFormatError || duplicateUrl ? "border-destructive ring-1 ring-destructive" : ""
               }`}
@@ -1019,9 +968,9 @@ export default function DashboardSubmit() {
 
             {/* Smart Help Text & Format Examples */}
             <div className="space-y-1 text-xs">
-              <p className="text-muted-foreground">{currentPlatformConfig.helpText}</p>
+              <p className="text-muted-foreground">{currentPlatformHints.hint}</p>
               <p className="text-xs text-primary/80 font-mono">
-                Example format: <span>{currentPlatformConfig.example}</span>
+                Example format: <span>{currentPlatformHints.placeholder}</span>
               </p>
             </div>
 

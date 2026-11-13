@@ -1043,7 +1043,7 @@ export default function AdminUsers() {
 
                 <div className="flex items-center gap-2 mt-2 flex-wrap">
                   <button
-                    onClick={() => handleToggleEmailVerify(viewUser.uid, viewUser.emailVerified)}
+                    onClick={() => handleToggleEmailVerify(viewUser.uid, Boolean(viewUser.emailVerified))}
                     disabled={updating === viewUser.uid}
                     className={`text-[10px] font-bold px-2.5 py-1 rounded-full border transition ${
                       viewUser.emailVerified ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/30 hover:bg-emerald-500/20" : "bg-muted text-muted-foreground hover:bg-muted/80"
@@ -1053,7 +1053,7 @@ export default function AdminUsers() {
                     {viewUser.emailVerified ? "✓ Email Verified (Click to Revoke)" : "× Verify Email"}
                   </button>
                   <button
-                    onClick={() => handleTogglePhoneVerify(viewUser.uid, viewUser.phoneVerified)}
+                    onClick={() => handleTogglePhoneVerify(viewUser.uid, Boolean(viewUser.phoneVerified))}
                     disabled={updating === viewUser.uid}
                     className={`text-[10px] font-bold px-2.5 py-1 rounded-full border transition ${
                       viewUser.phoneVerified ? "bg-blue-500/10 text-blue-600 border-blue-500/30 hover:bg-blue-500/20" : "bg-muted text-muted-foreground hover:bg-muted/80"

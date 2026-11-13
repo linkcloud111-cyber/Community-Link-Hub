@@ -106,16 +106,18 @@ export function AccountSecuritySection({
     let cooldownEndMs = 0;
     if (profile?.deletionCooldownUntil) {
       cooldownEndMs =
-        profile.deletionCooldownUntil.toMillis?.() ??
-        (typeof profile.deletionCooldownUntil === "number"
+        typeof (profile.deletionCooldownUntil as any)?.toMillis === "function"
+          ? (profile.deletionCooldownUntil as any).toMillis()
+          : typeof profile.deletionCooldownUntil === "number"
           ? profile.deletionCooldownUntil
-          : new Date(profile.deletionCooldownUntil).getTime());
+          : new Date(profile.deletionCooldownUntil as any).getTime();
     } else if (profile?.deletionRejectedAt) {
       const rejectedTime =
-        profile.deletionRejectedAt.toMillis?.() ??
-        (typeof profile.deletionRejectedAt === "number"
+        typeof (profile.deletionRejectedAt as any)?.toMillis === "function"
+          ? (profile.deletionRejectedAt as any).toMillis()
+          : typeof profile.deletionRejectedAt === "number"
           ? profile.deletionRejectedAt
-          : new Date(profile.deletionRejectedAt).getTime());
+          : new Date(profile.deletionRejectedAt as any).getTime();
       cooldownEndMs = rejectedTime + 7 * 24 * 60 * 60 * 1000;
     }
 

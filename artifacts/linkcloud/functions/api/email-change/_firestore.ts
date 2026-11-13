@@ -7,7 +7,7 @@ function getProjectId(env: Env): string {
     sa?.project_id ||
     env.FIREBASE_PROJECT_ID ||
     env.VITE_FIREBASE_PROJECT_ID ||
-    "linkcloud-app"
+    "linkcloud-5bb2f"
   );
 }
 

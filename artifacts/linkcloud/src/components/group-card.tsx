@@ -24,7 +24,6 @@ import { PlatformIcon } from "@/components/platform-icon";
 import { CategoryIcon } from "@/components/category-icon";
 import { getPlatformVisual, getCategoryVisual } from "@/lib/taxonomy-visuals";
 import ReportModal from "@/components/report-modal";
-import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 
 interface GroupCardProps {
@@ -33,17 +32,12 @@ interface GroupCardProps {
 }
 
 export default function GroupCard({ group, delay = 0 }: GroupCardProps) {
-  const { user, isWebmaster, profile } = useAuth();
   const [, setLocation] = useLocation();
   const [imageError, setImageError] = useState(false);
   const [copied, setCopied] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
 
-  const isOwner = Boolean(user && group.submittedBy === user.uid);
-  const isWebmasterUser = Boolean(isWebmaster || profile?.role === "webmaster");
-  const canSeeLocation = isOwner || isWebmasterUser;
-
-  const isLinkActive = group.linkStatus !== "inactive";
+  const isLinkActive = group.linkStatus?.toLowerCase() !== "inactive";
   const platVisual = getPlatformVisual(group.platform);
   const catVisual = getCategoryVisual(group.categoryName);
 
@@ -173,7 +167,7 @@ export default function GroupCard({ group, delay = 0 }: GroupCardProps) {
               <h3 className="text-base font-bold text-foreground leading-tight line-clamp-1 group-hover:text-primary transition-colors">
                 {group.name}
               </h3>
-              {canSeeLocation && locationParts && (
+              {locationParts && (
                 <p className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1 line-clamp-1">
                   <MapPin className="w-3 h-3 flex-shrink-0 text-primary/70" />
                   {locationParts}

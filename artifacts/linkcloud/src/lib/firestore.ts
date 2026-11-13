@@ -17,6 +17,8 @@ import {
   onSnapshot,
   DocumentSnapshot,
   QueryDocumentSnapshot,
+  type DocumentReference,
+  type DocumentData,
 } from "firebase/firestore";
 import { db, auth } from "./firebase";
 import type {
@@ -39,6 +41,8 @@ import type {
   GroupFilters,
   DeletionRequest,
   AccountStatus,
+  Platform,
+  UserRole,
 } from "./types";
 import { INDIA_STATES } from "./india-data";
 import {
@@ -409,20 +413,35 @@ export async function checkDuplicateGroup(
 
     if (!urlClean && !nameClean) return { duplicateName: false, duplicateUrl: false };
 
-    const snap = await getDocs(collection(db, "groups"));
+    const queries = [
+      getDocs(query(collection(db, "groups"), where("status", "==", "approved"))),
+    ];
+    if (auth?.currentUser?.uid) {
+      queries.push(
+        getDocs(query(collection(db, "groups"), where("submittedBy", "==", auth.currentUser.uid)))
+      );
+    }
+
+    const snapshots = await Promise.all(queries.map((p) => p.catch(() => null)));
+    const seenIds = new Set<string>();
     let duplicateName = false;
     let duplicateUrl = false;
 
-    snap.forEach((d) => {
-      if (excludeGroupId && d.id === excludeGroupId) return;
-      const data = d.data();
-      if (nameClean && data.name && data.name.trim().toLowerCase() === nameClean) {
-        duplicateName = true;
-      }
-      if (urlClean && data.joinUrl && data.joinUrl.trim().toLowerCase() === urlClean) {
-        duplicateUrl = true;
-      }
-    });
+    for (const snap of snapshots) {
+      if (!snap) continue;
+      snap.forEach((d) => {
+        if (seenIds.has(d.id)) return;
+        seenIds.add(d.id);
+        if (excludeGroupId && d.id === excludeGroupId) return;
+        const data = d.data();
+        if (nameClean && data.name && data.name.trim().toLowerCase() === nameClean) {
+          duplicateName = true;
+        }
+        if (urlClean && data.joinUrl && data.joinUrl.trim().toLowerCase() === urlClean) {
+          duplicateUrl = true;
+        }
+      });
+    }
 
     return { duplicateName, duplicateUrl };
   } catch (err) {
@@ -544,7 +563,7 @@ export async function incrementViewCount(id: string): Promise<void> {
 
 export async function resolveUserDocRef(
   userOrUid: string | { uid?: string; id?: string; firestoreDocumentId?: string; email?: string }
-): Promise<DocumentReference> {
+): Promise<DocumentReference<DocumentData>> {
   let uid = "";
   let firestoreDocId = "";
   let email = "";
@@ -1264,7 +1283,7 @@ export async function performPermanentUserDeletion(params: {
 
   const userRef = await resolveUserDocRef(targetUid);
   const userSnap = await getDoc(userRef);
-  const userData = userSnap.exists() ? userSnap.data() : null;
+  const userData = userSnap.exists() ? (userSnap.data() as Record<string, any>) : null;
 
   // Webmaster protection: Never permanently delete a Webmaster account
   if (userData?.role === "webmaster") {
@@ -3136,7 +3155,7 @@ export async function getSeoSettings(): Promise<any> {
         metaDescription: "Discover verified WhatsApp groups, Telegram channels, Discord servers, and Facebook communities.",
         metaKeywords: "WhatsApp group links, Telegram channels, Discord servers, India communities",
         canonicalUrl: "https://linkcloud.in",
-        ogImage: "https://images.unsplash.com/photo-1522071820081-009f0129c71c?w=1200",
+        ogImage: "/favicon.svg",
         twitterCard: "summary_large_image",
         robotsTxt: "User-agent: *\nAllow: /\nDisallow: /admin/\nSitemap: https://linkcloud.in/sitemap.xml",
       };
@@ -3286,7 +3305,7 @@ export async function getSiteSettings(): Promise<SiteSettings> {
     favicon: "",
     homepageBanner: "",
     heroTitle: "Discover & Join India's Most Active WhatsApp & Telegram Communities",
-    heroSubtitle: "Verified group links across 28 states, 50+ categories, and multiple platforms.",
+    heroSubtitle: "Verified group links across 36 states & UTs, 50+ categories, and multiple platforms.",
     heroButtonText: "Explore Groups",
     heroButtonLink: "/groups",
     footerLogo: "",
@@ -3662,6 +3681,7 @@ export async function logAuditEvent(
       details,
       adminEmail,
       adminUid,
+      actorUid: auth?.currentUser?.uid || adminUid,
       createdAt: serverTimestamp(),
     });
   } catch (err) {
@@ -3673,10 +3693,36 @@ export async function getAuditLogs(limitCount = 50): Promise<import("./types").A
   try {
     const q = query(collection(db, "audit_logs"), orderBy("createdAt", "desc"), limit(limitCount));
     const snap = await getDocs(q);
-    return snap.docs.map((d) => ({ id: d.id, ...d.data() } as import("./types").AuditLog));
-  } catch (err) {
-    console.warn("Error fetching audit logs:", err);
-    return [];
+    return snap.docs.map((d) => {
+      const data = d.data();
+      return {
+        id: d.id,
+        ...data,
+        createdAt: data.createdAt || data.timestamp,
+      } as import("./types").AuditLog;
+    });
+  } catch {
+    try {
+      const snap = await getDocs(collection(db, "audit_logs"));
+      const docs = snap.docs.map((d) => {
+        const data = d.data();
+        return {
+          id: d.id,
+          ...data,
+          createdAt: data.createdAt || data.timestamp,
+        } as import("./types").AuditLog;
+      });
+      return docs
+        .sort((a: any, b: any) => {
+          const toMs = (v: any) =>
+            typeof v?.toMillis === "function" ? v.toMillis() : v ? new Date(v).getTime() || 0 : 0;
+          return toMs(b.createdAt) - toMs(a.createdAt);
+        })
+        .slice(0, limitCount);
+    } catch (err) {
+      console.warn("Error fetching audit logs:", err);
+      return [];
+    }
   }
 }
 

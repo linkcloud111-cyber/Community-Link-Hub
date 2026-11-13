@@ -20,6 +20,8 @@ import {
   getUserGroups,
 } from "@/lib/firestore";
 import type { Group, GroupStatus, UserProfile } from "@/lib/types";
+import { useTaxonomy } from "@/contexts/TaxonomyContext";
+import { useLocation as useAppLocation } from "@/contexts/LocationContext";
 import AdminNav from "@/components/admin-nav";
 import { PlatformIcon } from "@/components/platform-icon";
 import { CategoryIcon } from "@/components/category-icon";
@@ -58,6 +60,13 @@ import {
 type FilterTab = "all" | "pending" | "approved" | "rejected" | "featured" | "hidden" | "inactive";
 
 export default function AdminGroups() {
+  const {
+    activeCategories: categories,
+    activePlatforms: platforms,
+    activeContentTypes: contentTypes,
+    activeLanguages: languages,
+  } = useTaxonomy();
+  const { activeStates, getDistrictsForState, getCitiesForDistrict } = useAppLocation();
   const [groups, setGroups] = useState<Group[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -364,20 +373,30 @@ export default function AdminGroups() {
     if (!editGroup) return;
     setActionLoading(editGroup.id);
     try {
+      const normalizedTags = Array.isArray(editGroup.tags)
+        ? editGroup.tags.map((t) => t.trim().toLowerCase()).filter(Boolean)
+        : [];
       await updateGroup(editGroup.id, {
-        name: editGroup.name,
+        name: editGroup.name.trim(),
         platform: editGroup.platform,
         categoryId: editGroup.categoryId,
         categoryName: editGroup.categoryName,
-        joinUrl: editGroup.joinUrl,
-        logoUrl: editGroup.logoUrl,
+        contentType: editGroup.contentType || "General Discussion",
+        language: editGroup.language || "Hindi",
+        joinUrl: editGroup.joinUrl.trim(),
+        logoUrl: editGroup.logoUrl || "",
         description: editGroup.description,
-        rules: editGroup.rules,
+        rules: editGroup.rules || "",
+        minimumAge: editGroup.minimumAge || "All Ages",
+        tags: normalizedTags,
         status: editGroup.status,
-        linkStatus: editGroup.linkStatus,
-        state: editGroup.state,
-        district: editGroup.district,
-        city: editGroup.city,
+        linkStatus: editGroup.linkStatus || "active",
+        state: editGroup.state || "",
+        district: editGroup.district || "",
+        city: editGroup.city || "",
+        featured: Boolean(editGroup.featured),
+        pinned: Boolean(editGroup.pinned),
+        hidden: Boolean(editGroup.hidden),
       });
       toast.success("Group updated successfully");
       setEditGroup(null);
@@ -803,7 +822,13 @@ export default function AdminGroups() {
 
             <div className="space-y-3 text-xs">
               <div className="flex items-center gap-3">
-                <img src={viewGroup.logoUrl || "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=100"} alt="" className="w-12 h-12 rounded-xl object-cover" />
+                {viewGroup.logoUrl ? (
+                  <img src={viewGroup.logoUrl} alt="" className="w-12 h-12 rounded-xl object-cover border border-border" />
+                ) : (
+                  <div className="w-12 h-12 rounded-xl bg-muted border border-border flex items-center justify-center flex-shrink-0">
+                    <PlatformIcon platform={viewGroup.platform} className="w-6 h-6" />
+                  </div>
+                )}
                 <div>
                   <h3 className="text-base font-bold">{viewGroup.name}</h3>
                   <p className="text-muted-foreground">{viewGroup.platform} • {viewGroup.categoryName}</p>
@@ -878,114 +903,310 @@ export default function AdminGroups() {
       )}
 
       {/* Modal: Edit Group */}
-      {editGroup && (
-        <div className="fixed inset-0 bg-background/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <form onSubmit={handleSaveGroupEdit} className="bg-card border border-border rounded-3xl p-6 max-w-2xl w-full space-y-4 shadow-xl max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between border-b border-border pb-3">
-              <h2 className="text-lg font-bold flex items-center gap-2">
-                <Edit3 className="w-5 h-5 text-primary" /> Edit Community Details
-              </h2>
-              <button type="button" onClick={() => setEditGroup(null)} className="p-1.5 hover:bg-muted rounded-xl">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
-              <div>
-                <label className="font-bold text-muted-foreground mb-1 block">Group Name</label>
-                <input
-                  value={editGroup.name}
-                  onChange={(e) => setEditGroup({ ...editGroup, name: e.target.value })}
-                  className="w-full p-2.5 bg-muted/30 border border-border rounded-xl outline-none"
-                  required
-                />
+      {editGroup && (() => {
+        const editDistricts = editGroup.state ? getDistrictsForState(editGroup.state) : [];
+        const editCities = editGroup.state ? getCitiesForDistrict(editGroup.state, editGroup.district) : [];
+        return (
+          <div className="fixed inset-0 bg-background/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <form onSubmit={handleSaveGroupEdit} className="bg-card border border-border rounded-3xl p-6 max-w-2xl w-full space-y-4 shadow-xl max-h-[90vh] overflow-y-auto">
+              <div className="flex items-center justify-between border-b border-border pb-3">
+                <h2 className="text-lg font-bold flex items-center gap-2">
+                  <Edit3 className="w-5 h-5 text-primary" /> Edit Community Details
+                </h2>
+                <button type="button" onClick={() => setEditGroup(null)} className="p-1.5 hover:bg-muted rounded-xl">
+                  <X className="w-5 h-5" />
+                </button>
               </div>
 
-              <div>
-                <label className="font-bold text-muted-foreground mb-1 block">Platform</label>
-                <input
-                  value={editGroup.platform}
-                  onChange={(e) => setEditGroup({ ...editGroup, platform: e.target.value as any })}
-                  className="w-full p-2.5 bg-muted/30 border border-border rounded-xl outline-none"
-                  required
-                />
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                <div>
+                  <label className="font-bold text-muted-foreground mb-1 block">Group Name</label>
+                  <input
+                    value={editGroup.name}
+                    onChange={(e) => setEditGroup({ ...editGroup, name: e.target.value })}
+                    className="w-full p-2.5 bg-muted/30 border border-border rounded-xl outline-none"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="font-bold text-muted-foreground mb-1 block">Platform</label>
+                  <select
+                    value={editGroup.platform}
+                    onChange={(e) => setEditGroup({ ...editGroup, platform: e.target.value })}
+                    className="w-full p-2.5 bg-muted/30 border border-border rounded-xl outline-none"
+                    required
+                  >
+                    {platforms.map((p) => (
+                      <option key={p.id || p.name} value={p.name}>
+                        {p.name}
+                      </option>
+                    ))}
+                    {editGroup.platform && !platforms.some((p) => p.name === editGroup.platform) && (
+                      <option value={editGroup.platform}>{editGroup.platform}</option>
+                    )}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="font-bold text-muted-foreground mb-1 block">Category</label>
+                  <select
+                    value={editGroup.categoryId}
+                    onChange={(e) => {
+                      const cat = categories.find((c) => c.id === e.target.value);
+                      setEditGroup({
+                        ...editGroup,
+                        categoryId: e.target.value,
+                        categoryName: cat?.name || editGroup.categoryName,
+                      });
+                    }}
+                    className="w-full p-2.5 bg-muted/30 border border-border rounded-xl outline-none"
+                    required
+                  >
+                    <option value="">Select Category</option>
+                    {categories.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="font-bold text-muted-foreground mb-1 block">Content Type</label>
+                  <select
+                    value={editGroup.contentType || ""}
+                    onChange={(e) => setEditGroup({ ...editGroup, contentType: e.target.value })}
+                    className="w-full p-2.5 bg-muted/30 border border-border rounded-xl outline-none"
+                  >
+                    <option value="">Select Content Type</option>
+                    {contentTypes.map((ct) => (
+                      <option key={ct.id || ct.name} value={ct.name}>
+                        {ct.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="font-bold text-muted-foreground mb-1 block">Language</label>
+                  <select
+                    value={editGroup.language || ""}
+                    onChange={(e) => setEditGroup({ ...editGroup, language: e.target.value })}
+                    className="w-full p-2.5 bg-muted/30 border border-border rounded-xl outline-none"
+                  >
+                    <option value="">Select Language</option>
+                    {languages.map((l) => (
+                      <option key={l.id || l.name} value={l.name}>
+                        {l.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="font-bold text-muted-foreground mb-1 block">Minimum Age</label>
+                  <select
+                    value={editGroup.minimumAge ? String(editGroup.minimumAge) : "All Ages"}
+                    onChange={(e) => setEditGroup({ ...editGroup, minimumAge: e.target.value })}
+                    className="w-full p-2.5 bg-muted/30 border border-border rounded-xl outline-none"
+                  >
+                    {["All Ages", "13+", "16+", "18+", "21+"].map((age) => (
+                      <option key={age} value={age}>
+                        {age}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="font-bold text-muted-foreground mb-1 block">State (India)</label>
+                  <select
+                    value={editGroup.state || ""}
+                    onChange={(e) =>
+                      setEditGroup({
+                        ...editGroup,
+                        state: e.target.value,
+                        district: "",
+                        city: "",
+                      })
+                    }
+                    className="w-full p-2.5 bg-muted/30 border border-border rounded-xl outline-none"
+                  >
+                    <option value="">All India / Select State</option>
+                    {activeStates.map((s) => (
+                      <option key={s.id} value={s.name}>
+                        {s.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="font-bold text-muted-foreground mb-1 block">District</label>
+                  <select
+                    value={editGroup.district || ""}
+                    disabled={!editGroup.state}
+                    onChange={(e) => setEditGroup({ ...editGroup, district: e.target.value })}
+                    className="w-full p-2.5 bg-muted/30 border border-border rounded-xl outline-none disabled:opacity-50"
+                  >
+                    <option value="">{editGroup.state ? "Select District" : "Select State First"}</option>
+                    {editDistricts.map((d) => (
+                      <option key={d.id} value={d.name}>
+                        {d.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="font-bold text-muted-foreground mb-1 block">City</label>
+                  {editCities.length > 0 ? (
+                    <select
+                      value={editGroup.city || ""}
+                      onChange={(e) => setEditGroup({ ...editGroup, city: e.target.value })}
+                      className="w-full p-2.5 bg-muted/30 border border-border rounded-xl outline-none"
+                    >
+                      <option value="">Select City</option>
+                      {editCities.map((c) => (
+                        <option key={c.id} value={c.name}>
+                          {c.name}
+                        </option>
+                      ))}
+                      {editGroup.city && !editCities.some((c) => c.name === editGroup.city) && (
+                        <option value={editGroup.city}>{editGroup.city}</option>
+                      )}
+                    </select>
+                  ) : (
+                    <input
+                      value={editGroup.city || ""}
+                      onChange={(e) => setEditGroup({ ...editGroup, city: e.target.value })}
+                      placeholder="City / Town"
+                      className="w-full p-2.5 bg-muted/30 border border-border rounded-xl outline-none"
+                    />
+                  )}
+                </div>
+
+                <div>
+                  <label className="font-bold text-muted-foreground mb-1 block">Invite Link</label>
+                  <input
+                    value={editGroup.joinUrl}
+                    onChange={(e) => setEditGroup({ ...editGroup, joinUrl: e.target.value })}
+                    className="w-full p-2.5 bg-muted/30 border border-border rounded-xl outline-none"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="font-bold text-muted-foreground mb-1 block">Status</label>
+                  <select
+                    value={editGroup.status}
+                    onChange={(e) => setEditGroup({ ...editGroup, status: e.target.value as GroupStatus })}
+                    className="w-full p-2.5 bg-muted/30 border border-border rounded-xl outline-none"
+                  >
+                    <option value="pending">Pending</option>
+                    <option value="approved">Approved</option>
+                    <option value="rejected">Rejected</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="font-bold text-muted-foreground mb-1 block">Link Health</label>
+                  <select
+                    value={editGroup.linkStatus || "active"}
+                    onChange={(e) => setEditGroup({ ...editGroup, linkStatus: e.target.value as any })}
+                    className="w-full p-2.5 bg-muted/30 border border-border rounded-xl outline-none"
+                  >
+                    <option value="active">Active</option>
+                    <option value="inactive">Inactive / Expired</option>
+                  </select>
+                </div>
+
+                <div className="md:col-span-2">
+                  <label className="font-bold text-muted-foreground mb-1 block">Logo Image URL</label>
+                  <input
+                    value={editGroup.logoUrl}
+                    onChange={(e) => setEditGroup({ ...editGroup, logoUrl: e.target.value })}
+                    className="w-full p-2.5 bg-muted/30 border border-border rounded-xl outline-none"
+                  />
+                </div>
+
+                <div className="md:col-span-2">
+                  <label className="font-bold text-muted-foreground mb-1 block">Tags (Comma-separated)</label>
+                  <input
+                    value={Array.isArray(editGroup.tags) ? editGroup.tags.join(", ") : ""}
+                    onChange={(e) =>
+                      setEditGroup({
+                        ...editGroup,
+                        tags: e.target.value.split(",").map((t) => t.trim()),
+                      })
+                    }
+                    placeholder="jobs, tech, news"
+                    className="w-full p-2.5 bg-muted/30 border border-border rounded-xl outline-none"
+                  />
+                </div>
+
+                <div className="md:col-span-2">
+                  <label className="font-bold text-muted-foreground mb-1 block">Description</label>
+                  <textarea
+                    value={editGroup.description}
+                    onChange={(e) => setEditGroup({ ...editGroup, description: e.target.value })}
+                    className="w-full h-24 p-2.5 bg-muted/30 border border-border rounded-xl outline-none"
+                  />
+                </div>
+
+                <div className="md:col-span-2">
+                  <label className="font-bold text-muted-foreground mb-1 block">Rules & Guidelines</label>
+                  <textarea
+                    value={editGroup.rules || ""}
+                    onChange={(e) => setEditGroup({ ...editGroup, rules: e.target.value })}
+                    className="w-full h-20 p-2.5 bg-muted/30 border border-border rounded-xl outline-none"
+                  />
+                </div>
+
+                <div className="md:col-span-2 flex flex-wrap gap-4 pt-1">
+                  <label className="flex items-center gap-2 cursor-pointer font-semibold">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(editGroup.featured)}
+                      onChange={(e) => setEditGroup({ ...editGroup, featured: e.target.checked })}
+                      className="rounded accent-primary"
+                    />
+                    Featured
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer font-semibold">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(editGroup.pinned)}
+                      onChange={(e) => setEditGroup({ ...editGroup, pinned: e.target.checked })}
+                      className="rounded accent-primary"
+                    />
+                    Pinned
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer font-semibold">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(editGroup.hidden)}
+                      onChange={(e) => setEditGroup({ ...editGroup, hidden: e.target.checked })}
+                      className="rounded accent-primary"
+                    />
+                    Hidden from Directory
+                  </label>
+                </div>
               </div>
 
-              <div>
-                <label className="font-bold text-muted-foreground mb-1 block">Category Name</label>
-                <input
-                  value={editGroup.categoryName}
-                  onChange={(e) => setEditGroup({ ...editGroup, categoryName: e.target.value })}
-                  className="w-full p-2.5 bg-muted/30 border border-border rounded-xl outline-none"
-                  required
-                />
+              <div className="flex justify-end gap-2 pt-3 border-t border-border">
+                <button type="button" onClick={() => setEditGroup(null)} className="px-4 py-2 bg-muted rounded-xl text-xs font-bold">
+                  Cancel
+                </button>
+                <button type="submit" className="px-4 py-2 bg-primary text-primary-foreground rounded-xl text-xs font-bold">
+                  Save Changes
+                </button>
               </div>
-
-              <div>
-                <label className="font-bold text-muted-foreground mb-1 block">Invite Link</label>
-                <input
-                  value={editGroup.joinUrl}
-                  onChange={(e) => setEditGroup({ ...editGroup, joinUrl: e.target.value })}
-                  className="w-full p-2.5 bg-muted/30 border border-border rounded-xl outline-none"
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="font-bold text-muted-foreground mb-1 block">Status</label>
-                <select
-                  value={editGroup.status}
-                  onChange={(e) => setEditGroup({ ...editGroup, status: e.target.value as GroupStatus })}
-                  className="w-full p-2.5 bg-muted/30 border border-border rounded-xl outline-none"
-                >
-                  <option value="pending">Pending</option>
-                  <option value="approved">Approved</option>
-                  <option value="rejected">Rejected</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="font-bold text-muted-foreground mb-1 block">Link Health</label>
-                <select
-                  value={editGroup.linkStatus || "active"}
-                  onChange={(e) => setEditGroup({ ...editGroup, linkStatus: e.target.value as any })}
-                  className="w-full p-2.5 bg-muted/30 border border-border rounded-xl outline-none"
-                >
-                  <option value="active">Active</option>
-                  <option value="inactive">Inactive / Expired</option>
-                </select>
-              </div>
-
-              <div className="md:col-span-2">
-                <label className="font-bold text-muted-foreground mb-1 block">Logo Image URL</label>
-                <input
-                  value={editGroup.logoUrl}
-                  onChange={(e) => setEditGroup({ ...editGroup, logoUrl: e.target.value })}
-                  className="w-full p-2.5 bg-muted/30 border border-border rounded-xl outline-none"
-                />
-              </div>
-
-              <div className="md:col-span-2">
-                <label className="font-bold text-muted-foreground mb-1 block">Description</label>
-                <textarea
-                  value={editGroup.description}
-                  onChange={(e) => setEditGroup({ ...editGroup, description: e.target.value })}
-                  className="w-full h-24 p-2.5 bg-muted/30 border border-border rounded-xl outline-none"
-                />
-              </div>
-            </div>
-
-            <div className="flex justify-end gap-2 pt-3 border-t border-border">
-              <button type="button" onClick={() => setEditGroup(null)} className="px-4 py-2 bg-muted rounded-xl text-xs font-bold">
-                Cancel
-              </button>
-              <button type="submit" className="px-4 py-2 bg-primary text-primary-foreground rounded-xl text-xs font-bold">
-                Save Changes
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
+            </form>
+          </div>
+        );
+      })()}
 
       {/* Modal: Bulk Action Confirmation */}
       {bulkModalAction && (

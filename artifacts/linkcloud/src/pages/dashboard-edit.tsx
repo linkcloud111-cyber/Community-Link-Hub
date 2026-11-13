@@ -1,10 +1,12 @@
 import { useState, useEffect } from "react";
 import { useParams, useLocation, Link } from "wouter";
 import { useAuth } from "@/contexts/AuthContext";
+import { useSiteSettings } from "@/contexts/SiteSettingsContext";
 import { useTaxonomy } from "@/contexts/TaxonomyContext";
 import { useLocation as useAppLocation } from "@/contexts/LocationContext";
-import { getGroupById, updateGroup } from "@/lib/firestore";
+import { checkDuplicateGroup, getGroupById, updateGroup } from "@/lib/firestore";
 import { uploadToCloudinary } from "@/lib/cloudinary";
+import { getPlatformLinkHints, normalizePlatformKey, validateInviteLink } from "@/lib/utils";
 import type { Group } from "@/lib/types";
 import { toast } from "sonner";
 import {
@@ -26,6 +28,7 @@ const AGE_OPTIONS = ["All Ages", "13+", "16+", "18+", "21+"];
 export default function DashboardEdit() {
   const { id } = useParams();
   const { user, profile, isWebmaster } = useAuth();
+  const { settings } = useSiteSettings();
   const [, setLocation] = useLocation();
 
   const {
@@ -35,7 +38,7 @@ export default function DashboardEdit() {
     activeLanguages: languages,
   } = useTaxonomy();
 
-  const { activeStates, getDistrictsForState } = useAppLocation();
+  const { activeStates, getDistrictsForState, getCitiesForDistrict } = useAppLocation();
 
   const [group, setGroup] = useState<Group | null>(null);
   const [loading, setLoading] = useState(true);
@@ -76,7 +79,7 @@ export default function DashboardEdit() {
           setLanguage(g.language || "");
           setDescription(g.description || "");
           setRules(g.rules || "");
-          setMinimumAge(g.minimumAge ? `${g.minimumAge}+` : "All Ages");
+          setMinimumAge(g.minimumAge ? String(g.minimumAge) : "All Ages");
           setTagsInput(g.tags && Array.isArray(g.tags) ? g.tags.join(", ") : "");
           setJoinUrl(g.joinUrl);
           setLogoPreview(g.logoUrl || "");
@@ -91,6 +94,13 @@ export default function DashboardEdit() {
   }, [id]);
 
   const districts = state ? getDistrictsForState(state) : [];
+  const cities = state ? getCitiesForDistrict(state, district) : [];
+  const activePlatform = platforms.find(
+    (p) =>
+      p.name.toLowerCase() === (platform || "").toLowerCase() ||
+      normalizePlatformKey(p.name) === normalizePlatformKey(platform)
+  );
+  const linkHints = getPlatformLinkHints(platform, activePlatform?.helpText, activePlatform?.errorText);
 
   useEffect(() => {
     if (!contentType && contentTypes.length > 0) {
@@ -126,7 +136,7 @@ export default function DashboardEdit() {
       toast.error("You do not have permission to edit this community.");
       return;
     }
-    if (!name.trim()) { toast.error("Name is required."); return; }
+    if (!name.trim() || name.trim().length < 3) { toast.error("Name must be at least 3 characters."); return; }
     if (!categoryId) { toast.error("Please select a Category."); return; }
     if (!state) { toast.error("Please select a State."); return; }
     if (!district) { toast.error("Please select a District."); return; }
@@ -134,11 +144,33 @@ export default function DashboardEdit() {
     if (description.trim().length < 20) { toast.error("Description must be at least 20 characters."); return; }
     if (!joinUrl.trim()) { toast.error("Invite Link is required."); return; }
 
+    const urlCheck = validateInviteLink(joinUrl, platform, activePlatform?.invitePattern);
+    if (!urlCheck.valid) {
+      toast.error(urlCheck.error || linkHints.exampleError);
+      return;
+    }
+
     setSaving(true);
     try {
+      const dup = await checkDuplicateGroup(name, joinUrl, group.id);
+      if (dup.duplicateName) {
+        toast.error("Another community with this exact name already exists.");
+        setSaving(false);
+        return;
+      }
+      if (dup.duplicateUrl) {
+        toast.error("This invite link is already listed on another community.");
+        setSaving(false);
+        return;
+      }
+
       let logoUrl = group.logoUrl || "";
       if (logoFile) {
-        logoUrl = await uploadToCloudinary(logoFile);
+        logoUrl = await uploadToCloudinary(
+          logoFile,
+          settings?.cloudinaryUploadPreset,
+          settings?.cloudinaryCloudName
+        );
       }
 
       const categoryName = categories.find((c) => c.id === categoryId)?.name || "";
@@ -150,6 +182,9 @@ export default function DashboardEdit() {
             .filter(Boolean)
         )
       );
+
+      const isWebmasterUser = Boolean(isWebmaster || profile?.role === "webmaster");
+      const nextStatus = isWebmasterUser && group.status === "approved" ? "approved" : "pending";
 
       await updateGroup(group.id, {
         name: name.trim(),
@@ -167,13 +202,17 @@ export default function DashboardEdit() {
         minimumAge: minimumAge || "All Ages",
         tags,
         joinUrl: joinUrl.trim(),
-        status: "pending", // Reset status to pending upon update for review
+        status: nextStatus,
         changesRequested: false,
         changesRequestedMessage: "",
       });
 
-      toast.success("Community updated and resubmitted for Webmaster review!");
-      setLocation(isWebmaster ? "/webmaster/dashboard" : "/dashboard");
+      toast.success(
+        nextStatus === "approved"
+          ? "Community updated successfully!"
+          : "Community updated and resubmitted for Webmaster review!"
+      );
+      setLocation(isWebmasterUser ? "/webmaster/groups" : "/dashboard");
     } catch (err: any) {
       toast.error(err.message || "Failed to update community.");
     } finally {
@@ -380,6 +419,7 @@ export default function DashboardEdit() {
                 onChange={(e) => {
                   setState(e.target.value);
                   setDistrict("");
+                  setCity("");
                 }}
                 className={`${inputClass} cursor-pointer`}
               >
@@ -414,12 +454,32 @@ export default function DashboardEdit() {
             {/* City */}
             <div>
               <label className={labelClass}>City *</label>
-              <input
-                required
-                value={city}
-                onChange={(e) => setCity(e.target.value)}
-                className={inputClass}
-              />
+              {cities.length > 0 ? (
+                <select
+                  required
+                  value={city}
+                  onChange={(e) => setCity(e.target.value)}
+                  className={`${inputClass} cursor-pointer`}
+                >
+                  <option value="">Select City</option>
+                  {cities.map((c) => (
+                    <option key={c.id} value={c.name}>
+                      {c.name}
+                    </option>
+                  ))}
+                  {city && !cities.some((c) => c.name === city) && (
+                    <option value={city}>{city}</option>
+                  )}
+                </select>
+              ) : (
+                <input
+                  required
+                  value={city}
+                  onChange={(e) => setCity(e.target.value)}
+                  className={inputClass}
+                  placeholder="e.g. Mumbai, Bengaluru, Connaught Place"
+                />
+              )}
             </div>
 
             {/* Rules */}
@@ -467,14 +527,16 @@ export default function DashboardEdit() {
 
             {/* Invite Link */}
             <div>
-              <label className={labelClass}>Invite Link *</label>
+              <label className={labelClass}>Invite Link * ({platform})</label>
               <input
                 required
                 type="url"
                 value={joinUrl}
                 onChange={(e) => setJoinUrl(e.target.value)}
+                placeholder={linkHints.placeholder}
                 className={inputClass}
               />
+              <p className="text-[11px] text-muted-foreground mt-1">{linkHints.hint}</p>
             </div>
           </div>
         </div>

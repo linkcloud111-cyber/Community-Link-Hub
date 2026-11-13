@@ -20,6 +20,7 @@ import {
   EmailAuthProvider,
   reauthenticateWithCredential,
   type User,
+  type Auth,
   type ConfirmationResult,
   type ActionCodeSettings,
 } from "firebase/auth";
@@ -503,7 +504,7 @@ export async function loginWebmaster(email: string, password: string): Promise<U
       throw new Error("This account is not authorized to access the Webmaster Portal.");
     }
 
-    if (existingProfile && (existingProfile.status === "suspended" || existingProfile.status === "inactive" || existingProfile.status === "banned")) {
+    if (existingProfile && (existingProfile.status === "suspended" || String(existingProfile.status) === "inactive" || existingProfile.status === "banned")) {
       await firebaseSignOut(auth);
       throw new Error("Your Webmaster account is currently inactive.");
     }
@@ -659,7 +660,7 @@ export async function verifyWebmasterOTP(
       throw new Error("This account is not authorized to access the Webmaster Portal.");
     }
 
-    if (userProfile && (userProfile.status === "suspended" || userProfile.status === "inactive" || userProfile.status === "banned")) {
+    if (userProfile && (userProfile.status === "suspended" || String(userProfile.status) === "inactive" || userProfile.status === "banned")) {
       await firebaseSignOut(auth);
       throw new Error("Your Webmaster account is currently inactive.");
     }
@@ -747,7 +748,7 @@ export async function signInWebmasterGoogle(): Promise<User> {
       throw new Error("This account is not authorized to access the Webmaster Portal.");
     }
 
-    if (existingProfile && (existingProfile.status === "suspended" || existingProfile.status === "inactive")) {
+    if (existingProfile && (existingProfile.status === "suspended" || String(existingProfile.status) === "inactive")) {
       await firebaseSignOut(auth);
       throw new Error("Your Webmaster account is currently inactive.");
     }
@@ -2182,7 +2183,7 @@ export async function checkAndSyncEmailChangeStatus(
       // If user has no pending email in local state or active request, check current email verification status
       if (!activeReq && !savedPending) {
         const profile = await getUserProfile(uid);
-        if (profile?.emailVerified || profile?.status === "active") {
+        if (profile?.emailVerified === true) {
           const successMsg = "Email verified successfully";
           if (manual) toast.success(successMsg);
           return {
@@ -2233,18 +2234,24 @@ export async function checkAndSyncEmailChangeStatus(
         const targetVerifiedEmail = (activeReq.newEmail || savedPending || "").trim().toLowerCase();
 
         try {
-          const res = await fetch("/api/email-change/session-refresh", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              uid,
-              requestId: activeReq.requestId,
-            }),
-          });
-          const data = await res.json();
-          if (res.ok && data?.customToken) {
-            console.log("[EMAIL SYNC READ-ONLY] Fresh custom token received. Signing in...");
-            await signInWithCustomToken(auth, data.customToken);
+          const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
+          if (idToken) {
+            const res = await fetch("/api/email-change/session-refresh", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${idToken}`,
+              },
+              body: JSON.stringify({
+                uid,
+                requestId: activeReq.requestId,
+              }),
+            });
+            const data = await res.json();
+            if (res.ok && data?.customToken) {
+              console.log("[EMAIL SYNC READ-ONLY] Fresh custom token received. Signing in...");
+              await signInWithCustomToken(auth, data.customToken);
+            }
           }
         } catch (tokErr) {
           console.warn("[EMAIL SYNC READ-ONLY] Session refresh token notice:", tokErr);
@@ -2361,12 +2368,12 @@ export const handleUpdateEmailSecure = async (newEmail: string, currentPassword?
 };
 
 // 1.5 Resend Verification Email with custom decoupled flow
-export const resendVerificationEmailSecure = async () => {
+export const resendVerificationEmailSecure = async (pendingEmail?: string) => {
   const user = auth.currentUser;
   if (!user) {
     throw new Error("No user logged in.");
   }
-  await resendPendingEmailVerification(user);
+  await resendPendingEmailVerification(user, pendingEmail || user.email || "");
   return { success: true, message: "Verification email resent successfully." };
 };
 

@@ -125,7 +125,7 @@ export async function onRequestPost(context: {
   // 4. Write audit log
   const auditId = `audit_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
   await firestoreSetDoc(
-    `auditLogs/${auditId}`,
+    `audit_logs/${auditId}`,
     {
       action: "USER_DELETED_ADMIN",
       targetUid,
@@ -136,6 +136,7 @@ export async function onRequestPost(context: {
         actorEmail: callerEmail,
         reason,
       },
+      createdAt: nowIso,
       timestamp: nowIso,
     },
     env,

@@ -60,6 +60,7 @@ export function DashboardSidebar({
       };
     } else {
       document.body.style.overflow = "";
+      return undefined;
     }
   }, [isMobileOpen, onCloseMobile]);
 

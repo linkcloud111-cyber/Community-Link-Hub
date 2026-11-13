@@ -115,12 +115,13 @@ export async function onRequestPost(context: {
   // 3. Write audit log
   const auditId = `audit_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
   await firestoreSetDoc(
-    `auditLogs/${auditId}`,
+    `audit_logs/${auditId}`,
     {
       action: shouldDisable ? "USER_SUSPENDED" : "USER_STATUS_UPDATED",
       targetUid,
       actorUid: callerUid,
       details: { newStatus: status, disabled: shouldDisable, actorEmail: callerEmail },
+      createdAt: nowIso,
       timestamp: nowIso,
     },
     env,

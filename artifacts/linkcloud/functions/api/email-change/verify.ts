@@ -79,7 +79,7 @@ async function processVerification({
     const effectiveUid = reqDoc.userId;
     const now = Date.now();
 
-    // 3. Status checks
+    // 3. Status checks for non-pending, non-completed requests
     if (reqDoc.status === "cancelled") {
       return errorResponse("This email change request has been cancelled.", 410, { code: "cancelled" });
     }
@@ -90,7 +90,14 @@ async function processVerification({
         { code: "superseded" }
       );
     }
-    if (reqDoc.status === "completed") {
+
+    // 4. Secure Token Hash Comparison (MUST run before completed return to prevent token forgery)
+    const computedHash = await hashToken(token);
+    if (!reqDoc.tokenHash || computedHash !== reqDoc.tokenHash) {
+      return errorResponse("This verification token is invalid.", 403, { code: "invalid_token" });
+    }
+
+    if (reqDoc.status === "completed" || reqDoc.status === "verified") {
       let customToken = "";
       try {
         customToken = await adminCreateCustomToken(env, effectiveUid);
@@ -107,7 +114,7 @@ async function processVerification({
       });
     }
 
-    // 4. Server-enforced Expiration Check (5-minute TTL)
+    // 5. Server-enforced Expiration Check (5-minute TTL)
     if (reqDoc.status === "expired" || now > (reqDoc.expiresAt || 0)) {
       if (reqDoc.status !== "expired") {
         await firestoreSetDoc(
@@ -121,12 +128,6 @@ async function processVerification({
         410,
         { code: "expired" }
       );
-    }
-
-    // 5. Secure Token Hash Comparison
-    const computedHash = await hashToken(token);
-    if (reqDoc.tokenHash && computedHash !== reqDoc.tokenHash) {
-      return errorResponse("This verification token is invalid.", 403, { code: "invalid_token" });
     }
 
     const newEmail = (reqDoc.newEmail || "").trim().toLowerCase();

@@ -90,9 +90,50 @@ export async function getGoogleAccessToken(serviceAccount: any): Promise<string>
   return cachedAccessToken.token;
 }
 
+function base64UrlToUint8Array(base64Url: string): Uint8Array {
+  const padded = base64Url.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - (base64Url.length % 4)) % 4);
+  const binary = atob(padded);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
+}
+
+let cachedSecureTokenJwks: { keys: any[]; expiresAt: number } | null = null;
+
+async function getGoogleSecureTokenJwks(): Promise<any[]> {
+  const now = Math.floor(Date.now() / 1000);
+  if (cachedSecureTokenJwks && cachedSecureTokenJwks.expiresAt > now) {
+    return cachedSecureTokenJwks.keys;
+  }
+
+  const res = await fetch(
+    "https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com"
+  );
+  if (!res.ok) {
+    throw new Error(`Failed to fetch Google Secure Token JWKs (${res.status})`);
+  }
+
+  const cacheControl = res.headers.get("cache-control") || "";
+  const maxAgeMatch = cacheControl.match(/max-age=(\d+)/i);
+  const maxAgeSec = maxAgeMatch ? parseInt(maxAgeMatch[1], 10) : 300;
+  const data: any = await res.json();
+  const keys = Array.isArray(data?.keys) ? data.keys : [];
+  if (keys.length === 0) {
+    throw new Error("Google Secure Token JWK response contained no keys");
+  }
+
+  cachedSecureTokenJwks = {
+    keys,
+    expiresAt: now + Math.max(60, maxAgeSec),
+  };
+  return keys;
+}
+
 /**
- * Verify a Firebase ID Token using Google Identity Toolkit API.
- * Returns the decoded token payload or throws an error.
+ * Verify a Firebase ID Token using Identity Toolkit (when SA is configured)
+ * or cryptographic RS256 verification against Google Secure Token JWKs.
  */
 export async function verifyFirebaseIdToken(
   idToken: string,
@@ -127,24 +168,82 @@ export async function verifyFirebaseIdToken(
     };
   }
 
-  // Fallback if service account is not yet provided: decode JWT payload without verification
-  // and check expiration
-  try {
-    const parts = idToken.split(".");
-    if (parts.length !== 3) throw new Error("Invalid JWT token format");
-    const payload = JSON.parse(atob(parts[1].replace(/-/g, "+").replace(/_/g, "/")));
-    const now = Math.floor(Date.now() / 1000);
-    if (payload.exp && payload.exp < now) {
-      throw new Error("ID token has expired");
-    }
-    return {
-      uid: payload.user_id || payload.sub,
-      email: payload.email,
-      emailVerified: payload.email_verified,
-    };
-  } catch (err: any) {
-    throw new Error(`Failed to verify ID token: ${err.message}`);
+  const projectId = env.FIREBASE_PROJECT_ID || env.VITE_FIREBASE_PROJECT_ID || "linkcloud-5bb2f";
+  const parts = idToken.split(".");
+  if (parts.length !== 3) {
+    throw new Error("Invalid JWT token format");
   }
+
+  const [encodedHeader, encodedPayload, encodedSignature] = parts;
+  const header = JSON.parse(new TextDecoder().decode(base64UrlToUint8Array(encodedHeader)));
+  const payload = JSON.parse(new TextDecoder().decode(base64UrlToUint8Array(encodedPayload)));
+
+  if (header.alg !== "RS256" || !header.kid || typeof header.kid !== "string") {
+    throw new Error("Unsupported or missing JWT signing header");
+  }
+
+  const now = Math.floor(Date.now() / 1000);
+  if (typeof payload.exp !== "number" || payload.exp <= now) {
+    throw new Error("ID token has expired");
+  }
+  if (typeof payload.iat !== "number" || payload.iat > now + 300) {
+    throw new Error("ID token issued-at time is invalid");
+  }
+  if (payload.aud !== projectId) {
+    throw new Error("ID token audience mismatch");
+  }
+  if (payload.iss !== `https://securetoken.google.com/${projectId}`) {
+    throw new Error("ID token issuer mismatch");
+  }
+  const sub = typeof payload.sub === "string" ? payload.sub.trim() : "";
+  if (!sub || sub.length > 128) {
+    throw new Error("ID token subject claim is invalid");
+  }
+
+  const jwks = await getGoogleSecureTokenJwks();
+  const matchingJwk = jwks.find((k: any) => k.kid === header.kid);
+  if (!matchingJwk) {
+    // Bust cache once in case keys rotated
+    cachedSecureTokenJwks = null;
+    const freshJwks = await getGoogleSecureTokenJwks();
+    const retryJwk = freshJwks.find((k: any) => k.kid === header.kid);
+    if (!retryJwk) {
+      throw new Error("Unable to locate matching signing key for ID token");
+    }
+    const cryptoKey = await crypto.subtle.importKey(
+      "jwk",
+      retryJwk,
+      { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
+      false,
+      ["verify"]
+    );
+    const sigBytes = base64UrlToUint8Array(encodedSignature);
+    const signedBytes = new TextEncoder().encode(`${encodedHeader}.${encodedPayload}`);
+    const verified = await crypto.subtle.verify("RSASSA-PKCS1-v1_5", cryptoKey, sigBytes.buffer as ArrayBuffer, signedBytes);
+    if (!verified) {
+      throw new Error("ID token cryptographic signature verification failed");
+    }
+  } else {
+    const cryptoKey = await crypto.subtle.importKey(
+      "jwk",
+      matchingJwk,
+      { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
+      false,
+      ["verify"]
+    );
+    const sigBytes = base64UrlToUint8Array(encodedSignature);
+    const signedBytes = new TextEncoder().encode(`${encodedHeader}.${encodedPayload}`);
+    const verified = await crypto.subtle.verify("RSASSA-PKCS1-v1_5", cryptoKey, sigBytes.buffer as ArrayBuffer, signedBytes);
+    if (!verified) {
+      throw new Error("ID token cryptographic signature verification failed");
+    }
+  }
+
+  return {
+    uid: sub,
+    email: payload.email,
+    emailVerified: Boolean(payload.email_verified),
+  };
 }
 
 /**

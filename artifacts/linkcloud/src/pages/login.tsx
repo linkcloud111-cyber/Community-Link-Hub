@@ -112,10 +112,14 @@ export default function Login() {
         toast.error("This is a Webmaster account. Please sign in from the Webmaster Login page.");
         logout();
         setLocation("/webmaster/login");
-      } else if (user.emailVerified || profile?.emailVerified || profile?.status === "active" || profile?.pendingEmail || pendingEmail) {
-        setLocation("/dashboard");
       } else {
-        setLocation("/verify-email");
+        const isGoogleAccount = Boolean(user.providerData?.some((p) => p.providerId === "google.com"));
+        const isPhoneOtpAccount = Boolean(!user.email && !profile?.email && (profile?.phoneVerified || user.phoneNumber));
+        if (user.emailVerified || profile?.emailVerified || isGoogleAccount || isPhoneOtpAccount) {
+          setLocation("/dashboard");
+        } else {
+          setLocation("/verify-email");
+        }
       }
     }
   }, [user, profile, isWebmaster, authLoading, pendingEmail, setLocation]);

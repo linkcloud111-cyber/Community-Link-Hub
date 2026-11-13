@@ -57,24 +57,35 @@ export default function GroupDetail() {
   const [favLoading, setFavLoading] = useState(false);
   const [accessDenied, setAccessDenied] = useState(false);
 
+  const canonicalBase = (
+    settings?.canonicalUrl ||
+    (typeof window !== "undefined" ? window.location.origin : "https://linkcloud.in")
+  ).replace(/\/$/, "");
+
   usePageSEO({
     title: group ? `${group.name} - Join ${group.platform}` : "Community Group Details",
-    subtitle: group ? `${group.category || "Community"} in ${group.location?.state || "India"}` : undefined,
+    subtitle: group ? `${group.categoryName || "Community"} in ${group.state || "India"}` : undefined,
     description: group?.description ? group.description.slice(0, 160) : "Join verified Indian communities and groups on LinkCloud.",
     canonicalPath: id ? `/groups/${id}` : "/groups",
-    ogImage: group?.iconUrl || undefined,
+    ogImage: group?.logoUrl || undefined,
     ogType: "article",
-    noIndex: accessDenied || (group && (group.status !== "approved" || group.hidden)),
+    noIndex: accessDenied || (group ? (group.status !== "approved" || Boolean(group.hidden)) : false),
     jsonLd: group ? {
       "@context": "https://schema.org",
       "@type": "SocialMediaPosting",
       headline: group.name,
       description: group.description,
-      url: `https://linkcloud.in/groups/${group.id}`,
+      url: `${canonicalBase}/groups/${group.id}`,
+      dateCreated: group.createdAt?.toDate ? group.createdAt.toDate().toISOString() : undefined,
+      interactionStatistic: {
+        "@type": "InteractionCounter",
+        interactionType: "https://schema.org/FollowAction",
+        userInteractionCount: group.joinCount ?? 0,
+      },
       publisher: {
         "@type": "Organization",
-        name: "LinkCloud",
-        url: "https://linkcloud.in",
+        name: settings?.siteName || "LinkCloud",
+        url: canonicalBase,
       },
     } : undefined,
   });
@@ -124,76 +135,7 @@ export default function GroupDetail() {
     loadData();
   }, [id, user, profile]);
 
-  // Update page title and dynamic SEO Meta Tags
-  useEffect(() => {
-    if (!group) {
-      document.title = "LinkCloud — Discover Communities";
-      return;
-    }
-
-    const title = `${group.name} (${group.platform}) — LinkCloud`;
-    document.title = title;
-
-    // Set meta description
-    const metaDesc = document.querySelector('meta[name="description"]');
-    const descText = group.description ? group.description.substring(0, 155) : `Join ${group.name} on ${group.platform}.`;
-    if (metaDesc) {
-      metaDesc.setAttribute("content", descText);
-    }
-
-    // Set OpenGraph
-    let ogTitle = document.querySelector('meta[property="og:title"]');
-    if (!ogTitle) {
-      ogTitle = document.createElement("meta");
-      ogTitle.setAttribute("property", "og:title");
-      document.head.appendChild(ogTitle);
-    }
-    ogTitle.setAttribute("content", title);
-
-    let ogDesc = document.querySelector('meta[property="og:description"]');
-    if (!ogDesc) {
-      ogDesc = document.createElement("meta");
-      ogDesc.setAttribute("property", "og:description");
-      document.head.appendChild(ogDesc);
-    }
-    ogDesc.setAttribute("content", descText);
-
-    // Set Canonical URL
-    let canonical = document.querySelector('link[rel="canonical"]');
-    if (!canonical) {
-      canonical = document.createElement("link");
-      canonical.setAttribute("rel", "canonical");
-      document.head.appendChild(canonical);
-    }
-    canonical.setAttribute("href", window.location.href);
-
-    // Set JSON-LD Structured Data
-    let scriptTag = document.getElementById("json-ld-group") as HTMLScriptElement;
-    if (!scriptTag) {
-      scriptTag = document.createElement("script");
-      scriptTag.id = "json-ld-group";
-      scriptTag.type = "application/ld+json";
-      document.head.appendChild(scriptTag);
-    }
-    scriptTag.text = JSON.stringify({
-      "@context": "https://schema.org",
-      "@type": "SocialMediaPosting",
-      "headline": group.name,
-      "description": group.description,
-      "dateCreated": group.createdAt?.toDate ? group.createdAt.toDate().toISOString() : undefined,
-      "interactionStatistic": {
-        "@type": "InteractionCounter",
-        "interactionType": "https://schema.org/FollowAction",
-        "userInteractionCount": group.joinCount ?? 0,
-      },
-    });
-
-    return () => {
-      document.title = "LinkCloud";
-    };
-  }, [group]);
-
-  const isLinkActive = group?.linkStatus !== "inactive";
+  const isLinkActive = group?.linkStatus?.toLowerCase() !== "inactive";
 
   const handleJoin = async () => {
     if (!group) return;
@@ -399,12 +341,12 @@ export default function GroupDetail() {
 
                   {group.minimumAge && (
                     <span className="text-xs text-muted-foreground bg-muted px-2.5 py-1 rounded-full font-medium">
-                      Min Age: {group.minimumAge}+
+                      Min Age: {group.minimumAge}
                     </span>
                   )}
                 </div>
 
-                {canSeePrivateDetails && locationParts && (
+                {locationParts && (
                   <p className="flex items-center gap-1.5 text-xs sm:text-sm text-muted-foreground pt-1">
                     <MapPin className="w-4 h-4 flex-shrink-0 text-primary" />
                     {locationParts}
