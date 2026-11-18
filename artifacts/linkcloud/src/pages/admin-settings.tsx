@@ -345,6 +345,17 @@ export default function AdminSettings() {
     if (e) e.preventDefault();
     setSaving(true);
     try {
+      const normalizedSettings = {
+        ...settings,
+        logoUrl: settings.siteLogo || settings.logoUrl || "",
+        faviconUrl: settings.favicon || settings.faviconUrl || "",
+        cloudinarySettings: {
+          ...(settings.cloudinarySettings || {}),
+          cloudName: settings.cloudinaryCloudName || settings.cloudinarySettings?.cloudName || "",
+          uploadPreset: settings.cloudinaryUploadPreset || settings.cloudinarySettings?.uploadPreset || "",
+        },
+      };
+
       let savedViaApi = false;
       if (user) {
         try {
@@ -355,7 +366,7 @@ export default function AdminSettings() {
               "Content-Type": "application/json",
               Authorization: `Bearer ${idToken}`,
             },
-            body: JSON.stringify(settings),
+            body: JSON.stringify(normalizedSettings),
           });
           if (res.ok) {
             savedViaApi = true;
@@ -366,7 +377,7 @@ export default function AdminSettings() {
       }
 
       if (!savedViaApi) {
-        await updateSiteSettings(settings);
+        await updateSiteSettings(normalizedSettings);
         await logAuditEvent(
           "Settings Changed",
           `Updated webmaster configuration section (${tab})`,
@@ -881,6 +892,12 @@ export default function AdminSettings() {
                   onToggle={() => setSettings((s) => ({ ...s, faqSectionEnabled: !s.faqSectionEnabled }))}
                 />
                 <ToggleCard
+                  title="Global Site Footer"
+                  description="Show footer links, socials, and copyright bar"
+                  enabled={settings.footerEnabled !== false}
+                  onToggle={() => setSettings((s) => ({ ...s, footerEnabled: s.footerEnabled === false }))}
+                />
+                <ToggleCard
                   title="Newsletter Subscription"
                   description="Email capture form for weekly group drops"
                   enabled={settings.newsletterSectionEnabled}
@@ -1092,7 +1109,9 @@ export default function AdminSettings() {
                     <button
                       type="button"
                       onClick={() => {
-                        navigator.clipboard.writeText("OXGYTyWBcdYNcHkWyXPbOvVlV2h1");
+                        const activeUid = user?.uid || "";
+                        if (!activeUid) return;
+                        navigator.clipboard.writeText(activeUid);
                         setCopiedUid(true);
                         toast.success("Webmaster UID copied to clipboard");
                         setTimeout(() => setCopiedUid(false), 2000);
@@ -1109,19 +1128,19 @@ export default function AdminSettings() {
                   <div className="p-3.5 rounded-2xl bg-muted/30 border border-border">
                     <span className="text-[11px] font-medium text-muted-foreground block">Webmaster UID</span>
                     <span className="font-mono text-xs font-bold text-foreground block mt-1 select-all truncate">
-                      OXGYTyWBcdYNcHkWyXPbOvVlV2h1
+                      {user?.uid || "Authenticated Webmaster"}
                     </span>
                   </div>
                   <div className="p-3.5 rounded-2xl bg-muted/30 border border-border">
                     <span className="text-[11px] font-medium text-muted-foreground block">Authorized Email</span>
                     <span className="font-mono text-xs font-bold text-foreground block mt-1 select-all truncate">
-                      linkcloud111@gmail.com
+                      {user?.email || profile?.email || "Not set"}
                     </span>
                   </div>
                   <div className="p-3.5 rounded-2xl bg-muted/30 border border-border">
                     <span className="text-[11px] font-medium text-muted-foreground block">Authorized Mobile</span>
                     <span className="font-mono text-xs font-bold text-foreground block mt-1 select-all truncate">
-                      +91 79874 10765
+                      {profile?.phone || user?.phoneNumber || "Not configured"}
                     </span>
                   </div>
                 </div>
@@ -1269,7 +1288,7 @@ export default function AdminSettings() {
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-2xl bg-muted/30 border border-border">
                   <div>
                     <p className="text-xs font-bold text-foreground">
-                      Recipient: <span className="font-mono text-primary">linkcloud111@gmail.com</span>
+                      Recipient: <span className="font-mono text-primary">{user?.email || profile?.email || "Active Webmaster Email"}</span>
                     </p>
                     <p className="text-[11px] text-muted-foreground mt-0.5">
                       LinkCloud uses Firebase Authentication secure email action handlers (<code className="font-mono">/verify-handler?mode=resetPassword</code>).
@@ -1776,22 +1795,22 @@ export default function AdminSettings() {
                 <ToggleCard
                   title="Group Link Submissions"
                   description="Master platform switch to enable or pause community submissions"
-                  enabled={settings.groupSubmissionEnabled !== false}
+                  enabled={settings.groupSubmissionEnabled === true}
                   onToggle={() =>
                     setSettings((s) => ({
                       ...s,
-                      groupSubmissionEnabled: s.groupSubmissionEnabled === false ? true : false,
+                      groupSubmissionEnabled: s.groupSubmissionEnabled !== true,
                     }))
                   }
                 />
                 <ToggleCard
                   title="Guest & Public Submissions"
                   description="Allow unregistered visitors to submit links without signing in"
-                  enabled={settings.allowPublicSubmissions !== false}
+                  enabled={settings.allowPublicSubmissions === true}
                   onToggle={() =>
                     setSettings((s) => ({
                       ...s,
-                      allowPublicSubmissions: s.allowPublicSubmissions === false ? true : false,
+                      allowPublicSubmissions: s.allowPublicSubmissions !== true,
                     }))
                   }
                 />

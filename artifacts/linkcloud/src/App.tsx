@@ -9,7 +9,7 @@ import { LocationProvider } from '@/contexts/LocationContext';
 import { SiteSettingsProvider, useSiteSettings } from '@/contexts/SiteSettingsContext';
 import { logout } from '@/lib/auth';
 import { auth } from '@/lib/firebase';
-import { Loader2, AlertTriangle, RefreshCw } from 'lucide-react';
+import { Loader2, AlertTriangle, RefreshCw, Wrench, ShieldAlert } from 'lucide-react';
 import React, { lazy, Suspense, Component, type ReactNode } from 'react';
 
 import Navbar from '@/components/navbar';
@@ -211,6 +211,20 @@ const ProtectedRoute = ({
 
 function Router() {
   useGlobalSEO();
+  const [location] = useLocation();
+  const { settings } = useSiteSettings();
+  const { isWebmaster } = useAuth();
+
+  const isMaintenanceBypassRoute =
+    location === '/webmaster/login' ||
+    location.startsWith('/webmaster') ||
+    location.startsWith('/admin') ||
+    location === '/verify-handler' ||
+    location === '/email-action';
+
+  const showGlobalMaintenance = Boolean(
+    settings?.maintenanceMode && !isWebmaster && !isMaintenanceBypassRoute
+  );
 
   return (
     <div className="flex flex-col min-h-screen bg-background relative overflow-hidden text-foreground">
@@ -223,6 +237,23 @@ function Router() {
       <AnnouncementBanner />
       <Navbar />
       <main id="main-content" tabIndex={-1} className="flex-1 w-full max-w-7xl mx-auto px-2 sm:px-6 lg:px-8 py-3 sm:py-8 z-10 min-w-0 outline-none">
+        {showGlobalMaintenance ? (
+          <div className="min-h-[70vh] flex flex-col items-center justify-center text-center p-6 space-y-6">
+            <div className="w-20 h-20 rounded-full bg-amber-500/10 text-amber-500 flex items-center justify-center border border-amber-500/20 shadow-xl">
+              <Wrench className="w-10 h-10 animate-bounce" />
+            </div>
+            <div className="max-w-md space-y-2">
+              <h1 className="text-3xl font-extrabold text-foreground">Under Maintenance</h1>
+              <p className="text-sm text-muted-foreground leading-relaxed">
+                {settings?.maintenanceMessage?.trim() ||
+                  "LinkCloud is currently undergoing scheduled system upgrades and database optimization. We will be back online shortly!"}
+              </p>
+            </div>
+            <div className="pt-4 flex items-center gap-2 text-xs font-mono text-muted-foreground bg-muted/30 px-4 py-2 rounded-xl border border-border">
+              <ShieldAlert className="w-4 h-4 text-amber-500" /> Directory access is temporarily paused during maintenance
+            </div>
+          </div>
+        ) : (
         <RouteErrorBoundary>
           <Suspense
             fallback={
@@ -316,6 +347,7 @@ function Router() {
             </Switch>
           </Suspense>
         </RouteErrorBoundary>
+        )}
       </main>
       <Footer />
     </div>

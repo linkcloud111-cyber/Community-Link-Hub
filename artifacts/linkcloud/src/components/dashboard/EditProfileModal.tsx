@@ -279,8 +279,8 @@ export function EditProfileModal({ isOpen, onClose, profile, onSave }: EditProfi
     try {
       const url = await uploadToCloudinary(
         file,
-        settings?.cloudinaryUploadPreset || "linkcloud",
-        settings?.cloudinaryCloudName
+        settings?.cloudinaryUploadPreset || settings?.cloudinarySettings?.uploadPreset,
+        settings?.cloudinaryCloudName || settings?.cloudinarySettings?.cloudName
       );
       setPhotoURL(url);
       toast.success("Profile photo uploaded successfully!");

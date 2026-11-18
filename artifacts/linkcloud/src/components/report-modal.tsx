@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
+import { useSiteSettings } from "@/contexts/SiteSettingsContext";
 import { createReport } from "@/lib/firestore";
 import { toast } from "sonner";
 import { X, ShieldAlert, Loader2 } from "lucide-react";
@@ -24,15 +25,21 @@ const REPORT_REASONS = [
 
 export default function ReportModal({ isOpen, onClose, groupId, groupName }: ReportModalProps) {
   const { user, profile } = useAuth();
+  const { settings } = useSiteSettings();
   const [reason, setReason] = useState(REPORT_REASONS[0]);
   const [details, setDetails] = useState("");
   const [reporterName, setReporterName] = useState(profile?.displayName || "");
   const [submitting, setSubmitting] = useState(false);
 
-  if (!isOpen) return null;
+  if (!isOpen || settings?.reportSystemEnabled === false) return null;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (settings?.reportSystemEnabled === false) {
+      toast.error("Abuse reporting is currently disabled by the webmaster.");
+      onClose();
+      return;
+    }
     if (!reason) {
       toast.error("Please select a reason");
       return;

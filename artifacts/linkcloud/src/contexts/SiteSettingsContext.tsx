@@ -385,9 +385,10 @@ export function SiteSettingsProvider({ children }: { children: React.ReactNode }
       }
     }
 
-    // Apply Favicon
-    if (settings.faviconUrl) {
-      upsertFaviconLink(settings.faviconUrl);
+    // Apply Favicon (supports both faviconUrl and legacy/admin favicon field)
+    const activeFavicon = settings.faviconUrl || settings.favicon;
+    if (activeFavicon) {
+      upsertFaviconLink(activeFavicon);
     }
 
     // Apply Global SEO / Meta Tags

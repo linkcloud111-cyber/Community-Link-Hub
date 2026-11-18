@@ -397,6 +397,65 @@ test("useDashboardTabs resolves direct subpaths cleanly", () => {
   assert(content.includes("/dashboard/settings"), "useDashboardTabs missing /dashboard/settings resolution");
 });
 
+// -------------------------------------------------------------
+// SUITE 5: CROSS-PANEL WEBMASTER SETTINGS & RULE ENFORCEMENT
+// -------------------------------------------------------------
+console.log("\n--- SUITE 5: CROSS-PANEL SETTINGS & RULE ENFORCEMENT ---");
+
+test("Global maintenanceMode is enforced in App.tsx for all non-Webmaster routes", () => {
+  const appContent = fs.readFileSync(path.resolve(__dirname, "../artifacts/linkcloud/src/App.tsx"), "utf8");
+  assert(appContent.includes("settings?.maintenanceMode && !isWebmaster && !isMaintenanceBypassRoute"), "App.tsx missing global maintenanceMode guard");
+  assert(appContent.includes("isMaintenanceBypassRoute"), "App.tsx missing Webmaster maintenance bypass check");
+});
+
+test("Login page enforces emailLoginEnabled, mobileOtpLoginEnabled, and googleLoginEnabled", () => {
+  const loginContent = fs.readFileSync(path.resolve(__dirname, "../artifacts/linkcloud/src/pages/login.tsx"), "utf8");
+  assert(loginContent.includes("settings?.emailLoginEnabled !== false"), "login.tsx missing emailLoginEnabled check");
+  assert(loginContent.includes("settings?.mobileOtpLoginEnabled !== false"), "login.tsx missing mobileOtpLoginEnabled check");
+  assert(loginContent.includes("settings?.googleLoginEnabled !== false"), "login.tsx missing googleLoginEnabled check");
+});
+
+test("Abuse Report System toggle is enforced in group-card.tsx and report-modal.tsx", () => {
+  const cardContent = fs.readFileSync(path.resolve(__dirname, "../artifacts/linkcloud/src/components/group-card.tsx"), "utf8");
+  const modalContent = fs.readFileSync(path.resolve(__dirname, "../artifacts/linkcloud/src/components/report-modal.tsx"), "utf8");
+  assert(cardContent.includes("settings?.reportSystemEnabled !== false"), "group-card.tsx missing reportSystemEnabled check");
+  assert(modalContent.includes("settings?.reportSystemEnabled === false"), "report-modal.tsx missing reportSystemEnabled guard");
+});
+
+test("Favorites toggle is enforced across navbar.tsx, DashboardSidebar.tsx, and FavoritesTab.tsx", () => {
+  const navContent = fs.readFileSync(path.resolve(__dirname, "../artifacts/linkcloud/src/components/navbar.tsx"), "utf8");
+  const sidebarContent = fs.readFileSync(path.resolve(__dirname, "../artifacts/linkcloud/src/components/dashboard/DashboardSidebar.tsx"), "utf8");
+  const favContent = fs.readFileSync(path.resolve(__dirname, "../artifacts/linkcloud/src/components/dashboard/tabs/FavoritesTab.tsx"), "utf8");
+  assert(navContent.includes("settings?.favoritesEnabled !== false"), "navbar.tsx missing favoritesEnabled check");
+  assert(sidebarContent.includes("settings?.favoritesEnabled !== false"), "DashboardSidebar.tsx missing favoritesEnabled check");
+  assert(favContent.includes("settings?.favoritesEnabled === false"), "FavoritesTab.tsx missing favoritesEnabled check");
+});
+
+test("Dashboard MessagesTab and ComplaintTab enforce feature flags and 20-char min length matching firestore.rules", () => {
+  const msgContent = fs.readFileSync(path.resolve(__dirname, "../artifacts/linkcloud/src/components/dashboard/tabs/MessagesTab.tsx"), "utf8");
+  const compContent = fs.readFileSync(path.resolve(__dirname, "../artifacts/linkcloud/src/components/dashboard/tabs/ComplaintTab.tsx"), "utf8");
+  assert(msgContent.includes("settings?.contactFormEnabled !== false"), "MessagesTab missing contactFormEnabled check");
+  assert(msgContent.includes("message.trim().length < 20"), "MessagesTab missing 20-char minimum check");
+  assert(compContent.includes("settings?.complaintSystemEnabled !== false"), "ComplaintTab missing complaintSystemEnabled check");
+  assert(compContent.includes("description.trim().length < 20"), "ComplaintTab missing 20-char minimum check");
+});
+
+test("MyGroupsTab and dashboard-edit.tsx align owner edit/delete controls with firestore.rules", () => {
+  const myGroupsContent = fs.readFileSync(path.resolve(__dirname, "../artifacts/linkcloud/src/components/dashboard/tabs/MyGroupsTab.tsx"), "utf8");
+  const editContent = fs.readFileSync(path.resolve(__dirname, "../artifacts/linkcloud/src/pages/dashboard-edit.tsx"), "utf8");
+  assert(myGroupsContent.includes('group.status === "pending" || group.allowResubmit === true'), "MyGroupsTab missing edit rule alignment");
+  assert(myGroupsContent.includes('isWebmaster || group.status === "pending"'), "MyGroupsTab missing delete rule alignment");
+  assert(editContent.includes('group.status === "pending" || group.allowResubmit === true'), "dashboard-edit.tsx missing owner edit eligibility alignment");
+});
+
+test("SiteSettingsContext syncs faviconUrl/favicon and home.tsx wires searchPlaceholder & heroButtonLink", () => {
+  const ctxContent = fs.readFileSync(path.resolve(__dirname, "../artifacts/linkcloud/src/contexts/SiteSettingsContext.tsx"), "utf8");
+  const homeContent = fs.readFileSync(path.resolve(__dirname, "../artifacts/linkcloud/src/pages/home.tsx"), "utf8");
+  assert(ctxContent.includes("settings.faviconUrl || settings.favicon"), "SiteSettingsContext missing favicon fallback");
+  assert(homeContent.includes("settings?.searchPlaceholder"), "home.tsx missing searchPlaceholder wiring");
+  assert(homeContent.includes("settings?.heroButtonLink"), "home.tsx missing heroButtonLink wiring");
+});
+
 console.log("\n==================================================================");
 console.log(`ALL PANELS SUITE RESULTS: ${passed}/${total} PASSED (${total - passed} FAILED)`);
 console.log("==================================================================");

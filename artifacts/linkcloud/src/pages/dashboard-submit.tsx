@@ -169,7 +169,7 @@ export default function DashboardSubmit() {
 
   // Auto Save Draft & dirty flag
   useEffect(() => {
-    if (name || joinUrl || description || state || city || rules) {
+    if (name || joinUrl || description || state || city || rules || tagsInput) {
       setIsDirty(true);
       const draftObj = {
         name,
@@ -183,11 +183,12 @@ export default function DashboardSubmit() {
         city,
         rules,
         minimumAge,
+        tagsInput,
         joinUrl,
       };
       localStorage.setItem(draftKey, JSON.stringify(draftObj));
     }
-  }, [name, platform, categoryId, contentType, description, language, state, district, city, rules, minimumAge, joinUrl, draftKey]);
+  }, [name, platform, categoryId, contentType, description, language, state, district, city, rules, minimumAge, tagsInput, joinUrl, draftKey]);
 
   // Unsaved changes warning
   useEffect(() => {
@@ -218,6 +219,7 @@ export default function DashboardSubmit() {
       if (data.city) setCity(data.city);
       if (data.rules) setRules(data.rules);
       if (data.minimumAge) setMinimumAge(data.minimumAge);
+      if (data.tagsInput) setTagsInput(data.tagsInput);
       if (data.joinUrl) setJoinUrl(data.joinUrl);
       toast.success("Saved submission draft restored!");
     } catch {
@@ -463,30 +465,6 @@ export default function DashboardSubmit() {
           >
             Submit Another Group
           </button>
-        </div>
-      </div>
-    );
-  }
-
-  if (settings?.groupSubmissionEnabled !== true && !isWebmaster && profile?.role !== "webmaster") {
-    return (
-      <div className="max-w-2xl mx-auto py-16 px-4 text-center space-y-5">
-        <div className="w-16 h-16 rounded-2xl bg-amber-500/10 text-amber-500 flex items-center justify-center mx-auto border border-amber-500/20 shadow-lg">
-          <ShieldAlert className="w-8 h-8" />
-        </div>
-        <h1 className="text-2xl sm:text-3xl font-extrabold text-foreground">
-          Community Submissions Closed
-        </h1>
-        <p className="text-sm text-muted-foreground max-w-md mx-auto leading-relaxed">
-          Public submissions are temporarily paused by the webmaster for scheduled database review. Please check back soon or browse existing verified groups.
-        </p>
-        <div className="pt-2">
-          <Link
-            href="/groups"
-            className="px-6 py-2.5 bg-primary text-primary-foreground font-semibold text-sm rounded-xl hover:bg-primary/90 transition inline-block shadow-md"
-          >
-            Browse Verified Communities
-          </Link>
         </div>
       </div>
     );

@@ -131,9 +131,15 @@ export default function DashboardEdit() {
     e.preventDefault();
     if (!group || !user) return;
     const isOwner = group.submittedBy === user.uid || (group as any).submitterUid === user.uid;
-    const hasEditPermission = isOwner || isWebmaster || profile?.role === "webmaster";
+    const isWebmasterRole = isWebmaster || profile?.role === "webmaster";
+    const ownerCanEditStatus = group.status === "pending" || group.allowResubmit === true;
+    const hasEditPermission = isWebmasterRole || (isOwner && ownerCanEditStatus);
     if (!hasEditPermission) {
-      toast.error("You do not have permission to edit this community.");
+      toast.error(
+        isOwner
+          ? "Published or finalized listings can only be edited if the Webmaster enables resubmission. Please contact support for changes."
+          : "You do not have permission to edit this community."
+      );
       return;
     }
     if (!name.trim() || name.trim().length < 3) { toast.error("Name must be at least 3 characters."); return; }
@@ -231,12 +237,23 @@ export default function DashboardEdit() {
   const isOwner = Boolean(
     user && (group?.submittedBy === user.uid || (group as any)?.submitterUid === user.uid)
   );
-  const canEdit = Boolean(isOwner || isWebmaster || profile?.role === "webmaster");
+  const isWebmasterRole = Boolean(isWebmaster || profile?.role === "webmaster");
+  const ownerCanEditStatus = Boolean(group && (group.status === "pending" || group.allowResubmit === true));
+  const canEdit = Boolean(isWebmasterRole || (isOwner && ownerCanEditStatus));
 
   if (!group || !canEdit) {
     return (
-      <div className="text-center py-20 space-y-4">
-        <p className="text-lg text-muted-foreground">You do not have permission to edit this community.</p>
+      <div className="text-center py-20 space-y-4 max-w-lg mx-auto px-4">
+        <p className="text-lg font-semibold text-foreground">
+          {group && isOwner && !ownerCanEditStatus
+            ? "This listing is locked for editing"
+            : "You do not have permission to edit this community."}
+        </p>
+        {group && isOwner && !ownerCanEditStatus && (
+          <p className="text-sm text-muted-foreground">
+            Approved or finalized communities cannot be modified directly by members unless the Webmaster enables resubmission. Use Contact Webmaster in your dashboard if you need an update.
+          </p>
+        )}
         <Link href={isWebmaster ? "/webmaster/dashboard" : "/dashboard"} className="text-primary hover:underline font-bold inline-block">
           Back to Dashboard
         </Link>

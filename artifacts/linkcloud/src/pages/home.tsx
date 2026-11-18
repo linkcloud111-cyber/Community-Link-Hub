@@ -128,7 +128,7 @@ export default function Home() {
       logSearchQuery(search.trim());
       setLocation(`/groups?q=${encodeURIComponent(search.trim())}`);
     } else {
-      setLocation("/groups");
+      setLocation(settings?.heroButtonLink?.trim() || "/groups");
     }
   };
 
@@ -185,7 +185,10 @@ export default function Home() {
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
                     onFocus={() => search.trim() && setShowSuggestions(true)}
-                    placeholder="Search WhatsApp groups, study circles, cities, tech..."
+                    placeholder={
+                      settings?.searchPlaceholder?.trim() ||
+                      "Search WhatsApp groups, study circles, cities, tech..."
+                    }
                     className="w-full p-4 bg-transparent border-none outline-none text-foreground placeholder:text-muted-foreground text-sm sm:text-base"
                   />
                   {search && (

@@ -128,6 +128,11 @@ export default function Login() {
     return null;
   }
 
+  // Feature flag checks from Webmaster settings
+  const emailLoginEnabled = settings?.emailLoginEnabled !== false;
+  const mobileOtpLoginEnabled = settings?.mobileOtpLoginEnabled !== false;
+  const googleLoginEnabled = settings?.googleLoginEnabled !== false;
+
   // Detect input type
   const cleanNumber = identifier.replace(/[\s\-\+\(\)]/g, "");
   const isMobile = !identifier.includes("@") && (/^\d+$/.test(cleanNumber) || identifier.trim().startsWith("+91"));
@@ -196,6 +201,10 @@ export default function Login() {
   const handleEmailLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (loading) return;
+    if (!emailLoginEnabled) {
+      toast.error("Email & Password login is currently disabled by the webmaster.");
+      return;
+    }
     setSubmitted(true);
     setIdentifierTouched(true);
     setPasswordTouched(true);
@@ -364,6 +373,10 @@ export default function Login() {
   };
 
   const handleSendOTP = async () => {
+    if (!mobileOtpLoginEnabled) {
+      toast.error("Mobile OTP login is currently disabled by the webmaster.");
+      return;
+    }
     setSubmitted(true);
     setIdentifierTouched(true);
 
@@ -477,11 +490,23 @@ export default function Login() {
 
           {/* Single Smart Input Section */}
           <div className="space-y-5">
+            {!emailLoginEnabled && !mobileOtpLoginEnabled && !googleLoginEnabled && (
+              <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-600 dark:text-amber-400 text-xs text-center font-medium">
+                All user sign-in methods are currently paused by the webmaster. Please check back later.
+              </div>
+            )}
+
+            {(emailLoginEnabled || mobileOtpLoginEnabled) && (
+            <>
             {/* Input label & type indicator */}
             <div className="space-y-1.5">
               <div className="flex justify-between items-center px-1">
                 <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  Email Address or Mobile Number
+                  {emailLoginEnabled && mobileOtpLoginEnabled
+                    ? "Email Address or Mobile Number"
+                    : emailLoginEnabled
+                    ? "Gmail Address"
+                    : "Mobile Number"}
                 </label>
                 {identifier.length > 0 && (
                   <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-primary/10 text-primary">
@@ -626,21 +651,27 @@ export default function Login() {
 
                 {/* Submit Button */}
                 {isMobile ? (
-                  <button
-                    type="button"
-                    onClick={handleSendOTP}
-                    disabled={loading || !mobileCheck.valid}
-                    className="w-full py-3.5 px-4 bg-primary text-primary-foreground font-semibold text-sm rounded-xl hover:bg-primary/90 transition-all flex items-center justify-center gap-2 shadow-lg shadow-primary/20 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {loading ? (
-                      <Loader2 className="w-5 h-5 animate-spin" />
-                    ) : (
-                      <>
-                        <Phone className="w-4 h-4" /> Send Mobile OTP <ArrowRight className="w-4 h-4" />
-                      </>
-                    )}
-                  </button>
-                ) : (
+                  mobileOtpLoginEnabled ? (
+                    <button
+                      type="button"
+                      onClick={handleSendOTP}
+                      disabled={loading || !mobileCheck.valid}
+                      className="w-full py-3.5 px-4 bg-primary text-primary-foreground font-semibold text-sm rounded-xl hover:bg-primary/90 transition-all flex items-center justify-center gap-2 shadow-lg shadow-primary/20 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {loading ? (
+                        <Loader2 className="w-5 h-5 animate-spin" />
+                      ) : (
+                        <>
+                          <Phone className="w-4 h-4" /> Send Mobile OTP <ArrowRight className="w-4 h-4" />
+                        </>
+                      )}
+                    </button>
+                  ) : (
+                    <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-600 dark:text-amber-400 text-xs text-center font-medium">
+                      Mobile OTP login is currently disabled by the webmaster. Please sign in with your Gmail address.
+                    </div>
+                  )
+                ) : emailLoginEnabled ? (
                   <button
                     type="submit"
                     disabled={loading}
@@ -654,6 +685,10 @@ export default function Login() {
                       </>
                     )}
                   </button>
+                ) : (
+                  <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-600 dark:text-amber-400 text-xs text-center font-medium">
+                    Email & Password login is currently disabled by the webmaster.
+                  </div>
                 )}
               </form>
             )}
@@ -719,9 +754,11 @@ export default function Login() {
                 </button>
               </form>
             )}
+            </>
+            )}
 
             {/* Google Sign In */}
-            {settings?.googleLoginEnabled !== false && (
+            {googleLoginEnabled && (
               <>
                 <div className="relative my-6">
                   <div className="absolute inset-0 flex items-center">
