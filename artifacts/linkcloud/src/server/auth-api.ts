@@ -92,6 +92,31 @@ export async function allocateNextSequentialUid(): Promise<string> {
   return allocatedUid;
 }
 
+/**
+ * Fail-closed evaluator for the Webmaster `userRegistrationEnabled` flag.
+ * Only strictly boolean `true` permits new account creation.
+ * Missing, null, false, or malformed values fail closed with HTTP 403.
+ */
+export function evaluateRegistrationGuard(siteSettings: unknown): {
+  allowed: boolean;
+  status?: number;
+  error?: string;
+} {
+  if (
+    !siteSettings ||
+    typeof siteSettings !== "object" ||
+    Array.isArray(siteSettings) ||
+    (siteSettings as Record<string, unknown>).userRegistrationEnabled !== true
+  ) {
+    return {
+      allowed: false,
+      status: 403,
+      error: "New user registrations are currently closed by the webmaster.",
+    };
+  }
+  return { allowed: true };
+}
+
 export async function handleAuthProvisionUser(
   req: IncomingMessage,
   res: ServerResponse
@@ -108,20 +133,24 @@ export async function handleAuthProvisionUser(
   const body = await parseBody(req);
   const { fullName, dob, email, phone, password } = body;
 
-  // Enforce Webmaster userRegistrationEnabled setting server-side
+  // Enforce Webmaster userRegistrationEnabled setting server-side (strict fail-closed)
   const adminAppForSettings = getFirebaseAdminApp();
-  if (adminAppForSettings) {
-    try {
-      const siteSnap = await getFirestore(adminAppForSettings).doc("settings/site").get();
-      if (siteSnap.exists && siteSnap.data()?.userRegistrationEnabled === false) {
-        sendJson(res, { error: "New user registrations are currently closed by the webmaster." }, 403);
-        return;
-      }
-    } catch (err) {
-      console.error("[Auth API] Failed to verify userRegistrationEnabled setting:", err);
-      sendJson(res, { error: "Unable to verify registration availability. Please try again." }, 503);
+  if (!adminAppForSettings) {
+    sendJson(res, { error: "Registration service is temporarily unavailable. Please try again." }, 503);
+    return;
+  }
+
+  try {
+    const siteSnap = await getFirestore(adminAppForSettings).doc("settings/site").get();
+    const guard = evaluateRegistrationGuard(siteSnap.exists ? siteSnap.data() : null);
+    if (!guard.allowed) {
+      sendJson(res, { error: guard.error }, guard.status || 403);
       return;
     }
+  } catch (err) {
+    console.error("[Auth API] Failed to verify userRegistrationEnabled setting:", err);
+    sendJson(res, { error: "Unable to verify registration availability. Please try again." }, 503);
+    return;
   }
 
   // 1. Validations
@@ -182,18 +211,21 @@ export async function handleAuthProvisionUser(
   const firestore = getFirestore(app);
 
   try {
-    // 2. Duplicate checks in Firestore indexes
+    // 2. Duplicate checks in Firestore indexes (unified safe 409 prevents email/phone enumeration)
+    const SAFE_CONFLICT_MSG =
+      "Unable to complete registration with the provided details. If you already have an account, please sign in.";
+
     const emailIndexRef = firestore.collection("emailIndex").doc(cleanEmail);
     const emailIndexSnap = await emailIndexRef.get();
     if (emailIndexSnap.exists) {
-      sendJson(res, { error: "This Gmail address is already registered." }, 409);
+      sendJson(res, { error: SAFE_CONFLICT_MSG }, 409);
       return;
     }
 
     const mobileIndexRef = firestore.collection("mobileIndex").doc(cleanPhone);
     const mobileIndexSnap = await mobileIndexRef.get();
     if (mobileIndexSnap.exists) {
-      sendJson(res, { error: "An account with this Mobile Number is already registered." }, 409);
+      sendJson(res, { error: SAFE_CONFLICT_MSG }, 409);
       return;
     }
 
@@ -201,7 +233,7 @@ export async function handleAuthProvisionUser(
     try {
       const existingUser = await auth.getUserByEmail(cleanEmail);
       if (existingUser) {
-        sendJson(res, { error: "This Gmail address is already registered." }, 409);
+        sendJson(res, { error: SAFE_CONFLICT_MSG }, 409);
         return;
       }
     } catch (authLookupErr: any) {
@@ -327,7 +359,7 @@ export async function handleAuthProvisionUser(
       res,
       {
         success: false,
-        error: err?.message || "Failed to provision user.",
+        error: "Unable to complete registration. Please try again later.",
       },
       500
     );
@@ -406,7 +438,7 @@ export async function handleAuthProvisionGoogleUser(
     return;
   } catch (err: any) {
     console.error("[Auth API] Google provision error:", err);
-    sendJson(res, { success: false, error: err?.message || "Failed to provision Google account." }, 500);
+    sendJson(res, { success: false, error: "Authentication failed. Please try again." }, 500);
   }
 }
 
@@ -490,6 +522,20 @@ export async function handleAuthProvisionPhoneUser(
         });
         return;
       }
+    }
+
+    // Enforce Webmaster userRegistrationEnabled before creating a new phone user (strict fail-closed)
+    try {
+      const siteSnap = await firestore.doc("settings/site").get();
+      const guard = evaluateRegistrationGuard(siteSnap.exists ? siteSnap.data() : null);
+      if (!guard.allowed) {
+        sendJson(res, { success: false, error: guard.error }, guard.status || 403);
+        return;
+      }
+    } catch (guardErr) {
+      console.error("[Auth API] Failed to verify userRegistrationEnabled for phone signup:", guardErr);
+      sendJson(res, { success: false, error: "Unable to verify registration availability. Please try again." }, 503);
+      return;
     }
 
     // Allocate canonical sequential UID
@@ -586,7 +632,7 @@ export async function handleAuthProvisionPhoneUser(
     });
   } catch (err: any) {
     console.error("[Auth API] Phone provision error:", err);
-    sendJson(res, { success: false, error: err?.message || "Failed to provision phone account." }, 500);
+    sendJson(res, { success: false, error: "Unable to complete phone authentication. Please try again." }, 500);
   }
 }
 

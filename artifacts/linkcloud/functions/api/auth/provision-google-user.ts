@@ -40,7 +40,8 @@ export async function onRequestPost(context: {
   try {
     decoded = await verifyFirebaseIdToken(idToken, env);
   } catch (err: any) {
-    return errorResponse(err?.message || "Failed to verify ID token", 401);
+    console.warn("[Cloudflare Auth] Google token verification failed:", err?.message);
+    return errorResponse("Invalid or expired authentication token.", 401);
   }
 
   const googleEmail = (decoded.email || "").trim().toLowerCase();
