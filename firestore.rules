@@ -51,6 +51,11 @@ service cloud.firestore {
         getSiteSettings().allowPublicSubmissions == true;
     }
 
+    function siteFeatureEnabled(field) {
+      return !exists(/databases/$(database)/documents/settings/site) ||
+        getSiteSettings().get(field, true) != false;
+    }
+
     function isGroupOwner(groupId) {
       return isSignedIn() && (
         existing().get('submittedBy', '') == request.auth.uid ||
@@ -112,6 +117,7 @@ service cloud.firestore {
       allow list: if isWebmaster();
       allow create: if isValidId(userId) && (
         isWebmaster() || (
+          siteFeatureEnabled('userRegistrationEnabled') &&
           isUser(userId) &&
           (!('role' in incoming()) || incoming().role == 'user') &&
           (!('status' in incoming()) || incoming().status == 'pending_verification' || incoming().status == 'active') &&
@@ -269,7 +275,7 @@ service cloud.firestore {
     // ─── Favorites Collection ───
     match /favorites/{favoriteId} {
       allow read: if isSignedIn() && (existing().userId == request.auth.uid || isWebmaster());
-      allow create: if isValidId(favoriteId) && isSignedIn() && incoming().userId == request.auth.uid;
+      allow create: if isValidId(favoriteId) && isSignedIn() && incoming().userId == request.auth.uid && (isWebmaster() || siteFeatureEnabled('favoritesEnabled'));
       allow delete: if isValidId(favoriteId) && isSignedIn() && (existing().userId == request.auth.uid || isWebmaster());
     }
 
@@ -284,6 +290,7 @@ service cloud.firestore {
     match /reports/{reportId} {
       allow read: if isWebmaster();
       allow create: if isValidId(reportId) &&
+        (isWebmaster() || siteFeatureEnabled('reportSystemEnabled')) &&
         incoming().keys().hasAll(['groupId', 'reportedBy', 'reason', 'details', 'status']) &&
         incoming().groupId is string && incoming().groupId.size() > 0 && incoming().groupId.size() <= 128 &&
         incoming().reportedBy is string && incoming().reportedBy.size() <= 128 &&
@@ -303,6 +310,7 @@ service cloud.firestore {
     match /complaints/{complaintId} {
       allow read: if isWebmaster() || (isSignedIn() && existing().email == request.auth.token.email);
       allow create: if isValidId(complaintId) &&
+        (isWebmaster() || siteFeatureEnabled('complaintSystemEnabled')) &&
         incoming().keys().hasAll(['name', 'email', 'subject', 'message', 'status']) &&
         incoming().name is string && incoming().name.size() > 0 && incoming().name.size() <= 100 &&
         incoming().email is string && incoming().email.size() > 2 && incoming().email.size() <= 150 &&
@@ -317,6 +325,7 @@ service cloud.firestore {
     match /contacts/{contactId} {
       allow read: if isWebmaster() || (isSignedIn() && existing().email == request.auth.token.email);
       allow create: if isValidId(contactId) &&
+        (isWebmaster() || siteFeatureEnabled('contactFormEnabled')) &&
         incoming().keys().hasAll(['name', 'email', 'subject', 'message', 'status']) &&
         incoming().name is string && incoming().name.size() > 0 && incoming().name.size() <= 100 &&
         incoming().email is string && incoming().email.size() > 2 && incoming().email.size() <= 150 &&

@@ -94,6 +94,10 @@ const DEFAULT_SITE_SETTINGS: SiteSettings = {
   reportSystemEnabled: true,
   complaintSystemEnabled: true,
   contactFormEnabled: true,
+  announcementsEnabled: true,
+  searchEnabled: true,
+  publicDirectoryEnabled: true,
+  profileEditingEnabled: true,
   maintenanceMode: false,
   maintenanceMessage:
     "LinkCloud is currently undergoing scheduled system upgrades and database optimization. We will be back online shortly!",

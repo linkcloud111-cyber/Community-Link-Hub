@@ -175,6 +175,7 @@ export default function Home() {
             </p>
 
             {/* Search Bar with Instant Autocomplete Suggestions */}
+            {settings?.searchEnabled !== false && (
             <div className="max-w-2xl mx-auto w-full mt-6 relative z-50">
               <form onSubmit={handleSearchSubmit} className="relative group">
                 <div className="absolute -inset-0.5 bg-gradient-to-r from-primary to-blue-500 rounded-2xl blur opacity-25 group-hover:opacity-40 transition duration-500 pointer-events-none" />
@@ -256,6 +257,7 @@ export default function Home() {
                 )}
               </AnimatePresence>
             </div>
+            )}
           </motion.div>
         </section>
       )}

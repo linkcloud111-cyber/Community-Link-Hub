@@ -445,6 +445,10 @@ export interface SiteSettings {
   reportSystemEnabled: boolean;
   complaintSystemEnabled: boolean;
   contactFormEnabled: boolean;
+  announcementsEnabled?: boolean;
+  searchEnabled?: boolean;
+  publicDirectoryEnabled?: boolean;
+  profileEditingEnabled?: boolean;
   notificationsEnabled?: boolean;
 
   // Cloudinary

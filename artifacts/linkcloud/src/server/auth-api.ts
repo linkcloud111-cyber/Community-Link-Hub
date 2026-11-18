@@ -108,6 +108,20 @@ export async function handleAuthProvisionUser(
   const body = await parseBody(req);
   const { fullName, dob, email, phone, password } = body;
 
+  // Enforce Webmaster userRegistrationEnabled setting server-side
+  try {
+    const admin = getFirebaseAdmin();
+    if (admin) {
+      const siteSnap = await admin.firestore().doc("settings/site").get();
+      if (siteSnap.exists && siteSnap.data()?.userRegistrationEnabled === false) {
+        sendJson(res, { error: "New user registrations are currently closed by the webmaster." }, 403);
+        return;
+      }
+    }
+  } catch {
+    // Proceed if admin SDK unavailable in local dev
+  }
+
   // 1. Validations
   const cleanName = typeof fullName === "string" ? fullName.trim() : "";
   if (cleanName.length < 3) {

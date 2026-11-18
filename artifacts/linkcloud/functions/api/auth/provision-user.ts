@@ -30,6 +30,12 @@ export async function onRequestPost(context: {
     return errorResponse("Invalid JSON payload", 400);
   }
 
+  // Enforce Webmaster userRegistrationEnabled flag server-side
+  const siteSettings = await firestoreGetDoc("settings/site", env);
+  if (siteSettings && siteSettings.userRegistrationEnabled === false) {
+    return errorResponse("New user registrations are currently closed by the webmaster.", 403);
+  }
+
   const { fullName, dob, email, phone, password } = body;
 
   const cleanName = typeof fullName === "string" ? fullName.trim() : "";

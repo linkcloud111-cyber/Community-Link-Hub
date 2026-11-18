@@ -1839,6 +1839,50 @@ export default function AdminSettings() {
                   onToggle={() => setSettings((s) => ({ ...s, contactFormEnabled: !s.contactFormEnabled }))}
                 />
                 <ToggleCard
+                  title="Website Announcements Banner"
+                  description="Show active global announcements banner across the site"
+                  enabled={settings.announcementsEnabled !== false}
+                  onToggle={() =>
+                    setSettings((s) => ({
+                      ...s,
+                      announcementsEnabled: s.announcementsEnabled === false,
+                    }))
+                  }
+                />
+                <ToggleCard
+                  title="Global Directory Search"
+                  description="Enable search bars on homepage and community directory"
+                  enabled={settings.searchEnabled !== false}
+                  onToggle={() =>
+                    setSettings((s) => ({
+                      ...s,
+                      searchEnabled: s.searchEnabled === false,
+                    }))
+                  }
+                />
+                <ToggleCard
+                  title="Public Group Directory"
+                  description="Allow public visitors to browse approved communities"
+                  enabled={settings.publicDirectoryEnabled !== false}
+                  onToggle={() =>
+                    setSettings((s) => ({
+                      ...s,
+                      publicDirectoryEnabled: s.publicDirectoryEnabled === false,
+                    }))
+                  }
+                />
+                <ToggleCard
+                  title="Member Profile Editing"
+                  description="Allow signed-in members to edit profile details and avatar"
+                  enabled={settings.profileEditingEnabled !== false}
+                  onToggle={() =>
+                    setSettings((s) => ({
+                      ...s,
+                      profileEditingEnabled: s.profileEditingEnabled === false,
+                    }))
+                  }
+                />
+                <ToggleCard
                   title="Maintenance Mode"
                   description="Block directory access & show maintenance screen"
                   enabled={settings.maintenanceMode}

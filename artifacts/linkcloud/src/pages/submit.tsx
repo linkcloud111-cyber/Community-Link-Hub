@@ -145,8 +145,8 @@ export default function Submit() {
     try {
       const uploadedUrl = await uploadToCloudinary(
         file,
-        settings?.cloudinaryUploadPreset,
-        settings?.cloudinaryCloudName
+        settings?.cloudinaryUploadPreset || settings?.cloudinarySettings?.uploadPreset,
+        settings?.cloudinaryCloudName || settings?.cloudinarySettings?.cloudName
       );
       update("logoUrl", uploadedUrl);
       toast.success("Logo uploaded successfully!");

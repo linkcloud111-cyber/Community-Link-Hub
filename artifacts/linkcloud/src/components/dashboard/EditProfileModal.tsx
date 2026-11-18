@@ -295,6 +295,11 @@ export function EditProfileModal({ isOpen, onClose, profile, onSave }: EditProfi
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (saving || uploadingImage) return;
+    if (settings?.profileEditingEnabled === false && profile?.role !== "webmaster") {
+      toast.error("Profile editing is currently paused by the webmaster.");
+      onClose();
+      return;
+    }
 
     setSubmitAttempted(true);
     setNameTouched(true);

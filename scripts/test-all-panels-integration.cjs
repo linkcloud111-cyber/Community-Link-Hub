@@ -456,6 +456,53 @@ test("SiteSettingsContext syncs faviconUrl/favicon and home.tsx wires searchPlac
   assert(homeContent.includes("settings?.heroButtonLink"), "home.tsx missing heroButtonLink wiring");
 });
 
+test("firestore.rules enforces siteFeatureEnabled for registration, favorites, reports, complaints, and contacts (and root/applet copies match)", () => {
+  const rootRules = fs.readFileSync(path.resolve(__dirname, "../firestore.rules"), "utf8");
+  const appRules = fs.readFileSync(path.resolve(__dirname, "../artifacts/linkcloud/firestore.rules"), "utf8");
+  assert.strictEqual(rootRules, appRules, "Root and applet firestore.rules are out of sync");
+  assert(rootRules.includes("function siteFeatureEnabled(field)"), "Missing siteFeatureEnabled helper");
+  assert(rootRules.includes("siteFeatureEnabled('userRegistrationEnabled')"), "Missing userRegistrationEnabled rule");
+  assert(rootRules.includes("siteFeatureEnabled('favoritesEnabled')"), "Missing favoritesEnabled rule");
+  assert(rootRules.includes("siteFeatureEnabled('reportSystemEnabled')"), "Missing reportSystemEnabled rule");
+  assert(rootRules.includes("siteFeatureEnabled('complaintSystemEnabled')"), "Missing complaintSystemEnabled rule");
+  assert(rootRules.includes("siteFeatureEnabled('contactFormEnabled')"), "Missing contactFormEnabled rule");
+});
+
+test("Server-side auth provisioning enforces userRegistrationEnabled === false (403) in both Cloudflare Function and Node server", () => {
+  const cfProvision = fs.readFileSync(path.resolve(__dirname, "../artifacts/linkcloud/functions/api/auth/provision-user.ts"), "utf8");
+  const nodeAuthApi = fs.readFileSync(path.resolve(__dirname, "../artifacts/linkcloud/src/server/auth-api.ts"), "utf8");
+  assert(cfProvision.includes("userRegistrationEnabled") && cfProvision.includes("403"), "Cloudflare provision-user.ts missing userRegistrationEnabled 403 guard");
+  assert(nodeAuthApi.includes("userRegistrationEnabled") && nodeAuthApi.includes("403"), "Node auth-api.ts missing userRegistrationEnabled 403 guard");
+});
+
+test("Webmaster toggles announcementsEnabled, searchEnabled, publicDirectoryEnabled, and profileEditingEnabled are wired end-to-end", () => {
+  const adminSettings = fs.readFileSync(path.resolve(__dirname, "../artifacts/linkcloud/src/pages/admin-settings.tsx"), "utf8");
+  const banner = fs.readFileSync(path.resolve(__dirname, "../artifacts/linkcloud/src/components/announcement-banner.tsx"), "utf8");
+  const home = fs.readFileSync(path.resolve(__dirname, "../artifacts/linkcloud/src/pages/home.tsx"), "utf8");
+  const groups = fs.readFileSync(path.resolve(__dirname, "../artifacts/linkcloud/src/pages/groups.tsx"), "utf8");
+  const profileTab = fs.readFileSync(path.resolve(__dirname, "../artifacts/linkcloud/src/components/dashboard/tabs/ProfileTab.tsx"), "utf8");
+  const editProfile = fs.readFileSync(path.resolve(__dirname, "../artifacts/linkcloud/src/components/dashboard/EditProfileModal.tsx"), "utf8");
+
+  assert(adminSettings.includes("announcementsEnabled") && banner.includes("announcementsEnabled"), "announcementsEnabled not wired");
+  assert(adminSettings.includes("searchEnabled") && home.includes("searchEnabled") && groups.includes("searchEnabled"), "searchEnabled not wired");
+  assert(adminSettings.includes("publicDirectoryEnabled") && groups.includes("publicDirectoryEnabled"), "publicDirectoryEnabled not wired");
+  assert(adminSettings.includes("profileEditingEnabled") && profileTab.includes("profileEditingEnabled") && editProfile.includes("profileEditingEnabled"), "profileEditingEnabled not wired");
+});
+
+test("Cloudinary configuration is centralized through SiteSettings across submit, dashboard-submit, dashboard-edit, and EditProfileModal", () => {
+  const files = [
+    "../artifacts/linkcloud/src/pages/submit.tsx",
+    "../artifacts/linkcloud/src/pages/dashboard-submit.tsx",
+    "../artifacts/linkcloud/src/pages/dashboard-edit.tsx",
+    "../artifacts/linkcloud/src/components/dashboard/EditProfileModal.tsx",
+  ];
+  for (const rel of files) {
+    const content = fs.readFileSync(path.resolve(__dirname, rel), "utf8");
+    assert(content.includes("cloudinarySettings?.cloudName"), `${rel} missing centralized cloudinarySettings.cloudName`);
+    assert(content.includes("cloudinarySettings?.uploadPreset"), `${rel} missing centralized cloudinarySettings.uploadPreset`);
+  }
+});
+
 console.log("\n==================================================================");
 console.log(`ALL PANELS SUITE RESULTS: ${passed}/${total} PASSED (${total - passed} FAILED)`);
 console.log("==================================================================");
