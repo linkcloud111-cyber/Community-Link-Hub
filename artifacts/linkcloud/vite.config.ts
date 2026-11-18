@@ -160,6 +160,9 @@ export default defineConfig(async ({ command }) => ({
     dedupe: ['react', 'react-dom'],
   },
   root: path.resolve(import.meta.dirname),
+  optimizeDeps: {
+    include: ['recharts', 'lucide-react', 'wouter', 'sonner', 'framer-motion'],
+  },
   build: {
     outDir: path.resolve(import.meta.dirname, 'dist'),
     emptyOutDir: true,

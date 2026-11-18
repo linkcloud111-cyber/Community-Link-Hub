@@ -29,7 +29,7 @@ import Dashboard from '@/pages/dashboard';
 import GroupsPage from '@/pages/groups';
 import GroupDetail from '@/pages/group-detail';
 
-// Helper for resilient lazy loading with auto-retry
+// Helper for resilient lazy loading with auto-retry and stale-chunk reload recovery
 function lazyWithRetry<T extends React.ComponentType<any>>(
   factory: () => Promise<{ default: T }>
 ) {
@@ -38,8 +38,32 @@ function lazyWithRetry<T extends React.ComponentType<any>>(
       console.error('Dynamic import failed, retrying once...', error);
       return new Promise<{ default: T }>((resolve, reject) => {
         setTimeout(() => {
-          factory().then(resolve).catch(reject);
-        }, 1000);
+          factory()
+            .then((mod) => {
+              try {
+                sessionStorage.removeItem('lc_chunk_reload_attempted');
+              } catch {}
+              resolve(mod);
+            })
+            .catch((retryError) => {
+              const msg = String(retryError?.message || retryError || '');
+              const isChunkError =
+                msg.includes('Failed to fetch dynamically imported module') ||
+                msg.includes('Importing a module script failed') ||
+                msg.includes('Loading chunk');
+              if (isChunkError && typeof window !== 'undefined') {
+                try {
+                  const alreadyReloaded = sessionStorage.getItem('lc_chunk_reload_attempted');
+                  if (!alreadyReloaded) {
+                    sessionStorage.setItem('lc_chunk_reload_attempted', '1');
+                    window.location.reload();
+                    return;
+                  }
+                } catch {}
+              }
+              reject(retryError);
+            });
+        }, 600);
       });
     })
   );
