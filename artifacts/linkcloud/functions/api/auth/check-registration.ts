@@ -7,11 +7,9 @@
  */
 
 import {
-  jsonResponse,
   errorResponse,
   type Env,
 } from "../email-change/_common";
-import { firestoreGetDoc } from "../email-change/_firestore";
 
 interface RateLimitRecord {
   count: number;
@@ -62,43 +60,14 @@ export async function onRequestPost(context: {
     "direct";
 
   if (isRateLimited(clientIp)) {
-    return errorResponse("Too many registration checks. Please try again later.", 429);
+    return errorResponse("Too many requests. Please try again later.", 429);
   }
 
-  let body: any = {};
-  try {
-    body = await request.json();
-  } catch {
-    return errorResponse("Invalid JSON payload", 400);
-  }
-
-  const email = typeof body?.email === "string" ? body.email.trim().toLowerCase() : "";
-  if (!email || !email.endsWith("@gmail.com")) {
-    return errorResponse("Please provide a valid Gmail address.", 400);
-  }
-
-  try {
-    const emailIndexDoc = await firestoreGetDoc(`emailIndex/${email}`, env);
-    if (!emailIndexDoc || !emailIndexDoc.uid || emailIndexDoc.status === "deleted") {
-      return jsonResponse({
-        registered: false,
-        verified: false,
-      });
-    }
-
-    // Check user verification state
-    const userDoc = await firestoreGetDoc(`users/${emailIndexDoc.uid}`, env);
-    const isVerified = Boolean(
-      userDoc?.emailVerified === true ||
-      userDoc?.status === "active"
-    );
-
-    return jsonResponse({
-      registered: true,
-      verified: isVerified,
-    });
-  } catch (err: any) {
-    console.warn("[Check Registration] Error verifying registration:", err?.message || err);
-    return errorResponse("Failed to verify registration status", 500);
-  }
+  // Unauthenticated account-existence lookup is permanently disabled to prevent
+  // Gmail enumeration via response body, status, or Firestore timing side-channels.
+  // Legitimate sign-in, registration, and password-reset flows operate directly via Firebase Auth.
+  return errorResponse(
+    "Account lookup is disabled to protect user privacy. Please sign in or reset your password directly.",
+    403
+  );
 }

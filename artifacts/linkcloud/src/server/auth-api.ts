@@ -681,50 +681,18 @@ export async function handleAuthCheckRegistration(
 
   const clientIp = (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() || req.socket?.remoteAddress || "local";
   if (isDevRateLimited(clientIp)) {
-    sendJson(res, { error: "Too many registration checks. Please try again later." }, 429);
+    sendJson(res, { error: "Too many requests. Please try again later." }, 429);
     return;
   }
 
-  try {
-    const body = await parseBody(req);
-    const email = typeof body?.email === "string" ? body.email.trim().toLowerCase() : "";
-    if (!email || !email.endsWith("@gmail.com")) {
-      sendJson(res, { error: "Please provide a valid Gmail address." }, 400);
-      return;
-    }
-
-    const app = getFirebaseAdminApp();
-    if (!app) {
-      sendJson(res, { error: "Firebase Admin not initialized" }, 500);
-      return;
-    }
-    const firestore = getFirestore(app);
-
-    const emailIndexRef = firestore.collection("emailIndex").doc(email);
-    const emailIndexSnap = await emailIndexRef.get();
-
-    if (!emailIndexSnap.exists) {
-      sendJson(res, { registered: false, verified: false });
-      return;
-    }
-
-    const indexData = emailIndexSnap.data();
-    if (!indexData?.uid || indexData.status === "deleted") {
-      sendJson(res, { registered: false, verified: false });
-      return;
-    }
-
-    const userSnap = await firestore.collection("users").doc(indexData.uid).get();
-    const userData = userSnap.data();
-    const isVerified = Boolean(userData?.emailVerified === true || userData?.phoneVerified === true);
-
-    sendJson(res, {
-      registered: true,
-      verified: isVerified,
-    });
-  } catch (err: any) {
-    console.warn("[Auth API] check registration notice:", err);
-    sendJson(res, { error: "Failed to check registration status" }, 500);
-  }
+  // Unauthenticated account-existence lookup is permanently disabled to prevent
+  // Gmail enumeration via response body, status, or Firestore timing side-channels.
+  sendJson(
+    res,
+    {
+      error: "Account lookup is disabled to protect user privacy. Please sign in or reset your password directly.",
+    },
+    403
+  );
 }
 

@@ -212,6 +212,58 @@ async function main() {
     assert(!googleFn.includes("err?.message ||"), "CF provision-google-user must not leak raw token error");
   });
 
+  await runTest("LOCAL_HTTP", "Enumeration Privacy: /api/auth/check-registration returns identical 403 for registered and unregistered Gmail addresses", async () => {
+    const reqInit = (email) => ({
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Forwarded-For": "198.51.100.10" },
+      body: JSON.stringify({ email }),
+    });
+    const resKnown = await fetch(`${BASE_URL}/api/auth/check-registration`, reqInit("linkcloud111@gmail.com"));
+    const bodyKnown = await resKnown.text();
+    const resUnknown = await fetch(`${BASE_URL}/api/auth/check-registration`, reqInit("nonexistent-enum-probe@gmail.com"));
+    const bodyUnknown = await resUnknown.text();
+
+    assert.strictEqual(resKnown.status, 403, `Expected 403 for known email, got ${resKnown.status}`);
+    assert.strictEqual(resUnknown.status, 403, `Expected 403 for unknown email, got ${resUnknown.status}`);
+    assert.strictEqual(bodyKnown, bodyUnknown, "Response body differed between known and unknown email");
+    assert(!bodyKnown.includes("registered"), "Must not expose registered boolean");
+    assert(!bodyKnown.includes("verified"), "Must not expose verified boolean");
+  });
+
+  await runTest("LOCAL_HTTP", "Rate-Limit Enforcement: /api/auth/check-registration returns 429 after 20 requests/min from same IP", async () => {
+    let lastStatus = 0;
+    for (let i = 0; i < 21; i++) {
+      const res = await fetch(`${BASE_URL}/api/auth/check-registration`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Forwarded-For": "203.0.113.55" },
+        body: JSON.stringify({ email: `probe${i}@gmail.com` }),
+      });
+      lastStatus = res.status;
+    }
+    assert.strictEqual(lastStatus, 429, `Expected 429 on 21st request, got ${lastStatus}`);
+  });
+
+  await runTest("STATIC", "check-registration has zero Firestore lookups, and existing member/Webmaster phone login executes before registration guard", async () => {
+    const cfCheck = fs.readFileSync(path.resolve(__dirname, "../artifacts/linkcloud/functions/api/auth/check-registration.ts"), "utf8");
+    const cfPhone = fs.readFileSync(path.resolve(__dirname, "../artifacts/linkcloud/functions/api/auth/provision-phone-user.ts"), "utf8");
+    const nodeAuth = fs.readFileSync(path.resolve(__dirname, "../artifacts/linkcloud/src/server/auth-api.ts"), "utf8");
+
+    assert(!cfCheck.includes("emailIndex"), "CF check-registration must not query emailIndex");
+    assert(!cfCheck.includes("registered:"), "CF check-registration must not return registered flag");
+    const existingPhoneIdx = cfPhone.indexOf("mobileIndex/${phoneNumber}");
+    const webmasterIdx = cfPhone.indexOf("OXGYTyWBcdYNcHkWyXPbOvVlV2h1");
+    const regGuardIdx = cfPhone.indexOf("siteSettings.userRegistrationEnabled !== true");
+    assert(existingPhoneIdx > 0 && webmasterIdx > existingPhoneIdx && regGuardIdx > webmasterIdx,
+      "Existing member & Webmaster phone login must execute before registration guard in CF provision-phone-user.ts");
+
+    const nodePhoneSection = nodeAuth.slice(nodeAuth.indexOf("export async function handleAuthProvisionPhoneUser"));
+    const nodeExistingIdx = nodePhoneSection.indexOf('collection("mobileIndex")');
+    const nodeWmIdx = nodePhoneSection.indexOf("OXGYTyWBcdYNcHkWyXPbOvVlV2h1");
+    const nodeGuardIdx = nodePhoneSection.indexOf("evaluateRegistrationGuard");
+    assert(nodeExistingIdx > 0 && nodeWmIdx > nodeExistingIdx && nodeGuardIdx > nodeWmIdx,
+      "Existing member & Webmaster phone login must execute before registration guard in Node auth-api.ts");
+  });
+
   console.log("\n==================================================================");
   console.log(`REGISTRATION SECURITY SUITE: ${passed}/${total} PASSED (${total - passed} FAILED)`);
   console.log(`  UNIT: ${categories.UNIT.passed}/${categories.UNIT.total} | LOCAL_HTTP: ${categories.LOCAL_HTTP.passed}/${categories.LOCAL_HTTP.total} | STATIC: ${categories.STATIC.passed}/${categories.STATIC.total}`);
