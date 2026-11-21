@@ -5,6 +5,13 @@ import { useSiteSettings } from "@/contexts/SiteSettingsContext";
 import { useTaxonomy } from "@/contexts/TaxonomyContext";
 import { useLocation as useAppLocation } from "@/contexts/LocationContext";
 import { createGroup, checkDuplicateGroup } from "@/lib/firestore";
+import {
+  parseAndValidateTags,
+  getLiveTagStats,
+  MAX_GROUP_TAGS,
+  MAX_TAG_LENGTH,
+  MAX_GROUP_DESCRIPTION_LENGTH,
+} from "@/lib/group-validation";
 import { uploadToCloudinary } from "@/lib/cloudinary";
 import { getPlatformLinkHints, normalizePlatformKey, validateInviteLink } from "@/lib/utils";
 import { toast } from "sonner";
@@ -264,7 +271,7 @@ export default function DashboardSubmit() {
     if (platform) filled++;
     if (categoryId) filled++;
     if (contentType) filled++;
-    if (description.trim().length >= 20 && description.trim().length <= 500) filled++;
+    if (description.trim().length >= 20 && description.trim().length <= MAX_GROUP_DESCRIPTION_LENGTH) filled++;
     if (language) filled++;
     if (state) filled++;
     if (district) filled++;
@@ -288,7 +295,12 @@ export default function DashboardSubmit() {
     if (!categoryId) { toast.error("Please select a Category."); return; }
     if (!description.trim()) { toast.error("Description is required."); return; }
     if (description.trim().length < 20) { toast.error("Description must be at least 20 characters."); return; }
-    if (description.trim().length > 500) { toast.error("Description must not exceed 500 characters."); return; }
+    if (description.trim().length > MAX_GROUP_DESCRIPTION_LENGTH) {
+      toast.error(`Description must not exceed ${MAX_GROUP_DESCRIPTION_LENGTH} characters.`);
+      return;
+    }
+    const tagCheck = parseAndValidateTags(tagsInput, { required: true });
+    if (!tagCheck.valid) { toast.error(tagCheck.error || "Please enter valid tags."); return; }
     if (!state) { toast.error("Please select a State."); return; }
     if (!district) { toast.error("Please select a District."); return; }
     if (!city.trim()) { toast.error("City is required."); return; }
@@ -318,15 +330,14 @@ export default function DashboardSubmit() {
         );
       }
 
+      const tagCheck = parseAndValidateTags(tagsInput, { required: true });
+      if (!tagCheck.valid) {
+        toast.error(tagCheck.error || "Please enter valid tags.");
+        setIsSubmitting(false);
+        return;
+      }
+
       const categoryName = categories.find((c) => c.id === categoryId)?.name || "";
-      const tags = Array.from(
-        new Set(
-          tagsInput
-            .split(",")
-            .map((t) => t.trim().toLowerCase())
-            .filter(Boolean)
-        )
-      );
 
       await createGroup({
         name: name.trim(),
@@ -342,7 +353,7 @@ export default function DashboardSubmit() {
         city: city.trim(),
         rules: rules.trim(),
         minimumAge: minimumAge || "All Ages",
-        tags,
+        tags: tagCheck.tags,
         joinUrl: joinUrl.trim(),
         submittedBy: user.uid,
         submittedByName: profile.displayName || user.displayName || user.email || "User",
@@ -707,17 +718,46 @@ export default function DashboardSubmit() {
 
             {/* FIELD 7: Tags * */}
             <div>
-              <label className={labelClass}>7. Tags *</label>
-              <input
-                required
-                value={tagsInput}
-                onChange={(e) => setTagsInput(e.target.value)}
-                className={inputClass}
-                placeholder="jobs, electrician, whatsapp, cg, room rent"
-              />
-              <p className="text-[11px] text-muted-foreground mt-1">
-                Enter keywords separated by commas (e.g. jobs, electrician, whatsapp, cg, room rent)
-              </p>
+              {(() => {
+                const tagStats = getLiveTagStats(tagsInput);
+                const tagCheck = tagsInput.trim()
+                  ? parseAndValidateTags(tagsInput, { required: true })
+                  : null;
+                return (
+                  <>
+                    <div className="flex justify-between items-center mb-1.5">
+                      <label className={labelClass}>7. Tags *</label>
+                      <span
+                        className={`text-xs font-bold ${
+                          tagStats.count > MAX_GROUP_TAGS || (tagCheck && !tagCheck.valid)
+                            ? "text-destructive"
+                            : "text-muted-foreground"
+                        }`}
+                      >
+                        {tagStats.count} / {MAX_GROUP_TAGS} Tags ({tagStats.remaining} remaining)
+                      </span>
+                    </div>
+                    <input
+                      required
+                      value={tagsInput}
+                      onChange={(e) => setTagsInput(e.target.value)}
+                      className={`${inputClass} ${
+                        tagCheck && !tagCheck.valid ? "border-destructive focus:ring-destructive" : ""
+                      }`}
+                      placeholder="jobs, electrician, whatsapp, cg, room rent"
+                    />
+                    {tagCheck && !tagCheck.valid ? (
+                      <p className="text-xs font-medium text-destructive mt-1 flex items-center gap-1">
+                        <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" /> {tagCheck.error}
+                      </p>
+                    ) : (
+                      <p className="text-[11px] text-muted-foreground mt-1">
+                        Up to {MAX_GROUP_TAGS} comma-separated tags (max {MAX_TAG_LENGTH} characters per tag, no empty or duplicate tags).
+                      </p>
+                    )}
+                  </>
+                );
+              })()}
             </div>
 
             {/* FIELD 8: Group Logo (Optional) */}

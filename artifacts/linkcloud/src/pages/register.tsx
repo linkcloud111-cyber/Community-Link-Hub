@@ -31,6 +31,16 @@ import {
 } from "lucide-react";
 import { FcGoogle } from "react-icons/fc";
 
+function getSafeRedirectTarget(): string {
+  if (typeof window === "undefined") return "/dashboard";
+  const raw = new URLSearchParams(window.location.search).get("redirect") || "";
+  if (!raw || !raw.startsWith("/") || raw.startsWith("//")) return "/dashboard";
+  if (raw.startsWith("/login") || raw.startsWith("/register") || raw.startsWith("/verify-email")) {
+    return "/dashboard";
+  }
+  return raw;
+}
+
 export default function Register() {
   const [fullName, setFullName] = useState("");
   const [dob, setDob] = useState("");
@@ -70,7 +80,7 @@ export default function Register() {
       if (isWebmaster) {
         setLocation("/webmaster/dashboard");
       } else if (user.emailVerified) {
-        setLocation("/dashboard");
+        setLocation(getSafeRedirectTarget());
       } else {
         setLocation("/verify-email");
       }
@@ -94,7 +104,10 @@ export default function Register() {
               New account registrations are currently paused by the webmaster for database review. Existing community members can still sign in to their dashboard.
             </p>
             <div className="pt-2">
-              <Link href="/login" className="px-6 py-2.5 bg-primary text-primary-foreground font-semibold text-sm rounded-xl hover:bg-primary/90 transition inline-block">
+              <Link
+                href={getSafeRedirectTarget() !== "/dashboard" ? `/login?redirect=${encodeURIComponent(getSafeRedirectTarget())}` : "/login"}
+                className="px-6 py-2.5 bg-primary text-primary-foreground font-semibold text-sm rounded-xl hover:bg-primary/90 transition inline-block"
+              >
                 Go to Sign In
               </Link>
             </div>
@@ -236,7 +249,7 @@ export default function Register() {
     try {
       await signInWithGoogle();
       toast.success("Welcome to LinkCloud!");
-      setLocation(isWebmaster ? "/webmaster/dashboard" : "/dashboard");
+      setLocation(isWebmaster ? "/webmaster/dashboard" : getSafeRedirectTarget());
     } catch (error: any) {
       console.error("Google signup error:", error);
       const rawMsg = error?.message || "";
@@ -601,7 +614,10 @@ export default function Register() {
             {/* Login Link */}
             <p className="text-center mt-6 text-sm text-muted-foreground">
               Already have an account?{" "}
-              <Link href="/login" className="font-semibold text-primary hover:underline">
+              <Link
+                href={getSafeRedirectTarget() !== "/dashboard" ? `/login?redirect=${encodeURIComponent(getSafeRedirectTarget())}` : "/login"}
+                className="font-semibold text-primary hover:underline"
+              >
                 Sign In
               </Link>
             </p>

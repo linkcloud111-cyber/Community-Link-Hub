@@ -42,18 +42,13 @@ import {
 import {
   getUserProfile,
   upsertUserProfile,
-  checkDuplicateUser,
-  checkIsAccountDeleted,
   recordDeletedAccountTombstone,
-  getUserProfileByEmail,
   logEmailChangeHistory,
   updateEmailHistoryStatus,
   logAuditEvent,
   createUserNotification,
-  performPermanentUserDeletion,
   generateUniqueAccountUid,
   ensureUserAccountUid,
-  getUserProfileByPhone,
 } from "./firestore";
 import type { EmailChangeRequest } from "./types";
 import {
@@ -575,17 +570,6 @@ export async function loginWebmasterWithMobileOTP(
     }
   }
 
-  // Pre-authorization check: Must match canonical Webmaster mobile
-  const plainDigits = formattedPhone.replace(/^\+91/, "");
-  const isCanonicalWebmasterPhone = plainDigits === "7987410765";
-
-  if (!isCanonicalWebmasterPhone) {
-    const profile = await getUserProfileByPhone(formattedPhone);
-    if (!profile || profile.role !== "webmaster") {
-      throw new Error("This mobile number is not registered as an authorized Webmaster.");
-    }
-  }
-
   const verifier = setupRecaptcha(containerId);
   if (!verifier) {
     throw new Error("Failed to initialize reCAPTCHA security verifier. Please refresh and try again.");
@@ -706,30 +690,7 @@ export async function loginWebmasterWithMobilePassword(
   phone: string,
   password: string
 ): Promise<User> {
-  const clean = phone.trim().replace(/\s+/g, "");
-  const mobileCheck = validateIndianMobile(clean);
-  if (!mobileCheck.valid) {
-    throw new Error(mobileCheck.error || "Please enter a valid 10-digit Indian mobile number.");
-  }
-
-  if (!password) {
-    throw new Error("Please enter your password.");
-  }
-
-  const plainDigits = clean.replace(/^\+91/, "");
-  let targetEmail = "";
-
-  if (plainDigits === "7987410765") {
-    targetEmail = "linkcloud111@gmail.com";
-  } else {
-    const profile = await getUserProfileByPhone(clean);
-    if (!profile || profile.role !== "webmaster" || !profile.email) {
-      throw new Error("This mobile number is not registered as an authorized Webmaster.");
-    }
-    targetEmail = profile.email;
-  }
-
-  return await loginWebmaster(targetEmail, password);
+  return await loginWithMobilePassword(phone, password, "webmaster");
 }
 
 export async function signInWebmasterGoogle(): Promise<User> {
@@ -888,6 +849,111 @@ export async function loginUser(email: string, password: string): Promise<User> 
 }
 
 export const signInWithEmail = loginUser;
+
+export async function loginWithMobilePassword(
+  phone: string,
+  password: string,
+  portal: "user" | "webmaster" = "user"
+): Promise<User> {
+  const mobileCheck = validateIndianMobile(phone);
+  if (!mobileCheck.valid) {
+    throw new Error("Invalid mobile number. Please check and try again.");
+  }
+  if (!password) {
+    throw new Error("Please enter your password.");
+  }
+
+  try {
+    const res = await fetch("/api/auth/mobile-password-login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        phone: mobileCheck.formatted,
+        password,
+        portal,
+      }),
+    });
+
+    const data: any = await res.json().catch(() => ({}));
+    if (!res.ok || !data?.customToken) {
+      const err: any = new Error(
+        data?.error || "Incorrect mobile number or password. Please try again."
+      );
+      err.status = res.status;
+      const retryAfter = res.headers.get("Retry-After");
+      if (retryAfter) {
+        err.retryAfter = parseInt(retryAfter, 10);
+      }
+      throw err;
+    }
+
+    const cred = await signInWithCustomToken(auth, data.customToken);
+    const u = cred.user;
+    await u.reload().catch(() => {});
+
+    const isWebmasterDoc = await checkWebmasterCollection(u.uid);
+    const profile = await getUserProfile(u.uid);
+    const accountIsWebmaster = Boolean(isWebmasterDoc || profile?.role === "webmaster");
+
+    if (portal === "webmaster" && !accountIsWebmaster) {
+      await firebaseSignOut(auth);
+      throw new Error("This account is not authorized to access the Webmaster Portal.");
+    }
+
+    if (portal === "user" && accountIsWebmaster) {
+      await firebaseSignOut(auth);
+      toast.error("This is a Webmaster account. Please sign in from the Webmaster Login page.");
+      if (typeof window !== "undefined") {
+        window.location.href = "/webmaster/login";
+      }
+      throw new Error("This is a Webmaster account. Please sign in from the Webmaster Login page.");
+    }
+
+    if (profile) {
+      if (profile.status === "suspended") {
+        await firebaseSignOut(auth);
+        throw new Error(
+          portal === "webmaster"
+            ? "Your Webmaster account is currently inactive."
+            : "Your LinkCloud account has been suspended. Please contact the Webmaster."
+        );
+      }
+      if (profile.status === "banned") {
+        await firebaseSignOut(auth);
+        throw new Error(
+          portal === "webmaster"
+            ? "Your Webmaster account is currently inactive."
+            : "Your LinkCloud account has been permanently banned. Please contact the Webmaster."
+        );
+      }
+      if (profile.status === "deleted") {
+        await firebaseSignOut(auth);
+        throw new Error("Account not found. Please verify your credentials or create a new account.");
+      }
+    }
+
+    await logAuthEvent({
+      event: portal === "webmaster" ? "WEBMASTER_MOBILE_PASSWORD_LOGIN" : "USER_MOBILE_PASSWORD_LOGIN",
+      method: "mobile_password",
+      context: "email_password",
+      outcome: "success",
+      uid: u.uid,
+      portal,
+    });
+
+    return u;
+  } catch (err: any) {
+    await logAuthEvent({
+      event: portal === "webmaster" ? "WEBMASTER_MOBILE_PASSWORD_LOGIN" : "USER_MOBILE_PASSWORD_LOGIN",
+      method: "mobile_password",
+      context: "email_password",
+      outcome: "failure",
+      error: err,
+      portal,
+    });
+    throw err;
+  }
+}
 
 export async function signInWithMobileOTP(
   phone: string,
@@ -1067,28 +1133,7 @@ export async function registerWithEmail(data: {
     throw new Error(passCheck.error || "Password must contain uppercase, lowercase, number and special character.");
   }
 
-  // 6. Check duplicates in Firestore
-  const duplicates = await checkDuplicateUser(gmailCheck.cleanEmail, phoneCheck.formatted);
-  if (duplicates.emailExists) {
-    throw new Error("This Gmail is already registered.");
-  }
-  if (duplicates.phoneExists) {
-    throw new Error("An account with this Mobile Number is already registered.");
-  }
-
-  // 7. Check if email exists in Firebase Auth
-  try {
-    const existingMethods = await fetchSignInMethodsForEmail(auth, gmailCheck.cleanEmail);
-    if (existingMethods && existingMethods.length > 0) {
-      throw new Error("This Gmail is already registered.");
-    }
-  } catch (err: any) {
-    if (err.message === "This Gmail is already registered.") {
-      throw err;
-    }
-    // Ignore invalid-email or other fetch errors if any
-  }
-
+  // Server-side /api/auth/provision-user enforces email & mobile uniqueness atomically
   // All validations passed! Provision canonical sequential user via server API
   try {
     const response = await fetch("/api/auth/provision-user", {
@@ -1542,11 +1587,7 @@ export async function updateUserEmailAddress(
     throw new Error("New email must be different from your current email.");
   }
 
-  // Check duplicate email in Firestore DB & emailIndex
-  const isRegistered = await checkIsEmailRegistered(gmailCheck.cleanEmail, user.uid);
-  if (isRegistered) {
-    throw new Error("This Gmail is already registered.");
-  }
+  // Authoritative uniqueness check is performed server-side by /api/email-change/request (HTTP 409)
 
   // 1. Re-authenticate user with current password
   try {
@@ -1924,62 +1965,9 @@ export async function cancelPendingEmailChange(user: User, pendingEmail?: string
   }
 }
 
-export async function checkIsEmailRegistered(email: string, currentUid?: string): Promise<boolean> {
-  const cleanEmail = email.trim().toLowerCase();
-  if (!cleanEmail) return false;
-
-  // 1. Check emailIndex collection in Firestore
-  try {
-    if (db && typeof db === "object" && "app" in db) {
-      const emailIndexRef = doc(db, "emailIndex", cleanEmail);
-      const emailIndexSnap = await getDoc(emailIndexRef);
-      if (emailIndexSnap.exists()) {
-        const data = emailIndexSnap.data();
-        if (currentUid && (data.uid === currentUid || data.userId === currentUid)) {
-          // Belongs to the current active user
-        } else if (data.status !== "deleted") {
-          return true;
-        }
-      }
-    }
-  } catch (err) {
-    console.warn("Error checking emailIndex in Firestore:", err);
-  }
-
-  // 2. Check users collection in Firestore
-  try {
-    const profile = await getUserProfileByEmail(cleanEmail);
-    if (profile) {
-      if (currentUid && (profile.uid === currentUid || profile.id === currentUid)) {
-        // Belongs to current user
-      } else if (profile.status !== "deleted") {
-        return true;
-      }
-    }
-  } catch (err) {
-    console.warn("Error checking profile by email:", err);
-  }
-
-  // 3. Check duplicate user helper
-  try {
-    const dupes = await checkDuplicateUser(cleanEmail, "");
-    if (dupes.emailExists) {
-      return true;
-    }
-  } catch (err) {
-    console.warn("Error checking duplicate user in Firestore:", err);
-  }
-
-  // 4. Check Firebase Auth sign in methods
-  try {
-    if (auth && typeof auth === "object" && "app" in auth) {
-      const methods = await fetchSignInMethodsForEmail(auth, cleanEmail);
-      if (methods && methods.length > 0) return true;
-    }
-  } catch (err) {
-    console.warn("Error fetching sign in methods for email:", err);
-  }
-
+export async function checkIsEmailRegistered(_email: string, _currentUid?: string): Promise<boolean> {
+  // Client-side /emailIndex and /users enumeration is disabled for privacy protection.
+  // Authoritative uniqueness checks are enforced server-side on registration and email-change APIs.
   return false;
 }
 
@@ -2031,7 +2019,6 @@ export async function commitEmailChangeInFirestore(
     await updateDoc(userDocRef, {
       email: cleanNewEmail,
       pendingEmail: deleteField(),
-      emailIndex: cleanNewEmail,
     }).catch(() => {});
   } catch (uErr) {
     console.warn("Notice: userDocRef update in commitEmailChangeInFirestore:", uErr);
@@ -2068,37 +2055,7 @@ export async function commitEmailChangeInFirestore(
     console.warn("Notice: email history status update:", e);
   }
 
-  // 5. Atomic / safe emailIndex update
-  try {
-    // Safely remove old email index only if it matches current UID
-    if (cleanOldEmail && cleanOldEmail !== cleanNewEmail) {
-      console.log("[EMAIL INDEX] Cleaning up old email index:", cleanOldEmail);
-      const oldIndexRef = doc(db, "emailIndex", cleanOldEmail);
-      const oldIndexSnap = await getDoc(oldIndexRef);
-      if (oldIndexSnap.exists()) {
-        const oldData = oldIndexSnap.data();
-        if (oldData.uid === uid || oldData.userId === uid) {
-          await deleteDoc(oldIndexRef).catch(() => {});
-        }
-      }
-    }
-
-    // Set new email index
-    console.log("[EMAIL INDEX] Setting new email index:", cleanNewEmail);
-    await setDoc(
-      doc(db, "emailIndex", cleanNewEmail),
-      {
-        uid,
-        accountUid: p?.accountUid || uid,
-        email: cleanNewEmail,
-        status: "active",
-        updatedAt: serverTimestamp(),
-      },
-      { merge: true }
-    );
-  } catch (e) {
-    console.warn("[EMAIL INDEX] Notice: emailIndex synchronization:", e);
-  }
+  // 5. emailIndex is synchronized server-side by /api/email-change/verify
 
   // 6. Idempotent Notification & Audit Log
   try {
@@ -2326,13 +2283,24 @@ export async function deleteUserAccount(
     const cred = EmailAuthProvider.credential(user.email, currentPass);
     await reauthenticateWithCredential(user, cred);
 
-    await performPermanentUserDeletion({
-      targetUid: user.uid,
-      adminEmail: user.email,
-      adminUid: user.uid,
-      reason: "Self Direct Permanent Deletion",
-      isSelfDelete: true,
+    const idToken = await user.getIdToken(true);
+    const res = await fetch("/api/auth/delete-account", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${idToken}`,
+      },
+      body: JSON.stringify({
+        reason: "Self Direct Permanent Deletion",
+      }),
     });
+
+    const data: any = await res.json().catch(() => ({}));
+    if (!res.ok || !data?.success) {
+      throw new Error(data?.error || "Failed to delete account on server. Please try again.");
+    }
+
+    await firebaseSignOut(auth).catch(() => {});
   } catch (err: any) {
     const code = err?.code || "";
     const msg = String(err?.message || "");

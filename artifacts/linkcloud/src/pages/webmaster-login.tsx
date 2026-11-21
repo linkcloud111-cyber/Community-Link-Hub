@@ -556,7 +556,7 @@ export default function WebmasterLogin() {
                       setMobileNumber(digits);
                       if (errorMsg) setErrorMsg("");
                     }}
-                    placeholder="7987410765"
+                    placeholder="9876543210"
                     className="w-full h-11 sm:h-12 pl-24 pr-3.5 bg-slate-50/80 dark:bg-muted/30 border border-slate-200 dark:border-border rounded-xl text-sm font-mono tracking-wider focus:border-purple-600 focus:bg-white dark:focus:bg-card focus:ring-2 focus:ring-purple-600/20 transition-all placeholder:text-slate-400 disabled:opacity-60"
                   />
                 </div>

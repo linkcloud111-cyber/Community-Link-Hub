@@ -61,8 +61,7 @@ export default function Navbar() {
 
   const canSubmitGroup = Boolean(
     isWebmaster ||
-      (settings?.groupSubmissionEnabled === true &&
-        (Boolean(user) || settings?.allowPublicSubmissions === true))
+      (settings?.groupSubmissionEnabled === true && Boolean(user))
   );
 
   const navLinks = [
@@ -409,14 +408,6 @@ export default function Navbar() {
                 >
                   Log in
                 </Link>
-                {((settings?.groupSubmissionEnabled === true && settings?.allowPublicSubmissions === true) || isWebmaster) && (
-                  <Link
-                    href="/submit"
-                    className="flex items-center gap-1.5 px-4 py-2 text-sm font-semibold bg-primary text-primary-foreground hover:bg-primary/90 rounded-xl transition-colors shadow-lg shadow-primary/20"
-                  >
-                    <Plus className="w-4 h-4" /> Submit Group
-                  </Link>
-                )}
               </div>
             )}
           </div>

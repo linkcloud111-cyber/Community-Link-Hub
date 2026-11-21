@@ -36,7 +36,13 @@ function adminApiPlugin(): Plugin {
         handleAuthProvisionGoogleUser,
         handleAuthProvisionPhoneUser,
         handleAuthCheckRegistration,
+        handleAuthMobilePasswordLogin,
+        handleAuthDeleteAccount,
       } = await server.ssrLoadModule('/src/server/auth-api.ts');
+      const {
+        handleGroupSubmitRequest,
+        handleReportSubmitRequest,
+      } = await server.ssrLoadModule('/src/server/groups-reports-api.ts');
       const {
         handleTelemetryVisitorHit,
         handleTelemetrySearchQuery,
@@ -85,6 +91,12 @@ function adminApiPlugin(): Plugin {
         if (url === '/api/auth/check-registration') {
           return handleAuthCheckRegistration(req, res);
         }
+        if (url === '/api/auth/mobile-password-login') {
+          return handleAuthMobilePasswordLogin(req, res);
+        }
+        if (url === '/api/auth/delete-account') {
+          return handleAuthDeleteAccount(req, res);
+        }
         if (url === '/api/auth/provision-user') {
           return handleAuthProvisionUser(req, res);
         }
@@ -93,6 +105,12 @@ function adminApiPlugin(): Plugin {
         }
         if (url === '/api/auth/provision-phone-user') {
           return handleAuthProvisionPhoneUser(req, res);
+        }
+        if (url === '/api/groups/submit') {
+          return handleGroupSubmitRequest(req, res);
+        }
+        if (url === '/api/reports/submit') {
+          return handleReportSubmitRequest(req, res);
         }
         if (url === '/api/email-change/request') {
           return handleDevEmailChangeRequest(req, res);

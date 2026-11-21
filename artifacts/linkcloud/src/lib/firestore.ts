@@ -53,6 +53,12 @@ import {
   DEFAULT_LOCATION_STATES,
   DEFAULT_LOCATION_DISTRICTS,
 } from "./default-taxonomies";
+import {
+  parseAndValidateTags,
+  validateReportPayload,
+  MAX_GROUP_DESCRIPTION_LENGTH,
+  MIN_GROUP_DESCRIPTION_LENGTH,
+} from "./group-validation";
 
 export {
   DEFAULT_CATEGORIES,
@@ -458,69 +464,88 @@ export async function createGroup(
     categoryName: string;
     joinUrl: string;
     description: string;
-    submittedBy: string;
-    submittedByName: string;
+    submittedBy?: string;
+    submittedByName?: string;
   }
 ): Promise<string> {
+  const currentUser = auth?.currentUser;
+  if (!currentUser) {
+    throw new Error("Sign in required. Please log in or create an account to submit a community listing.");
+  }
+
   const isWebmaster = await isCurrentUserWebmaster();
   const siteSettings = await getSiteSettings();
   if (siteSettings?.groupSubmissionEnabled !== true && !isWebmaster) {
     throw new Error("Link submissions are temporarily paused by Webmaster.");
   }
-  if (!auth?.currentUser && siteSettings?.allowPublicSubmissions !== true && !isWebmaster) {
-    throw new Error("Guest link submissions are disabled. Please sign in to submit.");
+
+  const cleanDesc = (data.description || "").trim();
+  if (cleanDesc.length < MIN_GROUP_DESCRIPTION_LENGTH) {
+    throw new Error(`Description must be at least ${MIN_GROUP_DESCRIPTION_LENGTH} characters.`);
+  }
+  if (cleanDesc.length > MAX_GROUP_DESCRIPTION_LENGTH) {
+    throw new Error(`Description must not exceed ${MAX_GROUP_DESCRIPTION_LENGTH} characters.`);
   }
 
-  const { submittedByName, submittedByEmail, ...publicGroupData } = data;
-  const ref = await addDoc(collection(db, "groups"), {
-    ...publicGroupData,
-    contentType: data.contentType || "General Discussion",
-    logoUrl: data.logoUrl || "",
-    description: data.description,
-    language: data.language || "Hindi",
-    state: data.state || "",
-    district: data.district || "",
-    city: data.city || "",
-    rules: data.rules || "",
-    minimumAge: data.minimumAge || "All Ages",
-    tags: Array.isArray(data.tags) ? data.tags : [],
-    joinUrl: data.joinUrl,
-    submittedBy: data.submittedBy,
-    submitterUid: data.submittedBy,
-    status: data.status || "pending",
-    featured: false,
-    pinned: false,
-    hidden: false,
-    viewsCount: 0,
-    joinCount: 0,
-    reportCount: 0,
-    memberCount: 0,
-    linkStatus: "Active",
-    createdAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
+  const tagResult = parseAndValidateTags(data.tags ?? [], { required: true });
+  if (!tagResult.valid) {
+    throw new Error(tagResult.error || "Please enter valid tags.");
+  }
+
+  const idToken = await currentUser.getIdToken();
+  const res = await fetch("/api/groups/submit", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${idToken}`,
+    },
+    body: JSON.stringify({
+      name: data.name,
+      platform: data.platform,
+      categoryId: data.categoryId,
+      categoryName: data.categoryName,
+      contentType: data.contentType || "General Discussion",
+      logoUrl: data.logoUrl || "",
+      description: cleanDesc,
+      language: data.language || "Hindi",
+      state: data.state || "",
+      district: data.district || "",
+      city: data.city || "",
+      rules: data.rules || "",
+      minimumAge: data.minimumAge || "All Ages",
+      tags: tagResult.tags,
+      joinUrl: data.joinUrl,
+    }),
   });
 
-  // Store private submitter PII in protected /groupOwnership/{groupId}
-  try {
-    await setDoc(doc(db, "groupOwnership", ref.id), {
-      groupId: ref.id,
-      submittedBy: data.submittedBy,
-      submitterUid: data.submittedBy,
-      ownerUid: data.submittedBy,
-      submittedByName: submittedByName || "",
-      submittedByEmail: submittedByEmail || "",
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-    });
-  } catch (ownErr) {
-    console.warn("Error storing group ownership metadata:", ownErr);
+  const resData: any = await res.json().catch(() => ({}));
+  if (!res.ok || !resData?.groupId) {
+    throw new Error(resData?.error || "Failed to submit community listing. Please try again.");
   }
 
-  return ref.id;
+  return resData.groupId;
 }
 
 export async function updateGroup(id: string, data: Partial<Group>): Promise<void> {
-  await updateDoc(doc(db, "groups", id), { ...data, updatedAt: serverTimestamp() });
+  const updates: Record<string, any> = { ...data };
+
+  if (typeof updates.description === "string") {
+    const cleanDesc = updates.description.trim();
+    if (cleanDesc.length > MAX_GROUP_DESCRIPTION_LENGTH) {
+      throw new Error(`Description must not exceed ${MAX_GROUP_DESCRIPTION_LENGTH} characters.`);
+    }
+    updates.description = cleanDesc;
+  }
+
+  if (updates.tags !== undefined) {
+    const tagResult = parseAndValidateTags(updates.tags, { required: false });
+    if (!tagResult.valid) {
+      throw new Error(tagResult.error || "Please enter valid tags.");
+    }
+    updates.tags = tagResult.tags;
+  }
+
+  await updateDoc(doc(db, "groups", id), { ...updates, updatedAt: serverTimestamp() });
 }
 
 export async function deleteGroup(id: string): Promise<void> {
@@ -728,24 +753,16 @@ export async function upsertUserProfile(uid: string, data: Partial<UserProfile>)
   const userRef = await resolveUserDocRef(uid);
   const snap = await getDoc(userRef);
   let finalData: Partial<UserProfile> = { ...data };
-  let finalAccountUid = finalData.accountUid;
   if (snap.exists()) {
     const existing = snap.data();
     // Protect immutable accountUid from being overwritten with null/empty
     if (existing.accountUid && !finalData.accountUid) {
       finalData.accountUid = existing.accountUid;
-      finalAccountUid = existing.accountUid;
     }
   } else if (!finalData.accountUid) {
-    const gen = await generateUniqueAccountUid(uid);
-    finalData.accountUid = gen;
-    finalAccountUid = gen;
+    finalData.accountUid = await generateUniqueAccountUid(uid);
   }
   await setDoc(userRef, { ...finalData, updatedAt: serverTimestamp() }, { merge: true });
-
-  if (finalAccountUid) {
-    await registerIdentityIndexes(uid, finalAccountUid, finalData.email, finalData.phone);
-  }
 }
 
 export async function updateUserProfile(uid: string, data: Partial<UserProfile>, adminEmail = "webmaster@linkcloud.in", adminUid = "webmaster"): Promise<void> {
@@ -774,11 +791,6 @@ export async function updateUserProfile(uid: string, data: Partial<UserProfile>,
   }
 
   await setDoc(userRef, { ...sanitized, updatedAt: serverTimestamp() }, { merge: true });
-
-  const finalAccountUid = sanitized.accountUid || existing.accountUid;
-  if (finalAccountUid) {
-    await registerIdentityIndexes(uid, finalAccountUid, sanitized.email || existing.email, sanitized.phone || existing.phone);
-  }
 
   console.log("[WEBMASTER USERS]", {
     Action: "EDIT_USER_PROFILE",
@@ -1124,67 +1136,23 @@ import { hashIdentifier, normalizeEmail, normalizePhone } from "./utils";
 
 // ─── Identity Indexes & Tombstone Records ────────────────────────────────────
 
+/**
+ * @deprecated Identity indexes (/emailIndex, /mobileIndex) are now strictly server-managed.
+ */
 export async function registerIdentityIndexes(
-  firebaseUid: string,
-  accountUid: string,
-  email?: string,
-  phone?: string
+  _firebaseUid: string,
+  _accountUid: string,
+  _email?: string,
+  _phone?: string
 ): Promise<void> {
-  try {
-    if (email) {
-      const normEmail = normalizeEmail(email);
-      if (normEmail) {
-        await setDoc(
-          doc(db, "emailIndex", normEmail),
-          {
-            email: normEmail,
-            uid: firebaseUid,
-            accountUid,
-            status: "active",
-            updatedAt: serverTimestamp(),
-          },
-          { merge: true }
-        );
-      }
-    }
-    if (phone) {
-      const normPhone = normalizePhone(phone);
-      if (normPhone) {
-        await setDoc(
-          doc(db, "mobileIndex", normPhone),
-          {
-            phone: normPhone,
-            uid: firebaseUid,
-            accountUid,
-            status: "active",
-            updatedAt: serverTimestamp(),
-          },
-          { merge: true }
-        );
-      }
-    }
-  } catch (err) {
-    console.warn("Error registering identity indexes:", err);
-  }
+  // No-op: server APIs maintain emailIndex and mobileIndex securely.
 }
 
-export async function removeIdentityIndexes(email?: string, phone?: string): Promise<void> {
-  try {
-    if (email) {
-      const normEmail = normalizeEmail(email);
-      if (normEmail) {
-        await deleteDoc(doc(db, "emailIndex", normEmail)).catch(() => {});
-      }
-    }
-    if (phone) {
-      const normPhone = normalizePhone(phone);
-      if (normPhone) {
-        await deleteDoc(doc(db, "mobileIndex", normPhone)).catch(() => {});
-      }
-    }
-  } catch (err) {
-    console.warn("Error removing identity indexes:", err);
-  }
+/**
+ * @deprecated Identity indexes (/emailIndex, /mobileIndex) are now strictly server-managed.
+ */
+export async function removeIdentityIndexes(_email?: string, _phone?: string): Promise<void> {
+  // No-op: server APIs (/api/admin/users/delete, /api/auth/delete-account) remove indexes securely.
 }
 
 export async function recordDeletedAccountTombstone(data: {
@@ -1430,8 +1398,7 @@ export async function performPermanentUserDeletion(params: {
       }
     }
 
-    // 7. Remove active emailIndex and mobileIndex entries so user can register anew
-    await removeIdentityIndexes(email, phone);
+    // 7. Identity indexes are deleted server-side by syncAuthDeleteBackend (/api/admin/users/delete)
 
     // 8. Record in deletedAccounts tombstone collection (minimal record, no blocking hashes)
     await recordDeletedAccountTombstone({
@@ -1991,15 +1958,53 @@ export async function deleteCategory(id: string): Promise<void> {
 export async function createReport(
   data: Omit<Report, "id" | "createdAt" | "status">
 ): Promise<void> {
-  await addDoc(collection(db, "reports"), {
-    ...data,
-    status: "pending",
-    createdAt: serverTimestamp(),
+  const isSignedIn = Boolean(auth?.currentUser);
+  const validation = validateReportPayload({
+    isSignedIn,
+    reporterName: data.reportedByName,
+    reason: data.reason,
+    details: data.details,
   });
-  try {
-    await updateDoc(doc(db, "groups", data.groupId), { reportCount: increment(1) });
-  } catch {
-    // ignore if group doc doesn't exist
+
+  if (!validation.valid) {
+    const firstMsg =
+      validation.errors.reporterName ||
+      validation.errors.reason ||
+      validation.errors.details ||
+      "Please complete all required report fields.";
+    const err: any = new Error(firstMsg);
+    err.fieldErrors = validation.errors;
+    throw err;
+  }
+
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (auth?.currentUser) {
+    const idToken = await auth.currentUser.getIdToken().catch(() => "");
+    if (idToken) {
+      headers["Authorization"] = `Bearer ${idToken}`;
+    }
+  }
+
+  const res = await fetch("/api/reports/submit", {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      groupId: data.groupId,
+      groupName: data.groupName,
+      reportedByName: validation.cleanData.reporterName,
+      reason: validation.cleanData.reason,
+      details: validation.cleanData.details,
+    }),
+  });
+
+  const resData: any = await res.json().catch(() => ({}));
+  if (!res.ok || !resData?.success) {
+    const err: any = new Error(resData?.error || "Failed to submit report. Please try again.");
+    err.status = res.status;
+    if (resData?.fieldErrors) {
+      err.fieldErrors = resData.fieldErrors;
+    }
+    throw err;
   }
 }
 

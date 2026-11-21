@@ -402,7 +402,14 @@ export async function handleAdminUserDeleteRequest(
       batch.delete(firestore.collection("emailIndex").doc(targetEmail.toLowerCase()));
     }
     if (targetPhone) {
-      batch.delete(firestore.collection("mobileIndex").doc(targetPhone));
+      const clean = targetPhone.replace(/\s+/g, "");
+      const digits = clean.replace(/^\+?91/, "");
+      const phoneKeys = Array.from(
+        new Set([targetPhone, clean, digits, `+91${digits}`, `+91 ${digits}`].filter((p) => Boolean(p) && p.length >= 10))
+      );
+      for (const pk of phoneKeys) {
+        batch.delete(firestore.collection("mobileIndex").doc(pk));
+      }
     }
     batch.delete(userDocRef);
 
@@ -792,7 +799,14 @@ export async function handleAdminCleanupUnverifiedRequest(
         batch.delete(firestore.collection("emailIndex").doc(cleanEmail));
       }
       if (cleanPhone) {
-        batch.delete(firestore.collection("mobileIndex").doc(cleanPhone));
+        const cleanP = cleanPhone.replace(/\s+/g, "");
+        const digits = cleanP.replace(/^\+?91/, "");
+        const phoneKeys = Array.from(
+          new Set([cleanPhone, cleanP, digits, `+91${digits}`, `+91 ${digits}`].filter((p) => Boolean(p) && p.length >= 10))
+        );
+        for (const pk of phoneKeys) {
+          batch.delete(firestore.collection("mobileIndex").doc(pk));
+        }
       }
       batch.delete(firestore.collection("accountUidRegistry").doc(uid));
       batch.delete(firestore.collection("pendingRegistrations").doc(uid));

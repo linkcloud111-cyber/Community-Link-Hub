@@ -102,7 +102,7 @@ type SettingsTab =
   | "cloudinary";
 
 export default function AdminSettings() {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const [location] = useLocation();
 
   const getInitialTab = (): SettingsTab => {
@@ -198,7 +198,7 @@ export default function AdminSettings() {
     sitemapXmlContent: "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">\n  <url>\n    <loc>https://linkcloud.in/</loc>\n    <changefreq>daily</changefreq>\n    <priority>1.0</priority>\n  </url>\n  <url>\n    <loc>https://linkcloud.in/groups</loc>\n    <changefreq>hourly</changefreq>\n    <priority>0.9</priority>\n  </url>\n</urlset>",
     structuredDataJson: "{\n  \"@context\": \"https://schema.org\",\n  \"@type\": \"WebSite\",\n  \"name\": \"LinkCloud\",\n  \"url\": \"https://linkcloud.in\"\n}",
 
-    allowPublicSubmissions: true,
+    allowPublicSubmissions: false,
     groupSubmissionEnabled: true,
     userRegistrationEnabled: true,
     googleLoginEnabled: true,
@@ -1804,15 +1804,16 @@ export default function AdminSettings() {
                   }
                 />
                 <ToggleCard
-                  title="Guest & Public Submissions"
-                  description="Allow unregistered visitors to submit links without signing in"
-                  enabled={settings.allowPublicSubmissions === true}
-                  onToggle={() =>
+                  title="Guest & Public Submissions (Disabled)"
+                  description="Sign-in is permanently required to submit communities; anonymous guest submissions cannot be enabled."
+                  enabled={false}
+                  onToggle={() => {
+                    toast.info("Sign-in is required for all community submissions by security policy.");
                     setSettings((s) => ({
                       ...s,
-                      allowPublicSubmissions: s.allowPublicSubmissions !== true,
-                    }))
-                  }
+                      allowPublicSubmissions: false,
+                    }));
+                  }}
                 />
                 <ToggleCard
                   title="Bookmark & Favorites"

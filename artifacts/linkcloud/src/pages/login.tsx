@@ -2,25 +2,18 @@ import { useState, useEffect } from "react";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/contexts/AuthContext";
 import { useSiteSettings } from "@/contexts/SiteSettingsContext";
-import { fetchSignInMethodsForEmail } from "firebase/auth";
-import { auth } from "@/lib/firebase";
 import {
   loginUser,
+  loginWithMobilePassword,
   signInUserWithGoogle,
   signInWithMobileOTP,
   verifyOTP,
   sendPasswordResetLink,
   setAuthRememberMe,
-  checkIsEmailRegistered,
   formatAuthError,
   logout,
   type ConfirmationResult,
 } from "@/lib/auth";
-import {
-  checkDuplicateUser,
-  getUserProfileByEmail,
-  getUserProfileByPhone,
-} from "@/lib/firestore";
 import {
   validateGmailAddress,
   validateIndianMobile,
@@ -47,6 +40,16 @@ import {
   Check,
 } from "lucide-react";
 import { FcGoogle } from "react-icons/fc";
+
+function getSafeRedirectTarget(): string {
+  if (typeof window === "undefined") return "/dashboard";
+  const raw = new URLSearchParams(window.location.search).get("redirect") || "";
+  if (!raw || !raw.startsWith("/") || raw.startsWith("//")) return "/dashboard";
+  if (raw.startsWith("/login") || raw.startsWith("/register") || raw.startsWith("/verify-email")) {
+    return "/dashboard";
+  }
+  return raw;
+}
 
 export default function Login() {
   const [identifier, setIdentifier] = useState("");
@@ -116,7 +119,7 @@ export default function Login() {
         const isGoogleAccount = Boolean(user.providerData?.some((p) => p.providerId === "google.com"));
         const isPhoneOtpAccount = Boolean(!user.email && !profile?.email && (profile?.phoneVerified || user.phoneNumber));
         if (user.emailVerified || profile?.emailVerified || isGoogleAccount || isPhoneOtpAccount) {
-          setLocation("/dashboard");
+          setLocation(getSafeRedirectTarget());
         } else {
           setLocation("/verify-email");
         }
@@ -226,43 +229,50 @@ export default function Login() {
         return;
       }
 
+      const lockoutKey = `mobile:${mobileCheckResult.formatted}`;
+      const lockout = getFailedLoginAttempts(lockoutKey);
+      if (lockout.isLocked) {
+        const mins = Math.ceil(lockout.remainingSec / 60);
+        toast.error(`Too many failed login attempts. Please try again in ${mins} minute${mins > 1 ? "s" : ""}.`);
+        return;
+      }
+
       setLoading(true);
 
       try {
-        // 2. Check if Mobile exists in database
-        const userProfileByPhone = await getUserProfileByPhone(identifier.trim());
-        if (!userProfileByPhone || !userProfileByPhone.email) {
-          setCustomEmailError("Invalid mobile number. Please check and try again.");
-          toast.error("Invalid mobile number. Please check and try again.");
-          setLoading(false);
-          return;
-        }
-
-        // Check account lockout status using registered email
-        const lockout = getFailedLoginAttempts(userProfileByPhone.email);
-        if (lockout.isLocked) {
-          const mins = Math.ceil(lockout.remainingSec / 60);
-          toast.error(`Account locked due to 5 failed login attempts. Please try again in ${mins} minute${mins > 1 ? "s" : ""}.`);
-          setLoading(false);
-          return;
-        }
-
         await setAuthRememberMe(rememberMe);
-        const u = await loginUser(userProfileByPhone.email, password);
-        clearFailedLoginAttempts(userProfileByPhone.email);
+        const u = await loginWithMobilePassword(mobileCheckResult.formatted, password, "user");
+        clearFailedLoginAttempts(lockoutKey);
 
-        if (u.emailVerified) {
+        const isPhoneOnly = !u.email;
+        const isGoogleLinked = Boolean(u.providerData?.some((p) => p.providerId === "google.com"));
+        if (u.emailVerified || isPhoneOnly || isGoogleLinked) {
           toast.success("Welcome back to LinkCloud!");
-          setLocation("/dashboard");
+          setLocation(getSafeRedirectTarget());
         } else {
           toast.info("Please verify your email address to access LinkCloud.");
           setLocation("/verify-email");
         }
       } catch (error: any) {
-        console.error("Mobile login error:", error);
-        const friendlyMsg = formatAuthError(error, "Incorrect email or password. Please try again.", "email_password");
-        setCustomPasswordError(friendlyMsg);
-        toast.error(friendlyMsg);
+        console.warn("Mobile password login failed:", error?.status || error?.code || error?.message);
+        const errMsg = String(error?.message || "");
+        if (error?.status === 429) {
+          setCustomPasswordError(errMsg);
+          toast.error(errMsg);
+          return;
+        }
+        if (
+          errMsg.startsWith("This is a Webmaster account") ||
+          errMsg.startsWith("Your LinkCloud account")
+        ) {
+          setCustomPasswordError(errMsg);
+          toast.error(errMsg);
+          return;
+        }
+        recordFailedLoginAttempt(lockoutKey);
+        const genericMsg = "Invalid mobile number or password.";
+        setCustomPasswordError(genericMsg);
+        toast.error(genericMsg);
       } finally {
         setLoading(false);
       }
@@ -312,7 +322,7 @@ export default function Login() {
 
         if (u.emailVerified) {
           toast.success("Login successful.");
-          setLocation("/dashboard");
+          setLocation(getSafeRedirectTarget());
         } else {
           toast.info("Please verify your Gmail address before signing in.");
           setLocation("/verify-email");
@@ -416,7 +426,7 @@ export default function Login() {
     try {
       await verifyOTP(confirmationResult, otpCode.trim());
       toast.success("Mobile OTP verified successfully!");
-      setLocation("/dashboard");
+      setLocation(getSafeRedirectTarget());
     } catch (error: any) {
       console.error("OTP verify error:", error);
       toast.error(formatAuthError(error, "Invalid OTP. Please try again.", "mobile_otp"));
@@ -431,7 +441,7 @@ export default function Login() {
       await setAuthRememberMe(rememberMe);
       await signInUserWithGoogle();
       toast.success("Welcome to LinkCloud!");
-      setLocation("/dashboard");
+      setLocation(getSafeRedirectTarget());
     } catch (error: any) {
       console.error("Google login error:", error);
       if (error?.message && error.message.startsWith("This is a Webmaster account")) {
@@ -484,7 +494,7 @@ export default function Login() {
             </div>
             <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">Welcome Back</h1>
             <p className="text-sm text-muted-foreground mt-1">
-              Sign in with Email or Mobile OTP to manage communities
+              Sign in with Gmail, Mobile Password, or Mobile OTP to manage communities
             </p>
           </div>
 
@@ -651,26 +661,47 @@ export default function Login() {
 
                 {/* Submit Button */}
                 {isMobile ? (
-                  mobileOtpLoginEnabled ? (
-                    <button
-                      type="button"
-                      onClick={handleSendOTP}
-                      disabled={loading || !mobileCheck.valid}
-                      className="w-full py-3.5 px-4 bg-primary text-primary-foreground font-semibold text-sm rounded-xl hover:bg-primary/90 transition-all flex items-center justify-center gap-2 shadow-lg shadow-primary/20 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      {loading ? (
-                        <Loader2 className="w-5 h-5 animate-spin" />
-                      ) : (
-                        <>
-                          <Phone className="w-4 h-4" /> Send Mobile OTP <ArrowRight className="w-4 h-4" />
-                        </>
-                      )}
-                    </button>
-                  ) : (
-                    <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-600 dark:text-amber-400 text-xs text-center font-medium">
-                      Mobile OTP login is currently disabled by the webmaster. Please sign in with your Gmail address.
-                    </div>
-                  )
+                  <div className="space-y-2.5">
+                    {emailLoginEnabled && (
+                      <button
+                        type="submit"
+                        disabled={loading || !mobileCheck.valid || !password}
+                        className="w-full py-3.5 px-4 bg-foreground text-background font-semibold text-sm rounded-xl hover:bg-foreground/90 transition-all flex items-center justify-center gap-2 group shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {loading ? (
+                          <Loader2 className="w-5 h-5 animate-spin" />
+                        ) : (
+                          <>
+                            Sign In with Password <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                          </>
+                        )}
+                      </button>
+                    )}
+                    {mobileOtpLoginEnabled ? (
+                      <button
+                        type="button"
+                        onClick={handleSendOTP}
+                        disabled={loading || !mobileCheck.valid}
+                        className={`w-full py-3 px-4 font-semibold text-sm rounded-xl transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed ${
+                          password && emailLoginEnabled
+                            ? "bg-muted text-foreground border border-border hover:bg-muted/80"
+                            : "bg-primary text-primary-foreground hover:bg-primary/90 shadow-lg shadow-primary/20"
+                        }`}
+                      >
+                        {loading ? (
+                          <Loader2 className="w-5 h-5 animate-spin" />
+                        ) : (
+                          <>
+                            <Phone className="w-4 h-4" /> Send Mobile OTP <ArrowRight className="w-4 h-4" />
+                          </>
+                        )}
+                      </button>
+                    ) : !emailLoginEnabled ? (
+                      <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-600 dark:text-amber-400 text-xs text-center font-medium">
+                        Mobile OTP login is currently disabled by the webmaster. Please sign in with your Gmail address.
+                      </div>
+                    ) : null}
+                  </div>
                 ) : emailLoginEnabled ? (
                   <button
                     type="submit"
@@ -786,7 +817,10 @@ export default function Login() {
             {settings?.userRegistrationEnabled !== false ? (
               <p className="text-center mt-6 text-sm text-muted-foreground">
                 Don't have an account?{" "}
-                <Link href="/register" className="font-semibold text-primary hover:underline">
+                <Link
+                  href={getSafeRedirectTarget() !== "/dashboard" ? `/register?redirect=${encodeURIComponent(getSafeRedirectTarget())}` : "/register"}
+                  className="font-semibold text-primary hover:underline"
+                >
                   Create Account
                 </Link>
               </p>
