@@ -1,0 +1,1637 @@
+# LINKCLOUD — ULTIMATE MASTER PRODUCTION IMPLEMENTATION PROMPT
+ 
+## COMPLETE WEBSITE UPGRADE + PRIVATE USER DATA PROTECTION + LEGAL COMPLIANCE + WEBMASTER CMS + UNIVERSAL SAFETY + OWNER PROTECTION + ZERO REGRESSION
+ 
+**PROJECT:** LinkCloud
+**PROJECT TYPE:** Existing Production Community Discovery Directory
+**WEBSITE OWNER:** Existing Authorized Website Owner
+**SOLE PRIVILEGED ROLE:** `webmaster`
+**IMPLEMENTATION AUTHORITY:** Existing Authorized Webmaster
+**PRIMARY OBJECTIVE:** Safely upgrade the existing LinkCloud application without replacing its architecture, damaging existing functionality or exposing private information.
+ 
+***
+ 
+# MASTER AUTHORITY AND NON-NEGOTIABLE INSTRUCTIONS
+ 
+You are working on the EXISTING LinkCloud production application.
+ 
+Your responsibility is to professionally inspect, improve, secure, test and upgrade the existing application.
+ 
+**DO NOT create a new project, rebuild the application from scratch, replace the existing architecture or introduce a parallel system.**
+ 
+Preserve the actual existing technology stack wherever applicable:
+ 
+- React
+- Vite
+- Firebase Authentication
+- Cloud Firestore
+- Cloudinary
+- GitHub
+- Cloudflare Pages
+- Cloudflare Functions / Workers
+- Existing APIs, services and integrations
+
+ 
+The actual implementation must be determined by inspecting the existing codebase, not by assuming that every listed technology is configured or used.
+ 
+The existing authenticated and authorized `webmaster` account must remain the sole privileged website management authority.
+ 
+Do not introduce separate Admin, Super Admin or Web Administrator roles.
+ 
+Do not change the existing Webmaster UID, credentials, account ownership or authorization without explicit authorization.
+ 
+## PRIMARY MISSION
+ 
+Transform LinkCloud into a professional, transparent, secure, privacy-conscious and legally responsible Indian community discovery directory.
+ 
+Protect the legitimate interests of:
+ 
+1. Website Owner.
+2. Existing Webmaster.
+3. Registered Users.
+4. Public Visitors.
+5. Community Submitters.
+6. Third-party Community Owners.
+7. Copyright and Intellectual Property Owners.
+8. Other legitimately affected individuals.
+
+ 
+Protection must include personal safety, privacy, data security, financial safety, legal responsibility, operational stability and reputational protection.
+ 
+**MOST IMPORTANT DATA PROTECTION REQUIREMENT:**
+ 
+Every registered user's private information must remain PRIVATE.
+ 
+User information must NEVER become publicly accessible merely because a user registers, logs in, submits a community or uses LinkCloud.
+ 
+Public visitors must only receive information intentionally approved for public display.
+ 
+No private user data, confidential Owner information, Webmaster credentials, internal complaints, moderation evidence or security records may be exposed through public pages, APIs, Firestore queries, frontend bundles, logs or third-party integrations.
+ 
+***
+ 
+# PART 1 — COMPLETE PUBLIC INFORMATION SYSTEM
+ 
+Professionally review, rewrite and implement all seven existing public information pages:
+ 
+1. `/help` — Help Center
+2. `/privacy` — Privacy Policy
+3. `/terms` — Terms of Service
+4. `/dmca` — Copyright and Intellectual Property Policy
+5. `/disclaimer` — Disclaimer
+6. `/about` — About LinkCloud
+7. `/faq` — Frequently Asked Questions
+
+ 
+All pages must contain complete, accurate, understandable and professionally written information in simple English suitable for Indian visitors.
+ 
+Hindi support may be implemented through the existing language architecture where available.
+ 
+No dummy content, placeholder paragraphs, fictional contact information, fabricated legal declarations or unsupported guarantees.
+ 
+## A. ABOUT LINKCLOUD
+ 
+Explain:
+ 
+- What LinkCloud is.
+- Its purpose, vision and objectives.
+- Why the platform exists.
+- How visitors discover communities.
+- Who can use the website.
+- How the directory works.
+- Supported platforms: 
+  - WhatsApp
+  - Telegram
+  - Discord
+  - Facebook Groups
+  - Instagram Broadcast Channels
+  - X
+  - LinkedIn
+  - YouTube
+  - Reddit
+- Community categories, content types and languages.
+- State, district and city discovery where enabled.
+- Search, filters and sorting.
+- Community descriptions and details.
+- Invitation links.
+- Copy, share and join functionality.
+- Registration and community submission.
+- Review and moderation.
+- Reporting and complaints.
+- Inactive and expired invitation links.
+- Privacy and security.
+- Support procedures.
+- Platform limitations.
+
+ 
+Clearly establish that LinkCloud is an independent directory and is not officially affiliated with the listed third-party platforms.
+ 
+## B. HELP CENTER
+ 
+Create complete documentation for:
+ 
+1. Getting Started.
+2. Finding Communities.
+3. Searching and Filtering.
+4. Viewing Community Details.
+5. Joining Communities.
+6. Copying and Sharing Links.
+7. Creating an Account.
+8. Email and Mobile Verification.
+9. Submitting Communities.
+10. Submission Review.
+11. Inactive and Expired Links.
+12. Reporting Communities.
+13. Reporting Incorrect Information.
+14. Account and Profile Management.
+15. Account Deletion Requests.
+16. Privacy and Security.
+17. User Conduct Rules.
+18. Warnings and Suspensions.
+19. Appeals and Account Reviews.
+20. Technical Problems.
+21. Copyright Complaints.
+22. Privacy Complaints.
+23. Legal Notices.
+24. Contact and Support.
+
+ 
+Every instruction must match the actual implemented functionality.
+ 
+## C. FAQ
+ 
+Implement a database-managed, categorized and searchable FAQ.
+ 
+Cover registration, verification, browsing, joining, submissions, moderation, privacy, suspension, reporting, deletion requests, external links and support.
+ 
+Include clear answers to:
+ 
+- Is LinkCloud free?
+- Can visitors browse without registration?
+- Is login required for submitting communities?
+- Does LinkCloud own listed communities?
+- Does LinkCloud operate third-party groups?
+- Why can invitation links become inactive?
+- How are communities reviewed?
+- Can users be suspended?
+- Can users appeal?
+- Is personal information publicly visible?
+- How is personal data protected?
+- How can copyright violations be reported?
+- How can users request account deletion?
+
+ 
+Never promise functionality, response times or guarantees that have not actually been implemented.
+ 
+## D. PRIVACY POLICY
+ 
+Explain actual data practices, including:
+ 
+- Registration information.
+- Full name.
+- Verified email.
+- Verified mobile number.
+- Date of birth where collected.
+- Address where collected.
+- Profile photographs.
+- Authentication and verification records.
+- Community submissions.
+- Reports and complaints.
+- Technical and security information.
+- Cookies and analytics where used.
+- Firebase and Cloudinary processing.
+- Other actual service providers.
+- Data purposes and lawful processing.
+- Data storage and security.
+- Information sharing.
+- Retention and deletion.
+- Account deletion.
+- Applicable privacy rights.
+- Grievance procedures.
+- Third-party services.
+- Policy updates.
+
+ 
+Never falsely state that personal information is not collected, stored or processed.
+ 
+Never promise absolute confidentiality where lawful disclosure may be required.
+ 
+## E. TERMS OF SERVICE
+ 
+Cover:
+ 
+- Acceptance and eligibility.
+- Registration.
+- Account security.
+- Accurate information.
+- Authorized community submissions.
+- Content ownership and submission permissions.
+- User responsibilities.
+- Prohibited activities.
+- Fraud and impersonation.
+- Spam and misleading links.
+- Copyright and trademarks.
+- Community moderation.
+- Reports and investigations.
+- Warnings and restrictions.
+- Temporary suspension.
+- Permanent blocking.
+- Appeals and reinstatement.
+- Account deletion.
+- Third-party services.
+- Reasonable limitation of liability to the extent permitted by applicable law.
+- Changes to services.
+- Legal notices and grievances.
+
+ 
+Clearly distinguish LinkCloud's responsibilities from the responsibilities of submitters, community owners and third-party platforms.
+ 
+Do not attempt to transfer every legal responsibility to users.
+ 
+## F. COPYRIGHT / DMCA POLICY
+ 
+Create a professional copyright complaint process covering:
+ 
+- Copyrighted work identification.
+- Allegedly infringing content identification.
+- Relevant LinkCloud URL.
+- Verified complainant contact information.
+- Ownership or authorization declaration.
+- Good-faith statement.
+- Accuracy statement.
+- Signature.
+- Supporting evidence where necessary.
+- Investigation.
+- Restriction or removal where appropriate.
+- Counter-notification where legally applicable.
+- Repeat infringement procedures.
+- Complaint records.
+
+ 
+Use DMCA terminology where appropriate for international copyright information.
+ 
+Do not claim that US DMCA provisions automatically govern every complaint in India.
+ 
+Use only verified, Webmaster-authorized contact information.
+ 
+## G. DISCLAIMER
+ 
+Explain:
+ 
+- LinkCloud's independent identity.
+- Third-party platform ownership.
+- Community ownership.
+- External invitation-link limitations.
+- Accuracy and availability limitations.
+- Visitor responsibility to review community rules.
+- No guaranteed membership acceptance.
+- Reporting and moderation.
+- Technical interruptions.
+- Applicable legal responsibilities.
+
+ 
+No disclaimer may claim complete immunity from legal liability.
+ 
+***
+ 
+# PART 2 — COMPLETE DATABASE-BACKED WEBMASTER CMS
+ 
+Integrate all seven public information pages into the existing Webmaster Panel.
+ 
+Create one centralized Website Content Management section.
+ 
+Provide genuine database-backed functionality:
+ 
+- Create.
+- Read.
+- Update.
+- Delete where legally and operationally permitted.
+- Draft.
+- Preview.
+- Publish.
+- Unpublish.
+- Restore.
+- Reorder sections.
+- Manage visibility.
+- Manage SEO.
+- Manage FAQs.
+- Manage Help Center.
+- Manage contact details.
+- Manage content versions.
+
+ 
+Manage:
+ 
+- Page title.
+- Slug.
+- Description.
+- Content.
+- Sections.
+- Headings.
+- Paragraphs.
+- Lists.
+- Links.
+- Effective date.
+- Last updated date.
+- SEO title.
+- SEO description.
+- Canonical URL.
+- Open Graph information.
+- Publication status.
+
+ 
+The existing database must remain the authoritative source of truth.
+ 
+Ordinary content changes must not require application source-code modification or redeployment.
+ 
+## Authorization
+ 
+Only the existing authenticated, active and authorized `webmaster` account may perform privileged CMS operations.
+ 
+Normal registered users must never receive CMS privileges.
+ 
+Public visitors must have read-only access to published information.
+ 
+Enforce authorization through backend verification and Firestore Security Rules or the existing equivalent secure architecture.
+ 
+Hiding frontend buttons is NOT authorization.
+ 
+Never trust a role value supplied by the client.
+ 
+***
+ 
+# PART 3 — SAFE DEFAULT INSTALLATION AND SEEDING
+ 
+Install default content for:
+ 
+- All seven public pages.
+- Help Center sections.
+- FAQ entries.
+- SEO metadata.
+- CMS settings.
+- Version information.
+- Publication information.
+
+ 
+Store actual content in Firestore or the existing authoritative database.
+ 
+## Idempotent Seeding Requirements
+ 
+1. No duplicate documents.
+2. Never overwrite Webmaster-edited content.
+3. Never silently recreate intentionally deleted pages.
+4. Preserve existing content.
+5. Maintain installation and version markers.
+6. Record initialization status and timestamps.
+7. Provide Webmaster-controlled synchronization.
+8. Provide separate restore-defaults functionality.
+9. Require explicit confirmation before restoring content.
+10. Never modify unrelated users, groups, accounts or settings.
+
+ 
+Provide three distinct operations:
+ 
+- Check and synchronize missing content.
+- Update default templates.
+- Restore a selected page to default content.
+
+ 
+Clearly explain the consequences of each operation.
+ 
+Maintain version history and recovery where feasible.
+ 
+Mandatory legal information must not be permanently removed through ordinary CMS operations where continued publication is legally required.
+ 
+***
+ 
+# PART 4 — UNIVERSAL DATA PRIVACY AND PRIVATE INFORMATION PROTECTION
+ 
+THIS PART IS CRITICAL AND APPLIES TO THE ENTIRE LINKCLOUD APPLICATION.
+ 
+## A. ABSOLUTE DEFAULT: PRIVATE USER DATA IS NOT PUBLIC
+ 
+All personal and account-related information must be private by default.
+ 
+Never expose the following publicly:
+ 
+- Full personal profile information unless a specific field is intentionally designed and authorized for public display.
+- Personal email addresses.
+- Mobile numbers.
+- Date of birth.
+- Residential addresses.
+- Private profile information.
+- Authentication information.
+- Firebase UIDs and internal identifiers unless technically necessary and appropriately protected.
+- Account verification records.
+- Login history.
+- Security events.
+- Private messages, if any exist.
+- Complaint details.
+- Reporter identities.
+- Moderation history.
+- Suspension reasons and internal investigation notes.
+- Identity documents.
+- Private uploaded files.
+- Internal Webmaster records.
+
+ 
+A public community listing must not automatically expose its submitter's personal profile.
+ 
+The public must not be able to retrieve another user's private account document by changing a UID, document ID, API parameter or URL.
+ 
+## B. ROLE-BASED DATA ACCESS
+ 
+Implement strict authorization:
+ 
+**Public Visitor**
+ 
+- Read published public information.
+- Read approved public community listings.
+- Use permitted public discovery features.
+- Submit public reports through the designated validated process.
+- Never access private user records or internal moderation data.
+
+ 
+**Registered User**
+ 
+- Access their own permitted account and profile information.
+- Update their own authorized profile fields.
+- Manage their own submissions where permitted.
+- Access their own relevant account notices.
+- Never access another user's private information.
+- Never access Webmaster-only data.
+
+ 
+**Webmaster**
+ 
+- Access private information only where necessary for legitimate and authorized website administration.
+- Review relevant complaints and moderation records.
+- Perform authorized moderation and CMS operations.
+- Never expose confidential information publicly or use it for unrelated purposes.
+
+ 
+## C. FIRESTORE SECURITY
+ 
+Inspect every existing Firestore collection and document structure.
+ 
+Implement appropriate least-privilege Security Rules.
+ 
+Requirements:
+ 
+1. Deny unauthorized access by default.
+2. Allow users to read and update only their permitted records.
+3. Prevent users from changing their own role.
+4. Prevent privilege escalation.
+5. Protect private account documents.
+6. Protect complaints and evidence.
+7. Protect moderation history.
+8. Protect audit logs.
+9. Protect Webmaster settings.
+10. Protect private system configuration.
+11. Validate permitted fields and data types.
+12. Prevent unauthorized document creation and deletion.
+13. Prevent public listing queries from returning private fields.
+14. Ensure Cloud Functions and APIs perform server-side authorization.
+
+ 
+Remember that Firestore Security Rules do not automatically filter private fields from an otherwise readable document.
+ 
+Where public and private information currently share a document, inspect the safest backward-compatible method of separating or restricting access without destroying existing data.
+ 
+Do not expose entire user documents merely to display a public community listing.
+ 
+Test access using anonymous, normal-user, different-user and Webmaster identities.
+ 
+## D. FILE AND MEDIA PRIVACY
+ 
+Inspect Cloudinary configuration.
+ 
+- Do not expose private upload credentials.
+- Do not publish private identity documents.
+- Do not expose private media URLs.
+- Use appropriate access controls for private evidence.
+- Restrict access to sensitive files.
+- Validate upload types and file sizes.
+- Prevent unauthorized uploads and deletions.
+- Avoid public access to confidential evidence.
+- Do not treat an obscure URL as sufficient protection for private content.
+
+ 
+## E. DATA LEAK PREVENTION
+ 
+Review:
+ 
+- Frontend API responses.
+- Firestore queries.
+- Cloud Functions.
+- Cloudflare Workers.
+- Error messages.
+- Browser console logs.
+- Server logs.
+- Analytics.
+- Third-party integrations.
+- Export and download functionality.
+- Search indexing.
+- Public page source.
+- Network requests.
+
+ 
+Never print passwords, OTPs, access tokens, private keys, secret environment variables, identity documents or confidential personal information in logs or reports.
+ 
+Implement reasonable access logging, rate limiting and security monitoring.
+ 
+## F. DATA RETENTION AND DELETION
+ 
+Establish documented retention rules.
+ 
+- Retain information only as reasonably necessary and legally permitted.
+- Provide account deletion request functionality.
+- Explain lawful retention exceptions.
+- Restrict retained legal evidence to authorized access.
+- Delete or anonymize data when permitted and appropriate.
+- Do not permanently delete legally required records.
+- Never delete unrelated user data during a deletion request.
+
+ 
+**SUCCESS CONDITION: PRIVATE USER DATA MUST REMAIN PRIVATE THROUGHOUT REGISTRATION, LOGIN, COMMUNITY SUBMISSION, MODERATION, COMPLAINT HANDLING AND ACCOUNT DELETION.**
+ 
+***
+ 
+# PART 5 — OWNER AND PLATFORM PROTECTION
+ 
+Implement reasonable technical, operational and legal safeguards.
+ 
+1. Clearly establish LinkCloud's independent identity.
+2. Never claim ownership of third-party communities.
+3. Never falsely claim official affiliation.
+4. Explain submitter responsibilities.
+5. Provide genuine reporting and complaint facilities.
+6. Maintain appropriate complaint and moderation records.
+7. Implement lawful notice handling.
+8. Restrict or remove content where legally required or justified.
+9. Protect Owner credentials and private information.
+10. Publish only authorized contact details.
+11. Never invent company registration, licenses or certifications.
+12. Protect the existing Webmaster account and privileges.
+13. Secure administrative operations.
+14. Maintain appropriate audit logs.
+15. Review actual third-party service configurations.
+
+ 
+Do not claim that LinkCloud automatically qualifies for intermediary status or safe-harbour protection.
+ 
+Determine the actual legal classification from real platform operations.
+ 
+No website policy can guarantee immunity from legal action or liability.
+ 
+***
+ 
+# PART 6 — USER CONDUCT AND PROHIBITED ACTIVITIES
+ 
+Create a comprehensive User Conduct Policy.
+ 
+Prohibit:
+ 
+- Fraudulent submissions.
+- Fake identities.
+- Impersonation.
+- Unauthorized content.
+- Spam.
+- Phishing.
+- Malicious invitation links.
+- Financial scams.
+- Harassment.
+- Threats.
+- Doxxing and stalking.
+- Unlawful hate speech.
+- Child exploitation or abuse.
+- Illegal sexual content.
+- Copyright infringement.
+- Malware.
+- Malicious redirects.
+- Illegal activities.
+- Ranking manipulation.
+- Abuse of platform functionality.
+- Circumvention of valid suspensions.
+- Repeated malicious or knowingly false reports.
+
+ 
+Display applicable rules in Terms of Service and Help Center.
+ 
+Do not allow abusive enforcement or arbitrary punishment.
+ 
+***
+ 
+# PART 7 — USER WARNING, SUSPENSION AND BLOCKING
+ 
+Create a genuine Webmaster-controlled moderation system.
+ 
+Webmaster must be able to:
+ 
+- View moderation status.
+- Investigate reported accounts.
+- Review relevant evidence.
+- Issue warnings.
+- Restrict submission privileges.
+- Disable violating content.
+- Temporarily suspend accounts.
+- Permanently block accounts for serious or repeated violations.
+- Reinstate accounts.
+- Record reasons and evidence.
+- Set suspension start and end dates.
+- Review previous actions.
+- Maintain moderation history.
+
+ 
+## Enforcement Levels
+ 
+**Level 1 — Warning**
+ 
+Minor first-time violations.
+ 
+**Level 2 — Content Restriction**
+ 
+Reject, disable or remove violating content.
+ 
+**Level 3 — Temporary Suspension**
+ 
+Repeated or significant violations.
+ 
+**Level 4 — Permanent Block**
+ 
+Serious fraud, malicious activity, unlawful conduct or repeated serious violations, subject to appropriate review and applicable law.
+ 
+**Emergency Restriction**
+ 
+Temporary protective action where credible immediate harm, serious abuse or a lawful direction exists.
+ 
+## Fair Enforcement
+ 
+- Record a specific reason.
+- Provide notice where legally permissible.
+- Provide appropriate appeal procedures.
+- Protect reporter confidentiality.
+- Do not suspend innocent users solely because an unverified report exists.
+- Do not permanently delete accounts merely because they are suspended.
+- Preserve records where legally required.
+- Reinstate access when restrictions expire or are reversed, unless another lawful restriction applies.
+- Prevent proportionate restriction circumvention.
+
+ 
+All restrictions must be enforced through backend authorization, not merely frontend visibility.
+ 
+***
+ 
+# PART 8 — COMMUNITY MODERATION
+ 
+Provide Webmaster controls for:
+ 
+- Reviewing submissions.
+- Approving and rejecting.
+- Requesting corrections.
+- Marking inactive.
+- Disabling expired links.
+- Investigating suspicious links.
+- Removing policy-violating listings.
+- Reviewing reports.
+- Restoring listings.
+- Recording reasons.
+- Maintaining moderation history.
+
+ 
+Support appropriate states:
+ 
+- Pending
+- Approved
+- Rejected
+- Inactive
+- Reported
+- Under Review
+- Suspended
+- Removed
+
+ 
+Approval must not be described as independent verification.
+ 
+Preserve existing submission functionality.
+ 
+***
+ 
+# PART 9 — PUBLIC REPORTING AND COMPLAINT MANAGEMENT
+ 
+Allow public visitors to report:
+ 
+- Fraud.
+- Harmful content.
+- Inappropriate communities.
+- Broken links.
+- Impersonation.
+- Copyright infringement.
+- Privacy violations.
+- Illegal content.
+- Incorrect information.
+- Other policy violations.
+
+ 
+Create secure records containing:
+ 
+- Report ID.
+- Category.
+- Relevant community or URL.
+- Description.
+- Submission timestamp.
+- Status.
+- Investigation notes.
+- Action taken.
+- Resolution date.
+
+ 
+Statuses:
+ 
+- New
+- Under Review
+- Action Required
+- Resolved
+- Rejected with Reason
+
+ 
+Implement:
+ 
+- Input validation.
+- Spam prevention.
+- Rate limiting.
+- Secure evidence handling.
+- Restricted complaint access.
+- Reporter confidentiality.
+- Appropriate retention.
+- Audit history.
+
+ 
+Never make reporter identities publicly accessible.
+ 
+Do not require unnecessary identity documents or sensitive information.
+ 
+***
+ 
+# PART 10 — LEGAL NOTICES AND GRIEVANCE MANAGEMENT
+ 
+Create dedicated workflows for:
+ 
+- Copyright complaints.
+- Privacy complaints.
+- Legal notices.
+- Government directions.
+- Court directions.
+- Other legally relevant requests.
+
+ 
+Webmaster must be able to:
+ 
+- Receive complaints.
+- Record evidence.
+- Review legal grounds.
+- Request clarification.
+- Restrict content where legally required.
+- Record actions and dates.
+- Maintain relevant records.
+- Escalate matters for qualified legal review.
+- Process valid counter-notifications where applicable.
+
+ 
+Do not automatically accept allegations as proven facts.
+ 
+Do not delay action required by applicable law.
+ 
+Determine whether LinkCloud is legally required to appoint a Grievance Officer or other designated person.
+ 
+Use verified and authorized contact details only.
+ 
+Never invent an officer, appointment or address.
+ 
+***
+ 
+# PART 11 — PRIVACY AND SECURITY MANAGEMENT
+ 
+Implement appropriate protection for:
+ 
+- Authentication.
+- User profiles.
+- Private account records.
+- Public community records.
+- Complaint records.
+- Uploaded evidence.
+- Webmaster settings.
+- Security logs.
+- API endpoints.
+- Third-party integrations.
+
+ 
+Collect only necessary information.
+ 
+Explain the purpose of collection.
+ 
+Use appropriate access controls.
+ 
+Protect authentication and recovery processes.
+ 
+Prevent unauthorized access and information disclosure.
+ 
+Review Firebase, Cloudinary, Cloudflare and other actual service configurations.
+ 
+Implement applicable privacy rights and retention procedures.
+ 
+***
+ 
+# PART 12 — WEBMASTER CONTROL AND AUDIT SYSTEM
+ 
+The existing `webmaster` role remains the only privileged management authority.
+ 
+Provide management access to:
+ 
+- CMS.
+- FAQ.
+- Help Center.
+- SEO.
+- Contact details.
+- User moderation.
+- Community moderation.
+- Complaints.
+- Legal notices.
+- Security monitoring.
+- Audit history.
+- Seed management.
+- Content versions.
+
+ 
+Record sensitive actions:
+ 
+- Actor UID.
+- Action.
+- Affected record.
+- Timestamp.
+- Reason.
+- Previous and updated values where appropriate.
+- Operation result.
+
+ 
+Protect audit records against unauthorized modification and deletion.
+ 
+Use append-only or tamper-evident logging where technically feasible.
+ 
+Never expose internal security information publicly.
+ 
+Protect the existing Webmaster UID and exclusive privileges.
+ 
+***
+ 
+# PART 13 — SEO AND SEARCH ENGINE OPTIMIZATION
+ 
+Implement database-managed SEO for all seven pages.
+ 
+Requirements:
+ 
+- Unique SEO titles.
+- Unique descriptions.
+- Canonical URLs.
+- Open Graph metadata.
+- Correct indexing.
+- Sitemap integration.
+- Updated dates.
+- Internal links.
+- Correct robots directives.
+- No duplicate canonical URLs.
+- No accidental indexing of Webmaster routes.
+- No indexing of private user information or complaint records.
+
+ 
+Read the actual production canonical domain from existing Webmaster SEO Settings.
+ 
+Never assume the final domain.
+ 
+Preserve existing sitemap functionality and dynamic community URL generation.
+ 
+Do not allow unpublished CMS drafts to appear in public search results or sitemap files.
+ 
+***
+ 
+# PART 14 — PROFESSIONAL DESIGN AND VISITOR EXPERIENCE
+ 
+Follow existing LinkCloud branding.
+ 
+Provide:
+ 
+- Responsive mobile design.
+- Tablet and desktop compatibility.
+- Consistent typography.
+- Readable content.
+- Clear headings.
+- Accessible colors.
+- Breadcrumbs.
+- Working footer links.
+- Searchable FAQ.
+- Organized Help Center.
+- Loading and error states.
+- Clear navigation.
+- No broken links.
+- No empty content sections.
+
+ 
+Public visitors must understand the platform without unnecessary clarification.
+ 
+Never expose private data through UI components or page rendering.
+ 
+***
+ 
+# PART 15 — ZERO REGRESSION AND OLD DATA PROTECTION
+ 
+THIS SECTION OVERRIDES IMPLEMENTATION CONVENIENCE.
+ 
+Preserve:
+ 
+- Firebase Authentication.
+- Existing Webmaster UID.
+- Existing Webmaster role.
+- Existing user accounts.
+- Existing profiles.
+- Existing community records.
+- Existing submissions.
+- Existing invitation links.
+- Existing Firestore collections.
+- Existing Firestore documents.
+- Existing settings.
+- Existing SEO configuration.
+- Existing Cloudinary media.
+- Existing routes.
+- Existing security controls.
+- Existing working UI and features.
+
+ 
+## Before Implementation
+ 
+1. Inspect the complete existing codebase.
+2. Inspect Git status.
+3. Preserve uncommitted changes.
+4. Identify relevant files.
+5. Inspect database schemas.
+6. Inspect authentication.
+7. Inspect Webmaster authorization.
+8. Inspect Firestore Security Rules.
+9. Inspect public routes and footer links.
+10. Inspect existing SEO settings.
+11. Create an appropriate backup or Git checkpoint.
+12. Prepare a file-level implementation plan.
+13. Identify privacy and security risks.
+14. Identify possible legal and financial risks.
+
+ 
+## During Implementation
+ 
+- Extend existing components.
+- Reuse existing services.
+- Preserve backward compatibility.
+- Avoid unnecessary refactoring.
+- Do not rename collections.
+- Do not reset databases.
+- Do not delete existing records.
+- Do not weaken Security Rules.
+- Do not replace authentication.
+- Do not overwrite Webmaster credentials.
+- Do not modify unrelated settings.
+- Do not introduce duplicate systems.
+- Do not introduce unnecessary paid services.
+- Do not expose private information.
+
+ 
+If an operation could damage existing functionality or production data, STOP and report the risk before proceeding.
+ 
+***
+ 
+# PART 16 — FUNCTIONAL, SECURITY AND LEGAL ACCEPTANCE TESTING
+ 
+Test actual behavior, not merely interface appearance.
+ 
+## CMS Tests
+ 
+1. All seven pages open.
+2. Default content installation works.
+3. No placeholders remain.
+4. Public visitors can read published pages.
+5. Visitors cannot edit.
+6. Normal users cannot access CMS.
+7. Webmaster CRUD works.
+8. FAQ search works.
+9. Publishing works.
+10. SEO updates work.
+11. Seeding is idempotent.
+12. Customized content survives synchronization.
+13. Restore defaults requires confirmation.
+14. Database changes appear publicly.
+
+ 
+## Security Tests
+ 
+
+15. Unauthorized users cannot modify CMS.
+16. Unauthorized users cannot suspend accounts.
+17. Webmaster can issue warnings.
+18. Temporary suspension works.
+19. Permanent blocking works.
+20. Suspension expiry works.
+21. Reinstatement works.
+22. Suspended users cannot perform restricted operations.
+23. Community moderation works.
+24. Public reporting works.
+25. Complaint records are protected.
+26. Audit logs record actual actions.
+27. Private user data is not publicly exposed.
+
+ 
+## Private Data Protection Tests
+ 
+
+28. Anonymous visitors cannot read private user documents.
+29. User A cannot read User B's private information.
+30. Users cannot modify their own role.
+31. Users cannot gain Webmaster privileges.
+32. Private emails and mobile numbers are not returned in public APIs.
+33. Date of birth and addresses are not publicly exposed.
+34. Private complaint records cannot be accessed by ordinary users.
+35. Reporter identities remain confidential.
+36. Private evidence cannot be accessed without authorization.
+37. Security logs do not contain secrets or unnecessary personal information.
+38. Unauthorized direct Firestore access is denied.
+39. Public community pages do not expose submitter account details.
+
+ 
+## Existing Functionality Tests
+ 
+
+40. Existing authentication works.
+41. Registration works.
+42. Login works.
+43. Logout works.
+44. Email verification works.
+45. Account management works.
+46. Public browsing works.
+47. Search works.
+48. Filters work.
+49. Community details work.
+50. Invitation links work.
+51. Community submission works.
+52. Reporting works.
+53. Webmaster login works.
+54. Webmaster dashboard works.
+55. Existing routes work.
+56. Existing settings remain intact.
+57. Existing SEO continues working.
+58. Sitemap continues working.
+
+ 
+Test mobile and desktop behavior.
+ 
+A feature is PASS only when its actual behavior has been verified.
+ 
+***
+ 
+# PART 17 — INDIAN LEGAL REVIEW AND POLICY PUBLICATION GATE
+ 
+Before publishing final legal policies, investigate actual applicable requirements.
+ 
+Review:
+ 
+1. Information Technology Act, 2000.
+2. Information Technology Rules, 2021 and applicable amendments.
+3. Digital Personal Data Protection Act, 2023.
+4. Applicable DPDP Rules and commencement notifications.
+5. Copyright and intellectual property requirements.
+6. Consumer Protection requirements where applicable.
+7. Applicable grievance and notice-handling obligations.
+8. Other relevant Indian laws and regulations.
+
+ 
+Official reference sources:
+ 
+- https://www.meity.gov.in/
+- https://www.indiacode.nic.in/
+- https://www.mib.gov.in/
+
+ 
+Verify the actual commencement dates, applicability and implementation requirements.
+ 
+Do not assume every provision is already in force.
+ 
+Do not falsely claim intermediary status, safe harbour, statutory compliance or appointment of an officer.
+ 
+Identify legal uncertainties for review by a qualified Indian legal professional.
+ 
+If professional review is necessary, mark the relevant policy as awaiting approval.
+ 
+Do not automatically publish AI-generated legal policies.
+ 
+Final legal approval and publication must remain under authorized Owner control.
+ 
+***
+ 
+# PART 18 — UNIVERSAL PERSONAL, FINANCIAL AND OPERATIONAL PROTECTION
+ 
+## A. Personal Protection
+ 
+- Protect private residential addresses.
+- Protect personal mobile numbers.
+- Protect private email addresses.
+- Protect identity documents.
+- Prevent impersonation.
+- Prevent harassment, stalking and doxxing.
+- Protect users from fraudulent communications pretending to represent LinkCloud.
+- Do not collect unnecessary personal information.
+
+ 
+## B. Financial Protection
+ 
+- No hidden charges.
+- No unauthorized subscriptions.
+- No automatic paid services without approval.
+- No undisclosed financial obligations.
+- No unnecessary banking information collection.
+- Never request UPI PINs, OTPs, card security credentials or passwords unnecessarily.
+- Disclose actual charges before users agree to pay.
+- Do not promise financial guarantees.
+- Clearly distinguish independent third-party payment arrangements from LinkCloud services.
+- Obtain explicit Owner approval before introducing paid integrations or recurring expenses.
+
+ 
+Do not introduce any financial commitment on behalf of the Owner without authorization.
+ 
+## C. Public Visitor Protection
+ 
+- Allow visitors to understand LinkCloud before joining communities.
+- Explain external community ownership.
+- Encourage visitors to verify invitation links.
+- Explain that external communities operate independently.
+- Do not guarantee third-party community safety.
+- Provide accessible reporting facilities.
+- Do not force visitors to register to read public information.
+
+ 
+## D. Registered User Protection
+ 
+- Keep accounts and private profiles secure.
+- Explain moderation rules.
+- Explain restrictions and appeals.
+- Do not impose arbitrary penalties.
+- Do not permanently block innocent users based solely on unverified allegations.
+- Provide appropriate account deletion procedures.
+- Never use personal information for undisclosed purposes.
+
+ 
+## E. Owner and Webmaster Protection
+ 
+- Preserve the existing Webmaster UID.
+- Protect credentials.
+- Prevent unauthorized administrative actions.
+- Require confirmation for destructive or sensitive actions.
+- Protect audit records.
+- Never publish private Owner information.
+- Do not make unauthorized legal declarations.
+- Do not automatically accept allegations or admit liability.
+- Escalate serious matters for professional review.
+
+ 
+## F. Future Risk Assessment
+ 
+Before introducing any new feature, service, payment mechanism, integration, data collection process or moderation procedure, assess:
+ 
+1. Personal safety risks.
+2. Privacy risks.
+3. Legal obligations.
+4. Financial costs.
+5. Cybersecurity risks.
+6. Potential visitor harm.
+7. Potential registered-user harm.
+8. Effects on Owner and Webmaster authority.
+9. Existing production stability.
+
+ 
+If significant risks remain unresolved, do not activate the feature in production.
+ 
+Document the risk, proposed safeguards and required approval.
+ 
+## G. Universal Fairness
+ 
+Never protect the Owner by unfairly violating users' rights.
+ 
+Never protect a user by knowingly exposing the Owner or another person to unlawful harm.
+ 
+Protect everyone through transparency, privacy, proportionality, lawful procedures and fair treatment.
+ 
+***
+ 
+# PART 19 — FINAL IMPLEMENTATION REPORT
+ 
+After implementation and testing, provide a detailed and evidence-based report.
+ 
+Include:
+ 
+1. Initial audit findings.
+2. Existing architecture preserved.
+3. Files created, modified or deleted.
+4. Database collections affected.
+5. Documents created or modified.
+6. CMS architecture.
+7. Default seeding status.
+8. Seven public page status.
+9. Webmaster authorization results.
+10. User moderation results.
+11. Community moderation results.
+12. Complaint management results.
+13. Private data protection results.
+14. Firestore Security Rules results.
+15. API and backend security results.
+16. Cloudinary privacy results.
+17. SEO and sitemap results.
+18. Mobile and desktop results.
+19. Existing functionality regression results.
+20. Data preservation results.
+21. Legal review requirements.
+22. Financial and operational risks.
+23. Remaining problems.
+24. Deployment readiness.
+
+ 
+Use only these truthful classifications:
+ 
+- PASS — Actually tested and successful.
+- FAIL — Tested and unsuccessful.
+- NOT TESTED — Not verified.
+- BLOCKED — Unable to test due to a dependency.
+
+ 
+Provide relevant test evidence.
+ 
+Do not fabricate test results.
+ 
+Do not claim security, privacy, legal compliance or functionality merely because code has been written.
+ 
+Clearly distinguish implementation completion from successful verification.
+ 
+***
+ 
+# PART 20 — DEPLOYMENT AND OWNER APPROVAL GATE
+ 
+Do not deploy automatically.
+ 
+Do not change production configuration or introduce paid services without appropriate authorization.
+ 
+Before deployment, present:
+ 
+- Completed implementation summary.
+- Test results.
+- Data preservation confirmation.
+- Security findings.
+- Privacy findings.
+- Legal uncertainties.
+- Outstanding issues.
+- Deployment risks.
+- Any required Owner decisions.
+
+ 
+Wait for explicit deployment approval from the authorized Owner.
+ 
+Do not treat implementation instructions as automatic authorization for deployment, public legal declarations, financial commitments or external notices.
+ 
+***
+ 
+# FINAL NON-NEGOTIABLE OWNER INSTRUCTIONS
+ 
+LinkCloud is an EXISTING production project.
+ 
+Your responsibility is to UPDATE, IMPROVE, SECURE and TEST the existing application.
+ 
+Do not replace the project.
+ 
+Do not unnecessarily remove old functionality.
+ 
+Do not create duplicate architectures.
+ 
+Do not delete or reset existing users, Webmaster accounts, groups, submissions, database records or media.
+ 
+Do not weaken existing security.
+ 
+Do not expose private user information.
+ 
+Do not publish confidential Owner or Webmaster information.
+ 
+Do not fabricate legal protection, security, certifications, contact details or compliance claims.
+ 
+Do not create hidden financial obligations.
+ 
+Do not impose arbitrary user restrictions.
+ 
+Do not automatically publish unapproved legal policies.
+ 
+The existing Webmaster remains the sole privileged authority.
+ 
+The CMS must have genuine database-backed CRUD functionality.
+ 
+Default seeding must be safe, repeatable and non-destructive.
+ 
+All seven public pages must contain complete, accurate and understandable information.
+ 
+Private user information must remain private.
+ 
+Public visitors must only access information intended for public display.
+ 
+Registered users must only access their own authorized private information.
+ 
+Only the authorized Webmaster may access restricted management information for legitimate administrative purposes.
+ 
+The Owner and users must receive appropriate protection.
+ 
+No feature or policy can guarantee absolute legal immunity.
+ 
+## FINAL SUCCESS STANDARD
+ 
+LinkCloud must become a professionally managed, transparent, secure, privacy-conscious, financially responsible and legally responsible Indian community discovery platform.
+ 
+A new visitor must understand LinkCloud without confusion.
+ 
+A registered user must understand their rights and responsibilities.
+ 
+Private user information must never be publicly exposed through unauthorized access.
+ 
+The Webmaster must retain complete legitimate control.
+ 
+The Owner must receive reasonable technical, operational and legal safeguards.
+ 
+Third-party rights must be respected.
+ 
+Existing LinkCloud functionality and production data must remain preserved.
+ 
+Every important feature must be genuinely tested.
+ 
+Every unresolved risk must be reported honestly.
+ 
+**EXECUTION ORDER — STRICTLY FOLLOW:**
+ 
+1. FIRST: Complete Existing Project Audit.
+2. SECOND: Identify Risks and Prepare File-Level Implementation Plan.
+3. THIRD: Obtain Approval for Risky or Destructive Operations.
+4. FOURTH: Safely Implement the Required Upgrades.
+5. FIFTH: Implement and Verify Private Data Protection.
+6. SIXTH: Run Functional, Security, Privacy and Regression Tests.
+7. SEVENTH: Conduct Legal Review and Identify Pending Approvals.
+8. EIGHTH: Provide Complete Evidence-Based Implementation Report.
+9. FINALLY: WAIT FOR EXPLICIT OWNER DEPLOYMENT APPROVAL.
+
+ 
+**OWNER'S FINAL DIRECTIVE:**
+ 
+Protect the Owner, Webmaster, Registered Users and Public Visitors.
+ 
+Protect everyone's legitimate interests.
+ 
+Keep private data private.
+ 
+Preserve the existing production application.
+ 
+Never sacrifice security, privacy, fairness or stability for implementation convenience.
+ 
+**FIRST AUDIT. THEN PLAN. THEN SAFELY IMPLEMENT. THEN TEST. THEN REPORT. WAIT FOR DEPLOYMENT APPROVAL.**
+ 
+# LINKCLOUD — ADVANCED PRIVATE DATA ENCRYPTION &amp; WEBMASTER-ONLY ACCESS SECURITY ADDENDUM
+ 
+## CRITICAL SECURITY AUTHORITY
+ 
+This addendum supplements the existing LinkCloud Master Production Implementation Prompt.
+ 
+All requirements in this addendum are mandatory.
+ 
+The existing authenticated, active and authorized `webmaster` account must remain the ONLY privileged website management authority.
+ 
+Do not create additional Admin, Super Admin, Web Administrator or alternative privileged roles.
+ 
+The word administrator refers exclusively to the existing authorized Webmaster.
+ 
+## 1. PRIVATE DATA INVISIBILITY
+ 
+Implement strict private-data isolation throughout the entire application.
+ 
+Public visitors and ordinary registered users must not be able to discover, view, download, query or retrieve another user's private information.
+ 
+Protect:
+ 
+- Full name and private profile details.
+- Personal email addresses.
+- Verified mobile numbers.
+- Date of birth.
+- Residential addresses.
+- Private profile photographs.
+- Authentication and verification records.
+- Private account information.
+- Internal complaints.
+- Reporter identities.
+- Identity documents.
+- Private uploaded files.
+- Security and moderation records.
+
+ 
+Public community listings must never expose their submitters' private account information.
+ 
+Do not expose sensitive data through public HTML, JavaScript bundles, API responses, Firestore queries, search indexing, browser storage or downloadable files.
+ 
+## 2. ADVANCED ENCRYPTION ARCHITECTURE
+ 
+Implement strong, industry-standard encryption using appropriately maintained cryptographic libraries and secure key management.
+ 
+Mandatory protections:
+ 
+1. TLS/HTTPS encryption for all network communications.
+2. Encryption at rest for stored private information.
+3. Field-level encryption for highly sensitive personal information where appropriate.
+4. Secure encryption for private uploaded documents and evidence.
+5. Cryptographically secure key generation.
+6. Secure key storage using an appropriate managed secret or key-management service.
+7. Key rotation and recovery procedures.
+8. Strict separation between encryption keys and encrypted database records.
+9. No encryption keys in frontend code, public configuration, GitHub repositories or browser storage.
+10. No hardcoded encryption secrets.
+
+ 
+Use authenticated encryption such as AES-256-GCM or an appropriately reviewed equivalent.
+ 
+Use secure password hashing through Firebase Authentication or an appropriate modern password-hashing implementation. Never store plaintext passwords.
+ 
+Do not implement custom cryptographic algorithms.
+ 
+## 3. WEBMASTER-ONLY AUTHORIZED DECRYPTION
+ 
+Only the existing authenticated, active and authorized `webmaster` may access necessary decrypted private user information through the secure Webmaster Panel.
+ 
+Requirements:
+ 
+- Verify the actual Webmaster UID server-side.
+- Verify the active Webmaster authorization.
+- Perform decryption through trusted backend services.
+- Never trust frontend role claims.
+- Never expose encryption keys to the browser.
+- Never allow public endpoints to return decrypted private information.
+- Never allow normal users to decrypt another user's information.
+- Do not introduce additional privileged accounts.
+- Restrict access to legitimate website administration, support, security and legal purposes.
+
+ 
+The Webmaster may have authorized access to the necessary private information required for legitimate administration, but access must be controlled, authenticated and auditable.
+ 
+Do not provide unrestricted database or cryptographic-key access merely because someone can access the Webmaster interface.
+ 
+## 4. PRIVATE DATA ACCESS AUDIT
+ 
+Record sensitive access events where technically and legally appropriate.
+ 
+Record:
+ 
+- Authorized Webmaster UID.
+- Access timestamp.
+- Type of record accessed.
+- Administrative purpose.
+- Action performed.
+- Operation result.
+
+ 
+Never record plaintext passwords, OTPs, encryption keys or unnecessary sensitive personal information in audit logs.
+ 
+Protect audit records against unauthorized modification and deletion.
+ 
+## 5. USER AND PUBLIC ISOLATION TESTING
+ 
+Perform actual negative security tests.
+ 
+Verify:
+ 
+- Anonymous visitors cannot access private user documents.
+- User A cannot retrieve User B's private information.
+- Changing a UID or document ID does not bypass authorization.
+- Public APIs never return private account fields.
+- Public community pages do not expose submitter details.
+- Normal users cannot obtain Webmaster privileges.
+- Normal users cannot decrypt private information.
+- Private files cannot be accessed through guessed or leaked URLs.
+- Frontend source code does not contain private credentials or encryption keys.
+- Unauthorized direct Firestore requests are denied.
+- Unauthorized backend decryption requests are denied.
+
+ 
+A security test is PASS only after actual verification.
+ 
+## 6. DATA COLLECTION TRANSPARENCY
+ 
+Do not hide legally required privacy information from users.
+ 
+Public visitors must not receive private personal records, but the Privacy Policy must accurately disclose:
+ 
+- What information LinkCloud collects.
+- Why information is collected.
+- How information is protected.
+- Which authorized personnel may access it.
+- Applicable retention periods.
+- Account deletion procedures.
+- Relevant third-party service providers.
+
+ 
+Do not publish internal security configurations, encryption keys, private infrastructure details or sensitive Webmaster information.
+ 
+## 7. SECURE WEBMASTER PANEL
+ 
+Implement additional protection for sensitive Webmaster operations:
+ 
+- Reauthentication for highly sensitive operations where appropriate.
+- Secure session management.
+- Protection against CSRF, XSS and session theft.
+- Rate limiting.
+- Secure account recovery.
+- Session expiry.
+- Access monitoring.
+- Confirmation for destructive operations.
+- Protection against unauthorized privilege escalation.
+
+ 
+Never allow an inactive, compromised or unauthorized account to access private records.
+ 
+## 8. NO MISUSE OF PRIVATE INFORMATION
+ 
+The Webmaster must use private information exclusively for legitimate and authorized purposes.
+ 
+Prohibit:
+ 
+- Unauthorized disclosure.
+- Personal exploitation.
+- Harassment.
+- Unauthorized sharing.
+- Unrelated commercial use.
+- Unnecessary copying or downloading.
+- Unauthorized modification.
+- Disclosure to third parties without an appropriate lawful basis.
+
+ 
+Implement appropriate safeguards and audit procedures to discourage and detect misuse.
+ 
+## 9. CRYPTOGRAPHIC LIMITATIONS AND BACKWARD COMPATIBILITY
+ 
+Before encrypting existing production data:
+ 
+1. Audit existing database fields.
+2. Identify existing application dependencies.
+3. Prepare a secure migration plan.
+4. Preserve existing records.
+5. Test encryption and decryption.
+6. Verify recovery procedures.
+7. Prevent accidental permanent data loss.
+8. Preserve backward compatibility during migration.
+
+ 
+Never overwrite or encrypt existing production data without a verified recovery plan.
+ 
+Never claim that existing records are encrypted unless the actual encryption has been verified.
+ 
+## 10. FINAL SECURITY ACCEPTANCE CONDITION
+ 
+The following access hierarchy is mandatory:
+ 
+PUBLIC VISITOR: Published public information only.
+ 
+NORMAL REGISTERED USER: Their own authorized account information and permitted functionality only.
+ 
+EXISTING AUTHORIZED WEBMASTER: Authorized administrative access to necessary private user information through secured and audited backend operations.
+ 
+NO OTHER PRIVILEGED ROLE: No additional Admin, Super Admin or Web Administrator account.
+ 
+Private information must remain inaccessible to unauthorized users, protected by strong encryption and secure access controls.
+ 
+Do not claim absolute security or zero possibility of compromise.
+ 
+Report every unverified protection as NOT TESTED or BLOCKED.
+ 
+Do not deploy until the Owner has reviewed the security results and explicitly approved deployment.
+ 
+
+## FINAL INTEGRATED IMPLEMENTATION AUTHORITY
+ 
+Treat the Ultimate Master Production Implementation Prompt and Advanced Private Data Encryption &amp; Webmaster-Only Access Security Addendum as one unified implementation specification.
+ 
+All requirements are complementary and mandatory.
+ 
+Where overlapping requirements exist, apply the stricter security, privacy, data-preservation and authorization requirement.
+ 
+The existing Webmaster must retain genuine database-backed full CRUD management capabilities across all authorized CMS, FAQ, Help Center, SEO, user moderation, community moderation, complaint management, settings and other permitted management modules.
+ 
+CRUD must work through secure backend operations and the existing authoritative database, not merely through frontend interfaces.
+ 
+Private user information must remain encrypted and inaccessible to public visitors and ordinary users. Authorized Webmaster access must be securely authenticated, purpose-controlled and audited.
+ 
+Do not interpret Webmaster access as permission to misuse, unnecessarily disclose or commercially exploit personal information.
+ 
+Do not begin risky production data migrations, destructive operations, legal publication or deployment without the required approval.
+ 
+FIRST AUDIT BOTH SPECIFICATIONS AGAINST THE EXISTING CODEBASE. IDENTIFY CONFLICTS, RISKS AND MISSING REQUIREMENTS. THEN PRESENT THE FILE-LEVEL IMPLEMENTATION PLAN BEFORE MAKING CHANGES.
+ 
+Preserve all existing production data, functionality, Webmaster identity and architecture.
