@@ -8,10 +8,10 @@ import {
   getFeaturedGroups,
   getLatestGroups,
   getSiteSettings,
-  getFAQs,
   logVisitorHit,
   logSearchQuery,
 } from "@/lib/firestore";
+import { fetchPublicFaqs } from "@/lib/cms-client";
 import type { Group, SiteSettings, FAQItem } from "@/lib/types";
 import { useAuth } from "@/contexts/AuthContext";
 import { useSiteSettings } from "@/contexts/SiteSettingsContext";
@@ -82,13 +82,13 @@ export default function Home() {
           getTrendingGroups(),
           getLatestGroups(),
           getApprovedGroups(),
-          getFAQs(),
+          fetchPublicFaqs().catch(() => []),
         ]);
         setFeatured(feat);
         setPopular(trend);
         setLatest(late);
         setAllGroupsCount(all.length);
-        setFaqs(faqData);
+        setFaqs(faqData.filter((f) => f.enabled !== false && f.status !== "draft"));
 
         const joins = all.reduce((sum, g) => sum + (g.joinCount ?? 0), 0);
         setTotalJoins(joins);

@@ -2,6 +2,7 @@ import type { IncomingMessage, ServerResponse } from "http";
 import { initializeApp, getApps, cert, type App } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
 import { getFirestore } from "firebase-admin/firestore";
+import { validateAdminSettingsPayload } from "../lib/settings-validation";
 
 let adminApp: App | null = null;
 
@@ -869,6 +870,12 @@ export async function handleAdminSettingsGetRequest(
     return;
   }
 
+  const authResult = await verifyWebmasterToken(req);
+  if (!authResult.valid) {
+    sendJson(res, { error: authResult.error || "Unauthorized" }, authResult.statusCode || 401);
+    return;
+  }
+
   const app = getFirebaseAdminApp();
   if (!app) {
     sendJson(res, { error: "Firestore service unavailable." }, 503);
@@ -913,95 +920,11 @@ export async function handleAdminSettingsUpdateRequest(
     return;
   }
 
-  // 2. Parse body
+  // 2. Parse & validate body via shared isomorphic validator (identical to Cloudflare)
   const body = await parseBody(req);
-  if (!body || typeof body !== "object" || Array.isArray(body)) {
-    sendJson(res, { error: "Malformed payload: Expected JSON object." }, 400);
-    return;
-  }
-
-  // 3. Prevent Privilege Escalation & Unauthorized field injection
-  const forbiddenKeys = [
-    "role",
-    "roles",
-    "uid",
-    "accountUid",
-    "isAdmin",
-    "isWebmaster",
-    "permissions",
-    "password",
-    "salt",
-    "token",
-  ];
-  for (const key of forbiddenKeys) {
-    if (key in body) {
-      delete body[key];
-    }
-  }
-
-  // 4. Validate Structured Data (JSON-LD) if present
-  if (typeof body.structuredDataJson === "string" && body.structuredDataJson.trim().length > 0) {
-    try {
-      JSON.parse(body.structuredDataJson);
-    } catch (parseErr: any) {
-      sendJson(
-        res,
-        {
-          error: `Invalid JSON syntax in structuredDataJson: ${parseErr.message}`,
-        },
-        400
-      );
-      return;
-    }
-  }
-
-  // 5. Sanitize & Validate URLs to prevent script injection (javascript: or data: schemes)
-  const urlFields = [
-    "canonicalUrl",
-    "ogImage",
-    "twitterCardImage",
-    "siteLogo",
-    "favicon",
-    "homepageBanner",
-    "footerLogo",
-    "googleMapUrl",
-    "facebookUrl",
-    "instagramUrl",
-    "telegramUrl",
-    "whatsappUrl",
-    "youtubeUrl",
-    "linkedinUrl",
-    "twitterUrl",
-    "redditUrl",
-    "githubUrl",
-  ];
-
-  for (const field of urlFields) {
-    if (typeof body[field] === "string" && body[field].trim().length > 0) {
-      const val = body[field].trim().toLowerCase();
-      if (val.startsWith("javascript:") || val.startsWith("data:") || val.startsWith("vbscript:")) {
-        sendJson(res, { error: `Disallowed URL protocol in field '${field}'.` }, 400);
-        return;
-      }
-    }
-  }
-
-  // 6. Validate Canonical URL format
-  if (typeof body.canonicalUrl === "string" && body.canonicalUrl.trim().length > 0) {
-    const trimmedCanonical = body.canonicalUrl.trim();
-    if (!trimmedCanonical.startsWith("http://") && !trimmedCanonical.startsWith("https://")) {
-      sendJson(res, { error: "Canonical URL must start with http:// or https://" }, 400);
-      return;
-    }
-  }
-
-  // 7. Enforce string length bounds
-  if (typeof body.metaTitle === "string" && body.metaTitle.length > 200) {
-    sendJson(res, { error: "Meta Title cannot exceed 200 characters." }, 400);
-    return;
-  }
-  if (typeof body.metaDescription === "string" && body.metaDescription.length > 500) {
-    sendJson(res, { error: "Meta Description cannot exceed 500 characters." }, 400);
+  const validation = validateAdminSettingsPayload(body);
+  if (!validation.valid || !validation.sanitized) {
+    sendJson(res, { error: validation.error || "Invalid settings payload." }, 400);
     return;
   }
 
@@ -1016,33 +939,26 @@ export async function handleAdminSettingsUpdateRequest(
     const nowIso = new Date().toISOString();
 
     const updatePayload = {
-      ...body,
+      ...validation.sanitized,
       updatedAt: nowIso,
       updatedByUid: authResult.uid,
       updatedByEmail: authResult.email,
     };
 
-    // Atomic batch write: settings/site, settings/staticPages sync, and audit_logs
+    // Atomic batch write: settings/site (merge preserves legacy compatibility fields) and audit_logs
     const batch = firestore.batch();
 
     // 1. settings/site
     const siteSettingsRef = firestore.collection("settings").doc("site");
     batch.set(siteSettingsRef, updatePayload, { merge: true });
 
-    // 2. settings/staticPages (keep legal copy in sync)
-    const staticPagesRef = firestore.collection("settings").doc("staticPages");
-    const staticSync: Record<string, any> = { updatedAt: nowIso };
-    if (typeof body.privacyPolicyContent === "string") staticSync.privacy = body.privacyPolicyContent;
-    if (typeof body.termsContent === "string") staticSync.terms = body.termsContent;
-    if (typeof body.dmcaContent === "string") staticSync.dmca = body.dmcaContent;
-    if (typeof body.disclaimerContent === "string") staticSync.disclaimer = body.disclaimerContent;
-    batch.set(staticPagesRef, staticSync, { merge: true });
-
-    // 3. Append tamper-proof audit log
+    // 2. Append tamper-proof audit log
     const auditRef = firestore.collection("audit_logs").doc();
     batch.set(auditRef, {
       action: "Settings Changed",
-      details: "Updated platform settings & SEO configuration via Webmaster API",
+      details: "Updated platform settings & global SEO configuration via Webmaster API",
+      adminUid: authResult.uid || "webmaster",
+      adminEmail: authResult.email || "webmaster@linkcloud.in",
       actorUid: authResult.uid || "webmaster",
       actorEmail: authResult.email || "webmaster@linkcloud.in",
       createdAt: nowIso,

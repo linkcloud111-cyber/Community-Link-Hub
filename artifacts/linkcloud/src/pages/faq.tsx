@@ -1,60 +1,116 @@
-import { useState, useEffect } from "react";
-import { HelpCircle, ChevronDown, Search, MessageSquare, ArrowRight } from "lucide-react";
+import { useState, useEffect, useMemo } from "react";
+import { HelpCircle, ChevronDown, Search, MessageSquare, ArrowRight, Loader2 } from "lucide-react";
 import { Link } from "wouter";
-import { getFAQs } from "@/lib/firestore";
+import { fetchPublicFaqs, usePublishedCmsPage } from "@/lib/cms-client";
+import { usePageSEO } from "@/lib/page-meta";
+import CmsBlockRenderer from "@/components/cms/CmsBlockRenderer";
 import type { FAQItem } from "@/lib/types";
 
-const DEFAULT_FAQS = [
-  {
-    q: "Is LinkCloud free to use?",
-    a: "Yes! Visitors can freely browse, search, copy invite links, and join communities without paying any fee or even registering an account.",
-  },
-  {
-    q: "Do I need an account to browse or join communities?",
-    a: "No. Visitors can discover and join all approved groups directly. Creating an account is only required if you want to submit your own communities or manage listings.",
-  },
-  {
-    q: "How do community approvals work?",
-    a: "When a user submits a group link, our Webmaster verifies the group name, description, rules, and invite link validity. Once approved, it appears in public search results.",
-  },
-  {
-    q: "What should I do if an invite link is broken or invalid?",
-    a: "On any group details page or card, click 'Report Group' and select 'Invalid Link'. Our system will flag the listing for re-verification.",
-  },
-  {
-    q: "Which messaging platforms are supported on LinkCloud?",
-    a: "We support WhatsApp, Telegram, Discord, Facebook Groups, Instagram Broadcast Channels, X (Twitter) Communities, LinkedIn Groups, YouTube Channels, and Reddit.",
-  },
-  {
-    q: "How can I remove my community listing from LinkCloud?",
-    a: "If you listed the group from your account, you can edit or delete it from your User Dashboard. Alternatively, contact the webmaster or submit a removal request via our Complaint form.",
-  },
-  {
-    q: "How do I report spam, fake groups, or inappropriate content?",
-    a: "You can click 'Report Group' on the community details page, or use our official Complaint page. Reports are processed by the Webmaster within 24 hours.",
-  },
-];
-
 export default function FAQPage() {
+  const { page, published, loading: pageLoading } = usePublishedCmsPage("faq");
   const [search, setSearch] = useState("");
+  const [selectedCategory, setSelectedCategory] = useState("ALL");
   const [openIdx, setOpenIdx] = useState<number | null>(0);
-  const [faqs, setFaqs] = useState<{ q: string; a: string }[]>(DEFAULT_FAQS);
+  const [faqs, setFaqs] = useState<FAQItem[]>([]);
+  const [faqsLoading, setFaqsLoading] = useState(true);
+
+  usePageSEO({
+    title: published && page ? page.seo?.seoTitle || page.title : "Frequently Asked Questions",
+    subtitle: published && page ? page.subtitle || "Help & Platform Answers" : "Help & Platform Answers",
+    description:
+      published && page
+        ? page.seo?.seoDescription ||
+          page.description ||
+          "Find answers to common questions about discovering communities, submitting listings, and safety on LinkCloud."
+        : "Find answers to common questions about discovering communities, submitting listings, and safety on LinkCloud.",
+    keywords: published && page ? page.seo?.seoKeywords : undefined,
+    canonicalPath: "/faq",
+    canonicalUrl: published && page ? page.seo?.canonicalUrl : undefined,
+    ogTitle: published && page ? page.seo?.ogTitle : undefined,
+    ogDescription: published && page ? page.seo?.ogDescription : undefined,
+    ogImage: published && page ? page.seo?.ogImage : undefined,
+    noIndex:
+      published && page
+        ? Boolean(page.seo?.noIndex)
+        : pageLoading || faqsLoading || faqs.length === 0,
+  });
 
   useEffect(() => {
-    getFAQs().then((items: FAQItem[]) => {
-      if (items && items.length > 0) {
-        const dynamicFaqs = items.map((f) => ({ q: f.question, a: f.answer }));
-        // Combine dynamic firestore FAQs with default FAQs
-        setFaqs([...dynamicFaqs, ...DEFAULT_FAQS]);
-      }
-    }).catch(console.error);
+    let active = true;
+    setFaqsLoading(true);
+    fetchPublicFaqs()
+      .then((items) => {
+        if (!active) return;
+        setFaqs(items.filter((f) => f.enabled !== false && f.status !== "draft"));
+      })
+      .catch(() => {
+        if (active) setFaqs([]);
+      })
+      .finally(() => {
+        if (active) setFaqsLoading(false);
+      });
+    return () => {
+      active = false;
+    };
   }, []);
 
-  const filteredFaqs = faqs.filter(
-    (item) =>
-      item.q.toLowerCase().includes(search.toLowerCase()) ||
-      item.a.toLowerCase().includes(search.toLowerCase())
-  );
+  // Merge published FAQ collection items with any published faq_item blocks from CMS (non-duplicate)
+  const combinedFaqs = useMemo(() => {
+    const list: Array<{ id: string; question: string; answer: string; category: string }> = faqs.map(
+      (f) => ({
+        id: f.id,
+        question: f.question,
+        answer: f.answer,
+        category: f.category || "General",
+      })
+    );
+    const seen = new Set(list.map((i) => i.question.trim().toLowerCase()));
+    if (published && page?.blocks) {
+      page.blocks.forEach((b, idx) => {
+        if (b.type === "faq_item" && b.question && b.answer) {
+          const norm = b.question.trim().toLowerCase();
+          if (!seen.has(norm)) {
+            seen.add(norm);
+            list.push({
+              id: b.id || `cms_faq_${idx}`,
+              question: b.question,
+              answer: b.answer,
+              category: "General",
+            });
+          }
+        }
+      });
+    }
+    return list;
+  }, [faqs, published, page]);
+
+  const nonFaqCmsBlocks = useMemo(() => {
+    if (!published || !page?.blocks) return [];
+    return page.blocks.filter((b) => b.type !== "faq_item");
+  }, [published, page]);
+
+  const categories = useMemo(() => {
+    const set = new Set<string>();
+    combinedFaqs.forEach((f) => {
+      if (f.category) set.add(f.category);
+    });
+    return ["ALL", ...Array.from(set)];
+  }, [combinedFaqs]);
+
+  const filteredFaqs = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return combinedFaqs.filter((item) => {
+      const catOk = selectedCategory === "ALL" || item.category === selectedCategory;
+      const textOk =
+        !q ||
+        item.question.toLowerCase().includes(q) ||
+        item.answer.toLowerCase().includes(q) ||
+        item.category.toLowerCase().includes(q);
+      return catOk && textOk;
+    });
+  }, [combinedFaqs, search, selectedCategory]);
+
+  const isLoading = pageLoading && faqsLoading;
 
   return (
     <div className="max-w-3xl mx-auto space-y-8 pb-20">
@@ -62,27 +118,71 @@ export default function FAQPage() {
         <span className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-primary/10 text-primary text-xs font-semibold uppercase tracking-wider">
           Got Questions?
         </span>
-        <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight">Frequently Asked Questions</h1>
+        <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight">
+          {published && page?.title ? page.title : "Frequently Asked Questions"}
+        </h1>
         <p className="text-sm sm:text-base text-muted-foreground">
-          Find answers to common questions about joining communities, submitting listings, and site safety.
+          {published && page?.description
+            ? page.description
+            : "Find answers to common questions about joining communities, submitting listings, and site safety."}
         </p>
       </div>
 
-      {/* Search Input */}
-      <div className="relative">
-        <Search className="w-5 h-5 absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground" />
-        <input
-          type="text"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search questions or keywords..."
-          className="w-full pl-12 pr-4 py-3.5 bg-card border border-border/80 rounded-2xl text-sm focus:ring-2 focus:ring-primary outline-none transition shadow-sm"
-        />
+      {nonFaqCmsBlocks.length > 0 && (
+        <div className="bg-card border border-border/80 rounded-3xl p-6 shadow-sm">
+          <CmsBlockRenderer blocks={nonFaqCmsBlocks} compact />
+        </div>
+      )}
+
+      {/* Search Input & Category Filters */}
+      <div className="space-y-3">
+        <div className="relative">
+          <Search className="w-5 h-5 absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground" />
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search questions or keywords..."
+            className="w-full pl-12 pr-4 py-3.5 bg-card border border-border/80 rounded-2xl text-sm focus:ring-2 focus:ring-primary outline-none transition shadow-sm"
+          />
+        </div>
+
+        {categories.length > 2 && (
+          <div className="flex flex-wrap gap-2">
+            {categories.map((cat) => (
+              <button
+                key={cat}
+                type="button"
+                onClick={() => setSelectedCategory(cat)}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition ${
+                  selectedCategory === cat
+                    ? "bg-primary text-primary-foreground border-primary"
+                    : "bg-card text-muted-foreground border-border hover:text-foreground"
+                }`}
+              >
+                {cat === "ALL" ? "All Categories" : cat}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Accordion List */}
       <div className="space-y-3">
-        {filteredFaqs.length === 0 ? (
+        {isLoading ? (
+          <div className="text-center py-12 bg-card border border-border rounded-3xl p-6 flex flex-col items-center gap-2 text-muted-foreground">
+            <Loader2 className="w-6 h-6 animate-spin text-primary" />
+            <p className="text-xs font-medium">Loading published FAQs...</p>
+          </div>
+        ) : combinedFaqs.length === 0 ? (
+          <div className="text-center py-10 bg-card border border-border rounded-3xl p-6 space-y-2">
+            <HelpCircle className="w-10 h-10 text-muted-foreground mx-auto mb-1" />
+            <p className="text-sm font-semibold">No FAQs are currently published.</p>
+            <p className="text-xs text-muted-foreground max-w-md mx-auto">
+              Published frequently asked questions from the Webmaster CMS will appear here automatically.
+            </p>
+          </div>
+        ) : filteredFaqs.length === 0 ? (
           <div className="text-center py-10 bg-card border border-border rounded-3xl p-6">
             <HelpCircle className="w-10 h-10 text-muted-foreground mx-auto mb-2" />
             <p className="text-sm font-semibold">No questions matched your search query.</p>
@@ -92,14 +192,22 @@ export default function FAQPage() {
             const isOpen = openIdx === idx;
             return (
               <div
-                key={idx}
+                key={faq.id}
                 className="bg-card border border-border/80 rounded-2xl overflow-hidden transition-all shadow-sm"
               >
                 <button
+                  type="button"
                   onClick={() => setOpenIdx(isOpen ? null : idx)}
                   className="w-full p-5 text-left font-bold text-sm sm:text-base flex items-center justify-between gap-4 hover:bg-muted/40 transition-colors"
                 >
-                  <span>{faq.q}</span>
+                  <div className="space-y-1">
+                    {faq.category && (
+                      <span className="inline-block text-[10px] font-extrabold uppercase tracking-wider text-primary">
+                        {faq.category}
+                      </span>
+                    )}
+                    <div className="text-foreground">{faq.question}</div>
+                  </div>
                   <ChevronDown
                     className={`w-5 h-5 text-muted-foreground flex-shrink-0 transition-transform duration-200 ${
                       isOpen ? "rotate-180 text-primary" : ""
@@ -107,8 +215,8 @@ export default function FAQPage() {
                   />
                 </button>
                 {isOpen && (
-                  <div className="px-5 pb-5 text-xs sm:text-sm text-muted-foreground leading-relaxed border-t border-border/40 pt-3">
-                    {faq.a}
+                  <div className="px-5 pb-5 text-xs sm:text-sm text-muted-foreground leading-relaxed border-t border-border/40 pt-3 whitespace-pre-line">
+                    {faq.answer}
                   </div>
                 )}
               </div>

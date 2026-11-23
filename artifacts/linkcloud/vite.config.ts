@@ -47,11 +47,69 @@ function adminApiPlugin(): Plugin {
         handleTelemetryVisitorHit,
         handleTelemetrySearchQuery,
       } = await server.ssrLoadModule('/src/server/telemetry-api.ts');
+      const {
+        handlePublicCmsPagesGetRequest,
+        handlePublicFaqsGetRequest,
+        handlePublicHelpArticlesGetRequest,
+        handleAdminCmsPagesGetRequest,
+        handleAdminCmsDraftSaveRequest,
+        handleAdminCmsPublishRequest,
+        handleAdminCmsUnpublishRequest,
+        handleAdminCmsDeleteRequest,
+        handleAdminCmsVersionsRequest,
+        handleAdminCmsRestoreRequest,
+        handleAdminCmsSeedRequest,
+        handleAdminCmsRefreshRequest,
+        handleAdminFaqsRequest,
+        handleAdminHelpArticlesRequest,
+      } = await server.ssrLoadModule('/src/server/cms-api.ts');
 
       server.middlewares.use((req, res, next) => {
         const url = req.url?.split('?')[0];
         if (url === '/api/announcements') {
           return handleAnnouncementsGetRequest(req, res);
+        }
+        if (url === '/api/cms/pages') {
+          return handlePublicCmsPagesGetRequest(req, res);
+        }
+        if (url === '/api/faqs') {
+          return handlePublicFaqsGetRequest(req, res);
+        }
+        if (url === '/api/help-articles') {
+          return handlePublicHelpArticlesGetRequest(req, res);
+        }
+        if (url === '/api/admin/cms/pages') {
+          return handleAdminCmsPagesGetRequest(req, res);
+        }
+        if (url === '/api/admin/cms/draft') {
+          return handleAdminCmsDraftSaveRequest(req, res);
+        }
+        if (url === '/api/admin/cms/publish') {
+          return handleAdminCmsPublishRequest(req, res);
+        }
+        if (url === '/api/admin/cms/unpublish') {
+          return handleAdminCmsUnpublishRequest(req, res);
+        }
+        if (url === '/api/admin/cms/page') {
+          return handleAdminCmsDeleteRequest(req, res);
+        }
+        if (url === '/api/admin/cms/versions') {
+          return handleAdminCmsVersionsRequest(req, res);
+        }
+        if (url === '/api/admin/cms/restore') {
+          return handleAdminCmsRestoreRequest(req, res);
+        }
+        if (url === '/api/admin/cms/seed') {
+          return handleAdminCmsSeedRequest(req, res);
+        }
+        if (url === '/api/admin/cms/refresh') {
+          return handleAdminCmsRefreshRequest(req, res);
+        }
+        if (url === '/api/admin/faqs') {
+          return handleAdminFaqsRequest(req, res);
+        }
+        if (url === '/api/admin/help-articles') {
+          return handleAdminHelpArticlesRequest(req, res);
         }
         if (url === '/api/admin/announcements') {
           if (req.method === 'GET') {

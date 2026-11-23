@@ -3376,11 +3376,11 @@ export async function getSiteSettings(): Promise<SiteSettings> {
       { title: "Categorized Communities", desc: "Jobs, Study, Crypto, Entertainment, Gaming, Tech, and more." }
     ],
 
-    // Legal Pages
-    privacyPolicyContent: "LinkCloud respects user privacy. We do not store or inspect private chat content, messages, or member lists.",
-    termsContent: "By using LinkCloud, users agree not to submit illegal, spam, copyrighted, or prohibited group links.",
-    dmcaContent: "To file a copyright takedown request under DMCA, please email support@linkcloud.in with link details.",
-    disclaimerContent: "LinkCloud is a public indexing platform and is not affiliated with WhatsApp, Telegram, Discord, Meta, or Google.",
+    // Legal Pages (must be published explicitly via CMS; never default to legacy placeholders)
+    privacyPolicyContent: "",
+    termsContent: "",
+    dmcaContent: "",
+    disclaimerContent: "",
 
     // SEO Management
     metaTitle: "LinkCloud - India's #1 WhatsApp, Telegram & Discord Group Directory",
@@ -3801,15 +3801,13 @@ export async function createUserNotification(
 export async function getFAQs(): Promise<import("./types").FAQItem[]> {
   try {
     const snap = await getDocs(collection(db, "faqs"));
-    const faqs = snap.docs.map((d) => ({ id: d.id, ...d.data() } as import("./types").FAQItem));
+    const faqs = snap.docs
+      .map((d) => ({ id: d.id, ...d.data() } as import("./types").FAQItem))
+      .filter((f) => f.enabled !== false && f.status !== "draft");
     return faqs.sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
   } catch (err) {
     console.warn("Error getting FAQs:", err);
-    return [
-      { id: "1", question: "How do I submit my WhatsApp group to LinkCloud?", answer: "Click 'Submit Group' at the top, select platform, category, state, and paste your group invite link.", category: "General", enabled: true, sortOrder: 1 },
-      { id: "2", question: "Is joining groups on LinkCloud free?", answer: "Yes, joining and discovering public groups on LinkCloud is 100% free forever.", category: "General", enabled: true, sortOrder: 2 },
-      { id: "3", question: "How can I report a broken or inappropriate group link?", answer: "Click the 'Report' button on any group card or group details page.", category: "Safety", enabled: true, sortOrder: 3 },
-    ];
+    return [];
   }
 }
 
@@ -3831,13 +3829,13 @@ export async function deleteFAQ(id: string): Promise<void> {
 export async function getHelpArticles(): Promise<import("./types").HelpArticle[]> {
   try {
     const snap = await getDocs(collection(db, "help_articles"));
-    return snap.docs.map((d) => ({ id: d.id, ...d.data() } as import("./types").HelpArticle));
+    const articles = snap.docs
+      .map((d) => ({ id: d.id, ...d.data() } as import("./types").HelpArticle))
+      .filter((a) => a.enabled !== false && a.status !== "draft");
+    return articles.sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
   } catch (err) {
     console.warn("Error getting help articles:", err);
-    return [
-      { id: "h1", category: "Account & Login", title: "How to register and verify your profile", content: "You can sign up using Email, Google, or Phone number.", views: 120 },
-      { id: "h2", category: "Group Submissions", title: "Why was my group submission rejected?", content: "Groups may be rejected for dead links, missing rules, or adult content.", views: 240 },
-    ];
+    return [];
   }
 }
 
