@@ -54,52 +54,33 @@ export default function FAQPage() {
     };
   }, []);
 
-  // Merge published FAQ collection items with any published faq_item blocks from CMS (non-duplicate)
-  const combinedFaqs = useMemo(() => {
-    const list: Array<{ id: string; question: string; answer: string; category: string }> = faqs.map(
-      (f) => ({
-        id: f.id,
-        question: f.question,
-        answer: f.answer,
-        category: f.category || "General",
-      })
-    );
-    const seen = new Set(list.map((i) => i.question.trim().toLowerCase()));
-    if (published && page?.blocks) {
-      page.blocks.forEach((b, idx) => {
-        if (b.type === "faq_item" && b.question && b.answer) {
-          const norm = b.question.trim().toLowerCase();
-          if (!seen.has(norm)) {
-            seen.add(norm);
-            list.push({
-              id: b.id || `cms_faq_${idx}`,
-              question: b.question,
-              answer: b.answer,
-              category: "General",
-            });
-          }
-        }
-      });
-    }
-    return list;
-  }, [faqs, published, page]);
+  // Authoritative Q&A entries come exclusively from the faqs/* collection (/api/faqs)
+  const authoritativeFaqs = useMemo(() => {
+    return faqs.map((f) => ({
+      id: f.id,
+      question: f.question,
+      answer: f.answer,
+      category: f.category || "General",
+    }));
+  }, [faqs]);
 
-  const nonFaqCmsBlocks = useMemo(() => {
+  // Render only non-Q&A CMS layout blocks (intro, notices, contact CTA) on /faq
+  const pageLayoutBlocks = useMemo(() => {
     if (!published || !page?.blocks) return [];
     return page.blocks.filter((b) => b.type !== "faq_item");
   }, [published, page]);
 
   const categories = useMemo(() => {
     const set = new Set<string>();
-    combinedFaqs.forEach((f) => {
+    authoritativeFaqs.forEach((f) => {
       if (f.category) set.add(f.category);
     });
     return ["ALL", ...Array.from(set)];
-  }, [combinedFaqs]);
+  }, [authoritativeFaqs]);
 
   const filteredFaqs = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return combinedFaqs.filter((item) => {
+    return authoritativeFaqs.filter((item) => {
       const catOk = selectedCategory === "ALL" || item.category === selectedCategory;
       const textOk =
         !q ||
@@ -108,7 +89,7 @@ export default function FAQPage() {
         item.category.toLowerCase().includes(q);
       return catOk && textOk;
     });
-  }, [combinedFaqs, search, selectedCategory]);
+  }, [authoritativeFaqs, search, selectedCategory]);
 
   const isLoading = pageLoading && faqsLoading;
 
@@ -128,9 +109,9 @@ export default function FAQPage() {
         </p>
       </div>
 
-      {nonFaqCmsBlocks.length > 0 && (
+      {pageLayoutBlocks.length > 0 && (
         <div className="bg-card border border-border/80 rounded-3xl p-6 shadow-sm">
-          <CmsBlockRenderer blocks={nonFaqCmsBlocks} compact />
+          <CmsBlockRenderer blocks={pageLayoutBlocks} compact />
         </div>
       )}
 
@@ -174,7 +155,7 @@ export default function FAQPage() {
             <Loader2 className="w-6 h-6 animate-spin text-primary" />
             <p className="text-xs font-medium">Loading published FAQs...</p>
           </div>
-        ) : combinedFaqs.length === 0 ? (
+        ) : authoritativeFaqs.length === 0 ? (
           <div className="text-center py-10 bg-card border border-border rounded-3xl p-6 space-y-2">
             <HelpCircle className="w-10 h-10 text-muted-foreground mx-auto mb-1" />
             <p className="text-sm font-semibold">No FAQs are currently published.</p>

@@ -22,7 +22,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import type {
-  CmsBlockType,
+  AuthorableCmsBlockType,
   CmsPageAdminOverview,
   CmsPageDocument,
   CmsSectionBlock,
@@ -58,19 +58,18 @@ interface CmsPageEditorModalProps {
 
 type EditorSubTab = "content" | "seo" | "preview" | "history";
 
-const BLOCK_TYPE_LABELS: Record<CmsBlockType, string> = {
+const BLOCK_TYPE_LABELS: Record<AuthorableCmsBlockType, string> = {
   heading: "Section Heading",
   paragraph: "Paragraph Section",
   bullet_list: "Bulleted List",
   numbered_list: "Numbered List",
   link: "Action Link",
   notice: "Important Notice",
-  faq_item: "FAQ Q&A Block",
   steps: "Step-by-Step Guide",
   contact_info: "Contact Info",
 };
 
-function createEmptyBlock(type: CmsBlockType): CmsSectionBlock {
+function createEmptyBlock(type: AuthorableCmsBlockType): CmsSectionBlock {
   const id = generateBlockId();
   switch (type) {
     case "heading":
@@ -97,13 +96,6 @@ function createEmptyBlock(type: CmsBlockType): CmsSectionBlock {
         heading: "Important Notice",
         tone: "info",
         text: "Provide clear guidance or notice text here.",
-      };
-    case "faq_item":
-      return {
-        id,
-        type,
-        question: "Sample question?",
-        answer: "Clear answer text.",
       };
     case "steps":
       return {
@@ -308,7 +300,7 @@ export default function CmsPageEditorModal({
     });
   };
 
-  const addBlock = (type: CmsBlockType) => {
+  const addBlock = (type: AuthorableCmsBlockType) => {
     setForm((prev) => {
       if (!prev) return prev;
       return { ...prev, blocks: [...prev.blocks, createEmptyBlock(type)] };
@@ -503,7 +495,10 @@ export default function CmsPageEditorModal({
                   >
                     <div className="flex items-center justify-between gap-2 border-b border-border/60 pb-2">
                       <span className="text-[11px] font-extrabold uppercase text-primary">
-                        #{idx + 1} • {BLOCK_TYPE_LABELS[block.type]}
+                        #{idx + 1} •{" "}
+                        {block.type === "faq_item"
+                          ? "Retired Legacy FAQ Block (Read-Only)"
+                          : BLOCK_TYPE_LABELS[block.type]}
                       </span>
                       <div className="flex items-center gap-1">
                         <button
@@ -670,20 +665,17 @@ export default function CmsPageEditorModal({
                     )}
 
                     {block.type === "faq_item" && (
-                      <div className="space-y-2">
-                        <input
-                          value={block.question || ""}
-                          onChange={(e) => updateBlock(idx, { question: e.target.value })}
-                          placeholder="Question..."
-                          className={inputClass}
-                        />
-                        <textarea
-                          value={block.answer || ""}
-                          onChange={(e) => updateBlock(idx, { answer: e.target.value })}
-                          rows={2}
-                          placeholder="Answer..."
-                          className={inputClass}
-                        />
+                      <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-xs space-y-1">
+                        <p className="font-bold text-amber-600 dark:text-amber-400">
+                          Retired FAQ Q&amp;A Block (Preserved Read-Only)
+                        </p>
+                        <p className="text-muted-foreground">
+                          Actual FAQ questions and answers are managed exclusively in{" "}
+                          <strong className="text-foreground">Webmaster → FAQ Management</strong>.
+                          Move this Q&amp;A there and remove this legacy block before saving.
+                        </p>
+                        <p className="font-semibold text-foreground pt-1">Q: {block.question || "—"}</p>
+                        <p className="text-muted-foreground whitespace-pre-line">A: {block.answer || "—"}</p>
                       </div>
                     )}
 

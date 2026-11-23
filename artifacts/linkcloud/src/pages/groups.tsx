@@ -143,10 +143,6 @@ export default function GroupsPage() {
   const [searchFocused, setSearchFocused] = useState(false);
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
 
-  useEffect(() => {
-    document.title = `Public Group Directory — ${settings?.siteName || "LinkCloud"}`;
-  }, [settings?.siteName]);
-
   const availableDistricts = state ? getDistrictsForState(state) : [];
   const availableCities = state ? getCitiesForDistrict(state, district) : [];
 

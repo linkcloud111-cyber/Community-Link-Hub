@@ -560,6 +560,8 @@ export type CmsBlockType =
   | "steps"
   | "contact_info";
 
+export type AuthorableCmsBlockType = Exclude<CmsBlockType, "faq_item">;
+
 export interface CmsStepItem {
   title: string;
   description: string;

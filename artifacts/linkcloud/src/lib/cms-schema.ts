@@ -1,4 +1,5 @@
 import type {
+  AuthorableCmsBlockType,
   CmsBlockType,
   CmsPageDocument,
   CmsPageSeo,
@@ -47,14 +48,13 @@ export const CMS_PAGE_LABELS: Record<CmsPageSlug, string> = {
   disclaimer: "Legal Disclaimer",
 };
 
-export const ALLOWED_BLOCK_TYPES: readonly CmsBlockType[] = [
+export const ALLOWED_BLOCK_TYPES: readonly AuthorableCmsBlockType[] = [
   "heading",
   "paragraph",
   "bullet_list",
   "numbered_list",
   "link",
   "notice",
-  "faq_item",
   "steps",
   "contact_info",
 ] as const;
@@ -204,13 +204,18 @@ export function validateAndNormalizeCmsPageInput(
         fieldErrors[`blocks.${i}`] = `Block #${i + 1} is malformed.`;
         continue;
       }
+      if (b.type === "faq_item") {
+        fieldErrors[`blocks.${i}`] =
+          `Block #${i + 1} uses retired type 'faq_item'. Actual FAQ questions and answers must be managed exclusively in Webmaster → FAQ Management.`;
+        continue;
+      }
       if (!ALLOWED_BLOCK_TYPES.includes(b.type)) {
         fieldErrors[`blocks.${i}`] = `Block #${i + 1} has unsupported type '${String(b.type)}'.`;
         continue;
       }
 
       const id = sanitizeCmsText(b.id || generateBlockId(), 60) || generateBlockId();
-      const type = b.type as CmsBlockType;
+      const type = b.type as AuthorableCmsBlockType;
       const heading = sanitizeCmsText(b.heading || "", 180);
       const text = sanitizeCmsText(b.text || "", 4000);
 
@@ -282,13 +287,6 @@ export function validateAndNormalizeCmsPageInput(
           tone,
           text,
         });
-      } else if (type === "faq_item") {
-        const question = sanitizeCmsText(b.question || "", 300);
-        const answer = sanitizeCmsText(b.answer || "", 3000);
-        if (question.length < 4 || answer.length < 5) {
-          fieldErrors[`blocks.${i}`] = `FAQ block #${i + 1} requires both question and answer.`;
-        }
-        normalizedBlocks.push({ id, type, question, answer });
       } else if (type === "steps") {
         const steps: CmsStepItem[] = Array.isArray(b.steps)
           ? b.steps
@@ -427,6 +425,32 @@ export function detectUnverifiedClaims(page: Pick<CmsPageDocument, "blocks" | "d
   }
 
   return warnings;
+}
+
+/**
+ * Detects whether a legal CMS document still contains unreviewed starter
+ * draft notice boilerplate so the Webmaster UI flags it honestly.
+ */
+export function hasUnreviewedLegalDraftCopy(
+  page: Pick<CmsPageDocument, "subtitle" | "description" | "blocks"> | null | undefined
+): boolean {
+  if (!page) return false;
+  const combined = [
+    page.subtitle || "",
+    page.description || "",
+    ...(Array.isArray(page.blocks)
+      ? page.blocks.map((b) => `${b.heading || ""} ${b.text || ""}`)
+      : []),
+  ]
+    .join(" ")
+    .toLowerCase();
+
+  return (
+    combined.includes("draft legal") ||
+    combined.includes("requires owner review before publishing") ||
+    combined.includes("owner review required") ||
+    combined.startsWith("draft ")
+  );
 }
 
 /**

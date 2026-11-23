@@ -19,7 +19,7 @@ import type {
   CmsPageHealthStatus,
   CmsPageSlug,
 } from "@/lib/types";
-import { CMS_PAGE_LABELS } from "@/lib/cms-schema";
+import { CMS_PAGE_LABELS, hasUnreviewedLegalDraftCopy } from "@/lib/cms-schema";
 import { adminRunCmsAutoSeed, adminRunCmsRefresh } from "@/lib/cms-client";
 
 interface CmsPagesManagerProps {
@@ -221,7 +221,13 @@ export default function CmsPagesManager({
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
           {visiblePages.map((pg) => {
             const badge = HEALTH_BADGE[pg.health] || HEALTH_BADGE.error;
-            const doc = pg.draft || pg.published;
+            const doc = pg.published || pg.draft;
+            const hasPendingDraft = Boolean(
+              pg.draft && pg.published && pg.draft.version > pg.published.version
+            );
+            const liveHasDraftNotice = Boolean(
+              pg.isLegalPage && pg.hasPublished && hasUnreviewedLegalDraftCopy(pg.published)
+            );
             return (
               <div
                 key={pg.slug}
@@ -253,9 +259,19 @@ export default function CmsPagesManager({
 
                   <div className="flex flex-wrap items-center gap-3 text-[10px] font-mono text-muted-foreground">
                     <span>Revisions: {pg.versionCount}</span>
-                    {pg.isLegalPage && (
+                    {pg.isLegalPage && !pg.hasPublished && (
                       <span className="text-rose-500 font-bold flex items-center gap-1">
                         <ShieldAlert className="w-3 h-3" /> Legal Draft Lock
+                      </span>
+                    )}
+                    {liveHasDraftNotice && (
+                      <span className="text-amber-500 font-bold flex items-center gap-1">
+                        <AlertTriangle className="w-3 h-3" /> Live Copy Contains Draft Notice
+                      </span>
+                    )}
+                    {hasPendingDraft && pg.draft && (
+                      <span className="text-amber-500 flex items-center gap-1">
+                        Draft v{pg.draft.version} pending
                       </span>
                     )}
                     {pg.published?.lastPublishedAt && (
