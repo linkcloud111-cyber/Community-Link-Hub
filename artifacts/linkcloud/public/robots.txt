@@ -2,6 +2,8 @@ User-agent: *
 Allow: /
 Disallow: /webmaster
 Disallow: /webmaster/*
+Disallow: /admin
+Disallow: /admin/*
 Disallow: /dashboard
 Disallow: /dashboard/*
 Disallow: /submit
@@ -12,4 +14,3 @@ Disallow: /login
 Disallow: /register
 Disallow: /reset-password
 
-Sitemap: https://linkcloud.in/sitemap.xml

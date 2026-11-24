@@ -22,6 +22,8 @@ import {
   Layers,
 } from "lucide-react";
 import type { DashboardTab } from "@/hooks/useDashboardTabs";
+import { useSiteSettings } from "@/contexts/SiteSettingsContext";
+import { useAuth } from "@/contexts/AuthContext";
 
 interface DashboardSidebarProps {
   activeTab: DashboardTab;
@@ -64,10 +66,15 @@ export function DashboardSidebar({
     }
   }, [isMobileOpen, onCloseMobile]);
 
+  const { settings } = useSiteSettings();
+  const { isWebmaster } = useAuth();
+
   const mainNavItems: { id: DashboardTab; label: string; icon: any; badge?: number }[] = [
     { id: "overview", label: "Overview", icon: LayoutDashboard },
     { id: "my-groups", label: "My Groups", icon: Users },
-    { id: "favorites", label: "Favorites", icon: Heart },
+    ...(settings?.favoritesEnabled !== false
+      ? [{ id: "favorites" as DashboardTab, label: "Favorites", icon: Heart }]
+      : []),
     { id: "notifications", label: "Notifications", icon: Bell, badge: unreadNotifsCount },
     { id: "messages", label: "Messages", icon: MessageSquare },
     { id: "activity", label: "My Activity", icon: Activity },
@@ -208,19 +215,21 @@ export function DashboardSidebar({
 
       {/* Bottom Actions */}
       <div className="p-3 border-t border-slate-100 dark:border-slate-800 space-y-2 bg-slate-50/50 dark:bg-slate-900/50">
-        <Link
-          href="/submit"
-          onClick={() => {
-            if (onCloseMobile) onCloseMobile();
-          }}
-          className={`w-full min-h-[44px] flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl font-semibold text-sm bg-purple-600 hover:bg-purple-700 text-white shadow-sm transition ${
-            isCollapsed && !isDrawer ? "px-2" : ""
-          }`}
-          title="+ Submit Group"
-        >
-          <Plus className="w-4 h-4" />
-          {(!isCollapsed || isDrawer) && <span>Submit Group</span>}
-        </Link>
+        {(settings?.groupSubmissionEnabled === true || isWebmaster) && (
+          <Link
+            href="/submit"
+            onClick={() => {
+              if (onCloseMobile) onCloseMobile();
+            }}
+            className={`w-full min-h-[44px] flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl font-semibold text-sm bg-purple-600 hover:bg-purple-700 text-white shadow-sm transition ${
+              isCollapsed && !isDrawer ? "px-2" : ""
+            }`}
+            title="+ Submit Group"
+          >
+            <Plus className="w-4 h-4" />
+            {(!isCollapsed || isDrawer) && <span>Submit Group</span>}
+          </Link>
+        )}
 
         <button
           id={`${isDrawer ? "drawer" : "sidebar"}-logout-button`}

@@ -13,13 +13,19 @@ import {
 } from "react-icons/si";
 import { Linkedin } from "lucide-react";
 import { useSiteSettings } from "@/contexts/SiteSettingsContext";
+import { useAuth } from "@/contexts/AuthContext";
 import { useTaxonomy } from "@/contexts/TaxonomyContext";
 import { PlatformIcon } from "@/components/platform-icon";
+import { usePublishedExplorePages } from "@/lib/cms-client";
+import { CMS_PAGE_LABELS } from "@/lib/cms-schema";
 
 export default function Footer() {
   const [location] = useLocation();
   const { settings } = useSiteSettings();
+  const { isWebmaster } = useAuth();
   const { activePlatforms } = useTaxonomy();
+  const { pages: explorePages, loading: exploreLoading, error: exploreError } =
+    usePublishedExplorePages();
   const year = new Date().getFullYear();
 
   // Hide global footer on Webmaster Login page
@@ -33,8 +39,33 @@ export default function Footer() {
   }
 
   const siteName = settings?.siteName || "LinkCloud";
-  const supportEmail = settings?.supportEmail || settings?.contactEmail || "support@linkcloud.in";
-  const supportMobile = settings?.supportMobile || "";
+  const officialContactEmail = (settings?.officialContactEmail || "").trim();
+  const supportEmail = (settings?.supportEmail || settings?.contactEmail || "").trim();
+  const supportMobile = (settings?.supportMobile || "").trim();
+  const whatsappContactNumber = (settings?.whatsappContactNumber || "").trim();
+  const whatsappDigits = whatsappContactNumber.replace(/[^0-9]/g, "");
+  const officialWebsiteUrl = (settings?.officialWebsiteUrl || "").trim();
+  const formattedAddress = [
+    settings?.businessAddress,
+    settings?.city,
+    settings?.district,
+    settings?.state,
+    settings?.pinCode,
+    settings?.country,
+  ]
+    .map((v) => (v || "").trim())
+    .filter(Boolean)
+    .join(", ");
+
+  const showFooterContacts =
+    settings?.showCompleteContactSection !== false &&
+    settings?.showContactInFooter !== false;
+  const canShowContactEmail = showFooterContacts && settings?.showContactEmail !== false && Boolean(officialContactEmail);
+  const canShowSupportEmail = showFooterContacts && settings?.showSupportEmail !== false && Boolean(supportEmail);
+  const canShowPhone = showFooterContacts && settings?.showPhoneNumber !== false && Boolean(supportMobile);
+  const canShowWhatsApp = showFooterContacts && settings?.showWhatsAppContact !== false && Boolean(whatsappContactNumber);
+  const canShowAddress = showFooterContacts && settings?.showAddress !== false && Boolean(formattedAddress);
+
   const footerDesc =
     settings?.footerDescription ||
     "India's premium community directory. Discover and share the best WhatsApp, Telegram, Discord, and more groups across India.";
@@ -78,27 +109,82 @@ export default function Footer() {
               {footerDesc}
             </p>
 
-            <div className="space-y-1.5 text-sm">
-              <a
-                href={`mailto:${supportEmail}`}
-                className="flex items-center gap-2 text-muted-foreground hover:text-primary transition-colors"
-                title="Support Email"
-              >
-                <Mail className="w-4 h-4 flex-shrink-0" />
-                <span className="truncate">{supportEmail}</span>
-              </a>
+            {(canShowContactEmail || canShowSupportEmail || canShowPhone || canShowWhatsApp || canShowAddress || (showFooterContacts && officialWebsiteUrl)) && (
+              <div className="space-y-1.5 text-sm">
+                {canShowContactEmail && (
+                  <a
+                    href={`mailto:${officialContactEmail}`}
+                    className="flex items-center gap-2 text-muted-foreground hover:text-primary transition-colors text-xs"
+                    title="Official Contact Email"
+                  >
+                    <Mail className="w-3.5 h-3.5 flex-shrink-0" />
+                    <span className="truncate">{officialContactEmail}</span>
+                  </a>
+                )}
 
-              {supportMobile && (
-                <a
-                  href={`tel:${supportMobile.replace(/\s+/g, "")}`}
-                  className="flex items-center gap-2 text-muted-foreground hover:text-primary transition-colors text-xs"
-                  title="Official Helpline"
-                >
-                  <Phone className="w-3.5 h-3.5 flex-shrink-0" />
-                  <span>{supportMobile}</span>
-                </a>
-              )}
-            </div>
+                {canShowSupportEmail && (
+                  <a
+                    href={`mailto:${supportEmail}`}
+                    className="flex items-center gap-2 text-muted-foreground hover:text-primary transition-colors text-xs"
+                    title="Support Email"
+                  >
+                    <Mail className="w-3.5 h-3.5 flex-shrink-0" />
+                    <span className="truncate">{supportEmail}</span>
+                  </a>
+                )}
+
+                {canShowPhone && (
+                  <a
+                    href={`tel:${supportMobile.replace(/\s+/g, "")}`}
+                    className="flex items-center gap-2 text-muted-foreground hover:text-primary transition-colors text-xs"
+                    title="Official Helpline"
+                  >
+                    <Phone className="w-3.5 h-3.5 flex-shrink-0" />
+                    <span>{supportMobile}</span>
+                  </a>
+                )}
+
+                {canShowWhatsApp && (
+                  whatsappDigits.length >= 10 ? (
+                    <a
+                      href={`https://wa.me/${whatsappDigits}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-2 text-muted-foreground hover:text-green-500 transition-colors text-xs"
+                      title="WhatsApp Support"
+                    >
+                      <SiWhatsapp className="w-3.5 h-3.5 flex-shrink-0" />
+                      <span>{whatsappContactNumber}</span>
+                    </a>
+                  ) : (
+                    <div className="flex items-center gap-2 text-muted-foreground text-xs">
+                      <SiWhatsapp className="w-3.5 h-3.5 flex-shrink-0" />
+                      <span>{whatsappContactNumber}</span>
+                    </div>
+                  )
+                )}
+
+                {canShowAddress && (
+                  <div className="flex items-start gap-2 text-muted-foreground text-xs leading-relaxed">
+                    <MapPin className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
+                    <span>{formattedAddress}</span>
+                  </div>
+                )}
+
+                {showFooterContacts && officialWebsiteUrl && (
+                  <a
+                    href={officialWebsiteUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-2 text-muted-foreground hover:text-primary transition-colors text-xs"
+                    title="Official Website"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5 flex-shrink-0" />
+                    <span className="truncate">{officialWebsiteUrl}</span>
+                  </a>
+                )}
+              </div>
+            )}
 
             {/* Official Social Channels configured by Webmaster */}
             {socialLinks.length > 0 && (
@@ -139,7 +225,7 @@ export default function Footer() {
                   Browse Communities
                 </Link>
               </li>
-              {settings?.groupSubmissionEnabled !== false && settings?.allowPublicSubmissions !== false && (
+              {(settings?.groupSubmissionEnabled === true || isWebmaster) && (
                 <li>
                   <Link href="/submit" className="hover:text-primary transition-colors">
                     Submit a Community
@@ -158,16 +244,36 @@ export default function Footer() {
                   </Link>
                 </li>
               )}
-              <li>
-                <Link href="/about" className="hover:text-primary transition-colors">
-                  About {siteName}
-                </Link>
-              </li>
-              <li>
-                <Link href="/faq" className="hover:text-primary transition-colors">
-                  FAQ
-                </Link>
-              </li>
+              {exploreLoading || exploreError ? (
+                <>
+                  <li>
+                    <Link href="/about" className="hover:text-primary transition-colors">
+                      About {siteName}
+                    </Link>
+                  </li>
+                  <li>
+                    <Link href="/faq" className="hover:text-primary transition-colors">
+                      FAQ
+                    </Link>
+                  </li>
+                </>
+              ) : (
+                explorePages
+                  .filter(
+                    (p) =>
+                      p.footerVisible !== false &&
+                      (p.slug === "about" || p.slug === "faq")
+                  )
+                  .map((p) => (
+                    <li key={p.slug}>
+                      <Link href={p.route} className="hover:text-primary transition-colors">
+                        {p.slug === "about"
+                          ? p.title || `About ${siteName}`
+                          : p.title || CMS_PAGE_LABELS[p.slug]}
+                      </Link>
+                    </li>
+                  ))
+              )}
             </ul>
           </div>
 
@@ -191,31 +297,49 @@ export default function Footer() {
                   </Link>
                 </li>
               )}
-              <li>
-                <Link href="/help" className="hover:text-primary transition-colors">
-                  Help Center
-                </Link>
-              </li>
-              <li>
-                <Link href="/privacy" className="hover:text-primary transition-colors">
-                  Privacy Policy
-                </Link>
-              </li>
-              <li>
-                <Link href="/terms" className="hover:text-primary transition-colors">
-                  Terms of Service
-                </Link>
-              </li>
-              <li>
-                <Link href="/dmca" className="hover:text-primary transition-colors">
-                  DMCA
-                </Link>
-              </li>
-              <li>
-                <Link href="/disclaimer" className="hover:text-primary transition-colors">
-                  Disclaimer
-                </Link>
-              </li>
+              {exploreLoading || exploreError ? (
+                <>
+                  <li>
+                    <Link href="/help" className="hover:text-primary transition-colors">
+                      Help Center
+                    </Link>
+                  </li>
+                  <li>
+                    <Link href="/privacy" className="hover:text-primary transition-colors">
+                      Privacy Policy
+                    </Link>
+                  </li>
+                  <li>
+                    <Link href="/terms" className="hover:text-primary transition-colors">
+                      Terms of Service
+                    </Link>
+                  </li>
+                  <li>
+                    <Link href="/dmca" className="hover:text-primary transition-colors">
+                      DMCA
+                    </Link>
+                  </li>
+                  <li>
+                    <Link href="/disclaimer" className="hover:text-primary transition-colors">
+                      Disclaimer
+                    </Link>
+                  </li>
+                </>
+              ) : (
+                explorePages
+                  .filter(
+                    (p) =>
+                      p.footerVisible !== false &&
+                      (p.slug === "help" || p.isLegalPage)
+                  )
+                  .map((p) => (
+                    <li key={p.slug}>
+                      <Link href={p.route} className="hover:text-primary transition-colors">
+                        {p.title || CMS_PAGE_LABELS[p.slug]}
+                      </Link>
+                    </li>
+                  ))
+              )}
             </ul>
           </div>
 

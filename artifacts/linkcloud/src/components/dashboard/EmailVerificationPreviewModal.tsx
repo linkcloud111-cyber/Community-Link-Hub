@@ -46,7 +46,8 @@ export function EmailVerificationPreviewModal({
   if (!isOpen) return null;
 
   const targetEmail = pendingEmail || email || "user@example.com";
-  const dummyVerificationLink = `https://linkcloud.in/verify-handler?mode=verifyEmail&uid=${accountUid || "usr_sample"}`;
+  const previewOrigin = typeof window !== "undefined" ? window.location.origin : "";
+  const dummyVerificationLink = `${previewOrigin}/verify-handler?mode=verifyEmail&uid=${accountUid || "usr_sample"}`;
 
   const handleCopyLink = () => {
     navigator.clipboard.writeText(dummyVerificationLink);
@@ -105,7 +106,7 @@ export function EmailVerificationPreviewModal({
               <div className="flex items-center gap-1.5 text-slate-600 dark:text-slate-300 font-sans">
                 <span className="font-semibold text-slate-900 dark:text-white">From:</span>
                 <span>LinkCloud Security</span>
-                <span className="text-slate-400">&lt;noreply@linkcloud.in&gt;</span>
+                <span className="text-slate-400">(Official Verification Mailer)</span>
               </div>
               <div className="flex items-center gap-1 text-[11px] font-sans text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 px-2 py-0.5 rounded-md">
                 <ShieldCheck className="w-3.5 h-3.5" />
@@ -142,7 +143,7 @@ export function EmailVerificationPreviewModal({
 
               <div className="text-[11px] text-slate-400 flex items-center gap-1">
                 <Clock className="w-3.5 h-3.5 text-purple-500" />
-                <span>Expires in 10 mins</span>
+                <span>Expires in 5 mins</span>
               </div>
             </div>
 
@@ -180,7 +181,7 @@ export function EmailVerificationPreviewModal({
                 <div className="space-y-0.5">
                   <p className="font-semibold">Security Expiration Notice</p>
                   <p className="text-[11px] text-amber-700 dark:text-amber-400">
-                    This verification link remains valid for <strong>10 minutes</strong>. If you did not request this email, no further action is needed and your account remains safe.
+                    This verification link remains valid for <strong>5 minutes</strong>. If you did not request this email, no further action is needed and your account remains safe.
                   </p>
                 </div>
               </div>

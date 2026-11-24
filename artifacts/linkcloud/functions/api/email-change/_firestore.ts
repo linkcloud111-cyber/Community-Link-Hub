@@ -11,35 +11,64 @@ function getProjectId(env: Env): string {
   );
 }
 
+// Convert Firestore REST field value to native JS value
+function fromFirestoreValue(valObj: any): any {
+  if (!valObj || typeof valObj !== "object") return undefined;
+  if ("stringValue" in valObj) return valObj.stringValue;
+  if ("integerValue" in valObj) return parseInt(valObj.integerValue, 10);
+  if ("doubleValue" in valObj) return parseFloat(valObj.doubleValue);
+  if ("booleanValue" in valObj) return valObj.booleanValue;
+  if ("timestampValue" in valObj) return valObj.timestampValue;
+  if ("nullValue" in valObj) return null;
+  if ("mapValue" in valObj) return fromFirestoreFields(valObj.mapValue.fields);
+  if ("arrayValue" in valObj) {
+    const vals = Array.isArray(valObj.arrayValue?.values) ? valObj.arrayValue.values : [];
+    return vals.map((item: any) => fromFirestoreValue(item));
+  }
+  return undefined;
+}
+
 // Convert Firestore REST field object to native JS value
 export function fromFirestoreFields(fields: any): any {
   if (!fields) return {};
   const result: any = {};
   for (const [key, valObj] of Object.entries(fields as Record<string, any>)) {
-    if ("stringValue" in valObj) result[key] = valObj.stringValue;
-    else if ("integerValue" in valObj) result[key] = parseInt(valObj.integerValue, 10);
-    else if ("doubleValue" in valObj) result[key] = parseFloat(valObj.doubleValue);
-    else if ("booleanValue" in valObj) result[key] = valObj.booleanValue;
-    else if ("timestampValue" in valObj) result[key] = valObj.timestampValue;
-    else if ("nullValue" in valObj) result[key] = null;
-    else if ("mapValue" in valObj) result[key] = fromFirestoreFields(valObj.mapValue.fields);
+    const converted = fromFirestoreValue(valObj);
+    if (converted !== undefined) {
+      result[key] = converted;
+    }
   }
   return result;
+}
+
+function toFirestoreValue(val: any): any {
+  if (val === undefined) return undefined;
+  if (val === null) return { nullValue: null };
+  if (typeof val === "string") return { stringValue: val };
+  if (typeof val === "boolean") return { booleanValue: val };
+  if (typeof val === "number") {
+    return Number.isInteger(val) ? { integerValue: val.toString() } : { doubleValue: val };
+  }
+  if (Array.isArray(val)) {
+    return {
+      arrayValue: {
+        values: val.map((item) => toFirestoreValue(item)).filter((v) => v !== undefined),
+      },
+    };
+  }
+  if (typeof val === "object") {
+    return { mapValue: { fields: toFirestoreFields(val) } };
+  }
+  return undefined;
 }
 
 // Convert native JS object to Firestore REST fields object
 export function toFirestoreFields(obj: Record<string, any>): any {
   const fields: any = {};
   for (const [key, val] of Object.entries(obj)) {
-    if (val === undefined) continue;
-    if (val === null) fields[key] = { nullValue: null };
-    else if (typeof val === "string") fields[key] = { stringValue: val };
-    else if (typeof val === "boolean") fields[key] = { booleanValue: val };
-    else if (typeof val === "number") {
-      if (Number.isInteger(val)) fields[key] = { integerValue: val.toString() };
-      else fields[key] = { doubleValue: val };
-    } else if (typeof val === "object") {
-      fields[key] = { mapValue: { fields: toFirestoreFields(val) } };
+    const converted = toFirestoreValue(val);
+    if (converted !== undefined) {
+      fields[key] = converted;
     }
   }
   return fields;
@@ -106,6 +135,38 @@ export async function firestoreSetDoc(
   }
 }
 
+export async function firestoreAddDoc(
+  collectionPath: string,
+  data: Record<string, any>,
+  env: Env
+): Promise<string> {
+  const projectId = getProjectId(env);
+  const serviceAccount = getServiceAccount(env);
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+
+  if (serviceAccount) {
+    const token = await getGoogleAccessToken(serviceAccount);
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+
+  const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/${collectionPath}`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ fields: toFirestoreFields(data) }),
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Firestore POST ${collectionPath} failed: ${res.status} ${text}`);
+  }
+
+  const docData: any = await res.json();
+  return docData.name ? String(docData.name).split("/").pop() || "" : "";
+}
+
 export async function firestoreDeleteDoc(path: string, env: Env): Promise<void> {
   const projectId = getProjectId(env);
   const serviceAccount = getServiceAccount(env);
@@ -152,5 +213,115 @@ export async function firestoreListCollection(
     const id = docData.name ? docData.name.split("/").pop() : "";
     return { id, ...fromFirestoreFields(docData.fields) };
   });
+}
+
+export async function firestoreRunQueryField(
+  collectionId: string,
+  fieldPath: string,
+  op: "EQUAL" | "IN",
+  value: string | string[],
+  env: Env,
+  limit = 10
+): Promise<Array<{ id: string; [key: string]: any }>> {
+  const projectId = getProjectId(env);
+  const serviceAccount = getServiceAccount(env);
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+
+  if (serviceAccount) {
+    const token = await getGoogleAccessToken(serviceAccount);
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+
+  const filterValue =
+    op === "IN"
+      ? {
+          arrayValue: {
+            values: (Array.isArray(value) ? value : [value]).slice(0, 10).map((v) => ({
+              stringValue: String(v),
+            })),
+          },
+        }
+      : { stringValue: String(value) };
+
+  const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents:runQuery`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      structuredQuery: {
+        from: [{ collectionId }],
+        where: {
+          fieldFilter: {
+            field: { fieldPath },
+            op,
+            value: filterValue,
+          },
+        },
+        limit,
+      },
+    }),
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Firestore runQuery ${collectionId} failed: ${res.status} ${text}`);
+  }
+
+  const rows: any = await res.json();
+  if (!Array.isArray(rows)) return [];
+  return rows
+    .filter((row: any) => row && row.document)
+    .map((row: any) => {
+      const docData = row.document;
+      const id = docData.name ? String(docData.name).split("/").pop() || "" : "";
+      return { id, ...fromFirestoreFields(docData.fields) };
+    });
+}
+
+export async function firestoreIncrementField(
+  docPath: string,
+  fieldPath: string,
+  delta: number,
+  env: Env
+): Promise<void> {
+  const projectId = getProjectId(env);
+  const serviceAccount = getServiceAccount(env);
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+
+  if (serviceAccount) {
+    const token = await getGoogleAccessToken(serviceAccount);
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+
+  const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents:commit`;
+  const fullDocName = `projects/${projectId}/databases/(default)/documents/${docPath}`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      writes: [
+        {
+          transform: {
+            document: fullDocName,
+            fieldTransforms: [
+              {
+                fieldPath,
+                increment: { integerValue: String(delta) },
+              },
+            ],
+          },
+        },
+      ],
+    }),
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Firestore increment ${docPath}.${fieldPath} failed: ${res.status} ${text}`);
+  }
 }
 

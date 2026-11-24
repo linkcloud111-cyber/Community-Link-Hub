@@ -284,9 +284,16 @@ export async function onRequestPost(context: {
       await firestoreDeleteDoc(`emailIndex/${cleanEmail}`, env);
     }
 
-    // D. Delete mobileIndex document if exists
+    // D. Delete mobileIndex document variations if exist
     if (cleanPhone) {
-      await firestoreDeleteDoc(`mobileIndex/${cleanPhone}`, env);
+      const cleanP = cleanPhone.replace(/\s+/g, "");
+      const digits = cleanP.replace(/^\+?91/, "");
+      const phoneKeys = Array.from(
+        new Set([cleanPhone, cleanP, digits, `+91${digits}`, `+91 ${digits}`].filter((p) => Boolean(p) && p.length >= 10))
+      );
+      for (const pk of phoneKeys) {
+        await firestoreDeleteDoc(`mobileIndex/${encodeURIComponent(pk)}`, env).catch(() => {});
+      }
     }
 
     // E. Delete accountUidRegistry document

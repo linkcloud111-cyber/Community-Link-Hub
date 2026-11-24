@@ -14,6 +14,8 @@ import {
 } from "lucide-react";
 import type { DashboardTab } from "@/hooks/useDashboardTabs";
 import type { Notification } from "@/lib/types";
+import { useSiteSettings } from "@/contexts/SiteSettingsContext";
+import { useAuth } from "@/contexts/AuthContext";
 
 interface QuickActionsAndAlertsProps {
   onNavigate: (tab: DashboardTab) => void;
@@ -30,17 +32,27 @@ export function QuickActionsAndAlerts({
   isEmailVerified,
   hasPhone,
 }: QuickActionsAndAlertsProps) {
+  const { settings } = useSiteSettings();
+  const { isWebmaster } = useAuth();
+  const canSubmitGroup = Boolean(isWebmaster || settings?.groupSubmissionEnabled === true);
+  const favoritesEnabled = settings?.favoritesEnabled !== false;
+  const canEditProfile = Boolean(isWebmaster || settings?.profileEditingEnabled !== false);
+
   const actions = [
-    {
-      id: "submit-group",
-      title: "Submit New Group",
-      subtitle: "Add a Telegram, WhatsApp, or Discord link",
-      icon: Plus,
-      color: "text-purple-600 dark:text-purple-400",
-      bg: "bg-purple-100 dark:bg-purple-950",
-      border: "hover:border-purple-300 dark:hover:border-purple-700",
-      href: "/submit",
-    },
+    ...(canSubmitGroup
+      ? [
+          {
+            id: "submit-group",
+            title: "Submit New Group",
+            subtitle: "Add a Telegram, WhatsApp, or Discord link",
+            icon: Plus,
+            color: "text-purple-600 dark:text-purple-400",
+            bg: "bg-purple-100 dark:bg-purple-950",
+            border: "hover:border-purple-300 dark:hover:border-purple-700",
+            href: "/submit",
+          },
+        ]
+      : []),
     {
       id: "manage-groups",
       title: "Manage My Groups",
@@ -51,16 +63,20 @@ export function QuickActionsAndAlerts({
       border: "hover:border-blue-300 dark:hover:border-blue-700",
       action: () => onNavigate("my-groups"),
     },
-    {
-      id: "view-favorites",
-      title: "View Favorites",
-      subtitle: "Quick access to your saved community links",
-      icon: Heart,
-      color: "text-pink-600 dark:text-pink-400",
-      bg: "bg-pink-100 dark:bg-pink-950",
-      border: "hover:border-pink-300 dark:hover:border-pink-700",
-      action: () => onNavigate("favorites"),
-    },
+    ...(favoritesEnabled
+      ? [
+          {
+            id: "view-favorites",
+            title: "View Favorites",
+            subtitle: "Quick access to your saved community links",
+            icon: Heart,
+            color: "text-pink-600 dark:text-pink-400",
+            bg: "bg-pink-100 dark:bg-pink-950",
+            border: "hover:border-pink-300 dark:hover:border-pink-700",
+            action: () => onNavigate("favorites"),
+          },
+        ]
+      : []),
     {
       id: "notification-settings",
       title: "Notification Settings",
@@ -71,16 +87,20 @@ export function QuickActionsAndAlerts({
       border: "hover:border-amber-300 dark:hover:border-amber-700",
       action: () => onNavigate("settings"),
     },
-    {
-      id: "edit-profile",
-      title: "Edit Profile",
-      subtitle: "Update personal details, city, and avatar",
-      icon: Edit3,
-      color: "text-emerald-600 dark:text-emerald-400",
-      bg: "bg-emerald-100 dark:bg-emerald-950",
-      border: "hover:border-emerald-300 dark:hover:border-emerald-700",
-      action: onEditProfile,
-    },
+    ...(canEditProfile
+      ? [
+          {
+            id: "edit-profile",
+            title: "Edit Profile",
+            subtitle: "Update personal details, city, and avatar",
+            icon: Edit3,
+            color: "text-emerald-600 dark:text-emerald-400",
+            bg: "bg-emerald-100 dark:bg-emerald-950",
+            border: "hover:border-emerald-300 dark:hover:border-emerald-700",
+            action: onEditProfile,
+          },
+        ]
+      : []),
   ];
 
   return (

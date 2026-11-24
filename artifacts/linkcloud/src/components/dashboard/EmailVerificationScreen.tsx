@@ -1,16 +1,19 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { handleUpdateEmailSecure, verifyAndCompleteFlow, resendVerificationEmailSecure, handleFinalVerificationCheck } from '@/lib/auth';
+import { handleUpdateEmailSecure, verifyAndCompleteFlow, resendVerificationEmailSecure, EMAIL_CHANGE_TTL_MS } from '@/lib/auth';
 import { useLocation } from 'wouter';
 import { Mail, CheckCircle2, Check, Clock, ArrowRight, Loader2, RotateCw } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
 
+const DEFAULT_TTL_SECONDS = Math.round(EMAIL_CHANGE_TTL_MS / 1000);
+
 export default function EmailVerificationScreen() {
   const [, setLocation] = useLocation();
   const [newEmail, setNewEmail] = useState('');
+  const [currentPassword, setCurrentPassword] = useState('');
   const [isPending, setIsPending] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
-  const [timeLeft, setTimeLeft] = useState(900); // 15 minutes countdown
+  const [timeLeft, setTimeLeft] = useState(DEFAULT_TTL_SECONDS);
   const [resendCooldown, setResendCooldown] = useState(0); // 30 seconds resend cooldown
   const [loading, setLoading] = useState(false);
   const [checking, setChecking] = useState(false);
@@ -86,14 +89,15 @@ export default function EmailVerificationScreen() {
 
   const onSubmitEmailChange = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newEmail.trim()) return;
+    if (!newEmail.trim() || !currentPassword) return;
 
     setLoading(true);
     try {
-      await handleUpdateEmailSecure(newEmail.trim());
+      await handleUpdateEmailSecure(newEmail.trim(), currentPassword);
       setIsPending(true);
-      setTimeLeft(900);
+      setTimeLeft(DEFAULT_TTL_SECONDS);
       setResendCooldown(30); // 30s initial cooldown
+      setCurrentPassword('');
       toast.success("Verification email sent! Check your inbox.");
     } catch (err: any) {
       toast.error(err.message || "Failed to update email.");
@@ -107,8 +111,8 @@ export default function EmailVerificationScreen() {
     if (resending || resendCooldown > 0 || isSuccess) return;
     setResending(true);
     try {
-      await resendVerificationEmailSecure();
-      setTimeLeft(900);
+      await resendVerificationEmailSecure(newEmail.trim() || undefined);
+      setTimeLeft(DEFAULT_TTL_SECONDS);
       setResendCooldown(30); // 30-second cooldown to prevent spamming
       toast.success("A fresh verification email has been sent!");
     } catch (err: any) {
@@ -278,6 +282,25 @@ export default function EmailVerificationScreen() {
                   aria-required="true"
                   aria-describedby="email-input-description"
                   aria-label="New Email Address"
+                  disabled={loading}
+                  className="w-full px-3.5 py-2.5 bg-background border border-input rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all disabled:opacity-50"
+                  required
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label htmlFor="current-password-input" className="text-xs font-semibold text-foreground">
+                  Current Password
+                </label>
+                <input
+                  id="current-password-input"
+                  name="currentPassword"
+                  type="password"
+                  autoComplete="current-password"
+                  placeholder="Confirm your current password"
+                  value={currentPassword}
+                  onChange={(e) => setCurrentPassword(e.target.value)}
+                  aria-required="true"
                   disabled={loading}
                   className="w-full px-3.5 py-2.5 bg-background border border-input rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all disabled:opacity-50"
                   required

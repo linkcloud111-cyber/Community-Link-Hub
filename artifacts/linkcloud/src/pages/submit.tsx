@@ -8,6 +8,12 @@ import {
   createGroup,
   checkDuplicateGroup,
 } from "@/lib/firestore";
+import {
+  parseAndValidateTags,
+  getLiveTagStats,
+  getGroupLimits,
+  MAX_TAG_LENGTH,
+} from "@/lib/group-validation";
 import { uploadToCloudinary } from "@/lib/cloudinary";
 import { getPlatformLinkHints, normalizePlatformKey, validateInviteLink } from "@/lib/utils";
 import { toast } from "sonner";
@@ -31,6 +37,7 @@ const AGE_OPTIONS = ["All Ages", "13+", "16+", "18+", "21+"];
 
 interface FormData {
   name: string;
+  tagline: string;
   platform: string;
   categoryId: string;
   contentType: string;
@@ -44,13 +51,12 @@ interface FormData {
   rules: string;
   minimumAge: string;
   joinUrl: string;
-  submitterName: string;
-  submitterEmail: string;
 }
 
 export default function Submit() {
-  const { user, profile, isWebmaster } = useAuth();
+  const { user, profile, isWebmaster, loading: authLoading } = useAuth();
   const { settings } = useSiteSettings();
+  const groupLimits = getGroupLimits(settings);
   const {
     activeCategories: categories,
     activePlatforms: platforms,
@@ -70,6 +76,7 @@ export default function Submit() {
 
   const [form, setForm] = useState<FormData>({
     name: "",
+    tagline: "",
     platform: "",
     categoryId: "",
     contentType: "",
@@ -83,8 +90,6 @@ export default function Submit() {
     rules: "",
     minimumAge: "All Ages",
     joinUrl: "",
-    submitterName: profile?.displayName || user?.displayName || "",
-    submitterEmail: user?.email || "",
   });
 
   const districts = form.state ? getDistrictsForState(form.state) : [];
@@ -99,17 +104,6 @@ export default function Submit() {
     activePlatform?.helpText,
     activePlatform?.errorText
   );
-
-  // Sync submitter details if auth/profile settles after initial mount
-  useEffect(() => {
-    if (user || profile) {
-      setForm((f) => ({
-        ...f,
-        submitterName: f.submitterName || profile?.displayName || user?.displayName || "",
-        submitterEmail: f.submitterEmail || profile?.email || user?.email || "",
-      }));
-    }
-  }, [user, profile]);
 
   // Sync form defaults with active taxonomy items when loaded
   useEffect(() => {
@@ -145,8 +139,8 @@ export default function Submit() {
     try {
       const uploadedUrl = await uploadToCloudinary(
         file,
-        settings?.cloudinaryUploadPreset,
-        settings?.cloudinaryCloudName
+        settings?.cloudinaryUploadPreset || settings?.cloudinarySettings?.uploadPreset,
+        settings?.cloudinaryCloudName || settings?.cloudinarySettings?.cloudName
       );
       update("logoUrl", uploadedUrl);
       toast.success("Logo uploaded successfully!");
@@ -159,24 +153,41 @@ export default function Submit() {
   };
 
   const validate = (): string | null => {
+    if (!user) return "Please sign in to submit a community listing.";
     if (!form.name.trim()) return "1. Group Name is required";
     if (form.name.trim().length < 3) return "Group Name must be at least 3 characters";
+    if (form.name.trim().length > groupLimits.nameMaxLength) {
+      return `Group Name must not exceed ${groupLimits.nameMaxLength} characters`;
+    }
+    if (form.tagline.trim().length > groupLimits.taglineMaxLength) {
+      return `Short Tagline must not exceed ${groupLimits.taglineMaxLength} characters`;
+    }
     if (!form.categoryId) return "3. Category is required";
     if (!form.description.trim()) return "6. Description is required";
-    if (form.description.trim().length < 20) return "Description must be at least 20 characters";
-    if (form.description.trim().length > 500) return "Description must not exceed 500 characters";
-    if (!form.tagsInput.trim()) return "7. Tags are required. Enter keywords separated by commas.";
+    if (form.description.trim().length < groupLimits.descriptionMinLength) {
+      return `Description must be at least ${groupLimits.descriptionMinLength} characters`;
+    }
+    if (form.description.trim().length > groupLimits.descriptionMaxLength) {
+      return `Description must not exceed ${groupLimits.descriptionMaxLength} characters`;
+    }
+    const tagCheck = parseAndValidateTags(form.tagsInput, {
+      required: true,
+      maxTags: groupLimits.maxTags,
+    });
+    if (!tagCheck.valid) return tagCheck.error || "7. Enter valid comma-separated tags.";
+    if (groupLimits.requireGroupLogo && !form.logoUrl.trim()) {
+      return "8. Group Logo is required by Webmaster settings.";
+    }
     if (!form.state) return "9. State is required";
     if (!form.district) return "10. District is required";
     if (!form.city.trim()) return "11. City is required";
+    if (form.rules.trim().length > groupLimits.rulesMaxLength) {
+      return `Rules must not exceed ${groupLimits.rulesMaxLength} characters`;
+    }
     if (!form.joinUrl.trim()) return "14. Invite Link is required";
     const linkCheck = validateInviteLink(form.joinUrl, form.platform, activePlatform?.invitePattern);
     if (!linkCheck.valid) return linkCheck.error || linkHints.exampleError;
     if (!termsAccepted) return "15. Please confirm the Terms & Conditions checkbox";
-    if (!user && !form.submitterName.trim()) return "Your name is required";
-    if (!user && !form.submitterEmail.trim()) return "Your email is required";
-    if (!user && form.submitterEmail && !/\S+@\S+\.\S+/.test(form.submitterEmail))
-      return "Please enter a valid email address";
     return null;
   };
 
@@ -205,25 +216,31 @@ export default function Submit() {
   };
 
   const handleFinalSubmit = async () => {
+    if (!user) {
+      toast.error("Please sign in to submit a community listing.");
+      return;
+    }
     const error = validate();
     if (error) {
       toast.error(error);
       return;
     }
+    const tagCheck = parseAndValidateTags(form.tagsInput, {
+      required: true,
+      maxTags: groupLimits.maxTags,
+    });
+    if (!tagCheck.valid) {
+      toast.error(tagCheck.error || "Please enter valid tags.");
+      return;
+    }
+
     setSubmitting(true);
     try {
       const categoryName = categories.find((c) => c.id === form.categoryId)?.name || "";
-      const tags = Array.from(
-        new Set(
-          form.tagsInput
-            .split(",")
-            .map((t) => t.trim().toLowerCase())
-            .filter(Boolean)
-        )
-      );
 
       await createGroup({
         name: form.name.trim(),
+        tagline: form.tagline.trim(),
         platform: form.platform,
         categoryId: form.categoryId,
         categoryName,
@@ -235,16 +252,13 @@ export default function Submit() {
         description: form.description.trim(),
         rules: form.rules.trim(),
         minimumAge: form.minimumAge || "All Ages",
-        tags,
+        tags: tagCheck.tags,
         joinUrl: form.joinUrl.trim(),
         logoUrl: form.logoUrl.trim(),
-        submittedBy: user?.uid || "",
-        submittedByName:
-          user
-            ? profile?.displayName || user.displayName || user.email || "User"
-            : form.submitterName.trim(),
-        submittedByEmail: user?.email || form.submitterEmail.trim(),
-        status: (isWebmaster || profile?.role === "webmaster") ? "approved" : "pending",
+        submittedBy: user.uid,
+        submittedByName: profile?.displayName || user.displayName || user.email || "User",
+        submittedByEmail: user.email || "",
+        status: (isWebmaster || profile?.role === "webmaster" || groupLimits.autoApproveGroups) ? "approved" : "pending",
         featured: false,
         trending: false,
       });
@@ -260,7 +274,7 @@ export default function Submit() {
   };
 
   if (submitted) {
-    const isAutoApproved = isWebmaster || profile?.role === "webmaster";
+    const isAutoApproved = Boolean(isWebmaster || profile?.role === "webmaster" || groupLimits.autoApproveGroups);
     return (
       <div className="max-w-lg mx-auto text-center py-24 px-4">
         <motion.div
@@ -292,6 +306,7 @@ export default function Submit() {
                 setForm((f) => ({
                   ...f,
                   name: "",
+                  tagline: "",
                   joinUrl: "",
                   description: "",
                   rules: "",
@@ -308,6 +323,44 @@ export default function Submit() {
             </button>
           </div>
         </motion.div>
+      </div>
+    );
+  }
+
+  // Wait for auth settlement before showing Sign In Required or form
+  if (authLoading) {
+    return (
+      <div className="flex justify-center py-24">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  // Authentication Required for all community submissions (no guest bypass)
+  if (!user) {
+    return (
+      <div className="max-w-xl mx-auto py-20 px-4 text-center space-y-5">
+        <div className="w-16 h-16 rounded-2xl bg-primary/10 text-primary flex items-center justify-center mx-auto border border-primary/20 shadow-lg">
+          <Shield className="w-8 h-8" />
+        </div>
+        <h1 className="text-2xl sm:text-3xl font-extrabold text-foreground">Sign In Required</h1>
+        <p className="text-sm text-muted-foreground leading-relaxed">
+          Community submissions require a signed-in LinkCloud account. Please sign in or create an account to submit your group listing.
+        </p>
+        <div className="pt-2 flex items-center justify-center gap-3">
+          <Link
+            href="/login?redirect=%2Fsubmit"
+            className="px-6 py-2.5 bg-primary text-primary-foreground font-semibold text-sm rounded-xl hover:bg-primary/90 transition inline-block shadow-sm"
+          >
+            Sign In
+          </Link>
+          <Link
+            href="/register?redirect=%2Fsubmit"
+            className="px-6 py-2.5 bg-muted text-foreground font-semibold text-sm rounded-xl hover:bg-muted/80 transition inline-block border border-border"
+          >
+            Create Account
+          </Link>
+        </div>
       </div>
     );
   }
@@ -335,34 +388,10 @@ export default function Submit() {
     );
   }
 
-  // Feature Flag: Public Guest Submissions Disabled (Sign In Required - Fail-Closed)
-  if (!user && settings?.allowPublicSubmissions !== true) {
-    return (
-      <div className="max-w-xl mx-auto py-20 px-4 text-center space-y-5">
-        <div className="w-16 h-16 rounded-2xl bg-primary/10 text-primary flex items-center justify-center mx-auto border border-primary/20 shadow-lg">
-          <Shield className="w-8 h-8" />
-        </div>
-        <h1 className="text-2xl sm:text-3xl font-extrabold text-foreground">Sign In Required</h1>
-        <p className="text-sm text-muted-foreground leading-relaxed">
-          Guest submissions are disabled. Please sign in or create an account to submit a community listing.
-        </p>
-        <div className="pt-2 flex items-center justify-center gap-3">
-          <Link
-            href="/login"
-            className="px-6 py-2.5 bg-primary text-primary-foreground font-semibold text-sm rounded-xl hover:bg-primary/90 transition inline-block shadow-sm"
-          >
-            Sign In
-          </Link>
-          <Link
-            href="/register"
-            className="px-6 py-2.5 bg-muted text-foreground font-semibold text-sm rounded-xl hover:bg-muted/80 transition inline-block border border-border"
-          >
-            Create Account
-          </Link>
-        </div>
-      </div>
-    );
-  }
+  const tagStats = getLiveTagStats(form.tagsInput, groupLimits.maxTags);
+  const tagValidation = form.tagsInput.trim()
+    ? parseAndValidateTags(form.tagsInput, { required: true, maxTags: groupLimits.maxTags })
+    : null;
 
   const inputClass =
     "w-full px-4 py-3 bg-background border border-border rounded-xl text-sm focus:ring-2 focus:ring-primary outline-none transition-all placeholder:text-muted-foreground";
@@ -381,7 +410,7 @@ export default function Submit() {
         <h1 className="text-3xl font-extrabold tracking-tight">Submit Your Community</h1>
         <p className="text-muted-foreground mt-2">
           Add your WhatsApp, Telegram, Discord, or other group to India's community
-          directory. Completely free — no account required.
+          directory.
         </p>
       </div>
 
@@ -419,14 +448,36 @@ export default function Submit() {
           <div className="space-y-6">
             {/* FIELD 1: Group Name * */}
             <div>
-              <label className={labelClass}>1. Group Name *</label>
+              <div className="flex justify-between items-center mb-1.5">
+                <label className={labelClass}>1. Group Name *</label>
+                <span className="text-xs font-semibold text-muted-foreground">
+                  {form.name.length} / {groupLimits.nameMaxLength}
+                </span>
+              </div>
               <input
                 required
                 value={form.name}
                 onChange={(e) => update("name", e.target.value)}
                 className={inputClass}
                 placeholder="e.g. India Tech & Developers Club"
-                maxLength={80}
+                maxLength={groupLimits.nameMaxLength}
+              />
+            </div>
+
+            {/* Optional Tagline */}
+            <div>
+              <div className="flex justify-between items-center mb-1.5">
+                <label className={labelClass}>Short Tagline (Optional)</label>
+                <span className="text-xs font-semibold text-muted-foreground">
+                  {form.tagline.length} / {groupLimits.taglineMaxLength}
+                </span>
+              </div>
+              <input
+                value={form.tagline}
+                onChange={(e) => update("tagline", e.target.value)}
+                className={inputClass}
+                placeholder="Concise one-line summary shown on directory cards"
+                maxLength={groupLimits.taglineMaxLength}
               />
             </div>
 
@@ -542,14 +593,14 @@ export default function Submit() {
                 <label className={labelClass}>6. Description *</label>
                 <span
                   className={`text-xs font-bold ${
-                    form.description.length > 500
+                    form.description.length > groupLimits.descriptionMaxLength
                       ? "text-destructive"
-                      : form.description.length < 20
+                      : form.description.length < groupLimits.descriptionMinLength
                       ? "text-amber-500"
                       : "text-muted-foreground"
                   }`}
                 >
-                  {form.description.length} / 500 Characters
+                  {form.description.length} / {groupLimits.descriptionMaxLength} Characters
                 </span>
               </div>
               <textarea
@@ -557,36 +608,58 @@ export default function Submit() {
                 rows={4}
                 value={form.description}
                 onChange={(e) => update("description", e.target.value)}
-                maxLength={500}
+                maxLength={groupLimits.descriptionMaxLength}
                 className={`${inputClass} resize-none`}
                 placeholder="Describe what your community is about, rules, and benefits for new members..."
               />
               <p className="text-[11px] text-muted-foreground mt-1">
-                Minimum 20 characters, Maximum 500 characters. Character counter provided.
+                Minimum {groupLimits.descriptionMinLength} characters, Maximum {groupLimits.descriptionMaxLength} characters.
               </p>
             </div>
 
             {/* FIELD 7: Tags * */}
             <div>
-              <label className={labelClass}>7. Tags *</label>
+              <div className="flex justify-between items-center mb-1.5">
+                <label className={labelClass}>7. Tags *</label>
+                <span
+                  className={`text-xs font-bold ${
+                    tagStats.count > groupLimits.maxTags || (tagValidation && !tagValidation.valid)
+                      ? "text-destructive"
+                      : "text-muted-foreground"
+                  }`}
+                >
+                  {tagStats.count} / {groupLimits.maxTags} Tags ({tagStats.remaining} remaining)
+                </span>
+              </div>
               <input
                 required
                 value={form.tagsInput}
                 onChange={(e) => update("tagsInput", e.target.value)}
-                className={inputClass}
+                className={`${inputClass} ${
+                  tagValidation && !tagValidation.valid ? "border-destructive focus:ring-destructive" : ""
+                }`}
                 placeholder="jobs, electrician, whatsapp, cg, room rent"
               />
-              <p className="text-[11px] text-muted-foreground mt-1">
-                Enter keywords separated by commas (e.g. jobs, electrician, whatsapp, cg, room rent)
-              </p>
+              {tagValidation && !tagValidation.valid ? (
+                <p className="text-xs font-medium text-destructive mt-1 flex items-center gap-1">
+                  <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" /> {tagValidation.error}
+                </p>
+              ) : (
+                <p className="text-[11px] text-muted-foreground mt-1">
+                  Up to {groupLimits.maxTags} comma-separated tags (max {MAX_TAG_LENGTH} characters per tag, no empty or duplicate tags).
+                </p>
+              )}
             </div>
 
-            {/* FIELD 8: Group Logo (Optional) */}
+            {/* FIELD 8: Group Logo */}
             <div>
-              <label className={labelClass}>8. Group Logo (Optional)</label>
+              <label className={labelClass}>
+                8. Group Logo {groupLimits.requireGroupLogo ? "*" : "(Optional)"}
+              </label>
               <div className="flex flex-col sm:flex-row gap-3">
                 <input
                   type="url"
+                  required={groupLimits.requireGroupLogo}
                   value={form.logoUrl}
                   onChange={(e) => update("logoUrl", e.target.value)}
                   className={inputClass}
@@ -605,7 +678,10 @@ export default function Submit() {
                 </label>
               </div>
               <p className="text-[11px] text-muted-foreground mt-1">
-                Paste an image URL or upload JPG/PNG/WEBP (max 2MB). Otherwise, LinkCloud shows the official {form.platform} icon.
+                Paste an image URL or upload JPG/PNG/WEBP (max 2MB).{" "}
+                {groupLimits.requireGroupLogo
+                  ? "A group logo is required."
+                  : `Otherwise, LinkCloud shows the official ${form.platform} icon.`}
               </p>
             </div>
           </div>
@@ -654,7 +730,7 @@ export default function Submit() {
               <select
                 required
                 value={form.district}
-                onChange={(e) => update("district", e.target.value)}
+                onChange={(e) => setForm((f) => ({ ...f, district: e.target.value, city: "" }))}
                 disabled={!form.state || districts.length === 0}
                 className={`${inputClass} cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed`}
               >
@@ -719,12 +795,17 @@ export default function Submit() {
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
             {/* FIELD 12: Rules (Optional) */}
             <div className="sm:col-span-2">
-              <label className={labelClass}>12. Rules (Optional)</label>
+              <div className="flex justify-between items-center mb-1.5">
+                <label className={labelClass}>12. Rules (Optional)</label>
+                <span className="text-xs font-semibold text-muted-foreground">
+                  {form.rules.length} / {groupLimits.rulesMaxLength}
+                </span>
+              </div>
               <textarea
                 rows={3}
                 value={form.rules}
                 onChange={(e) => update("rules", e.target.value)}
-                maxLength={300}
+                maxLength={groupLimits.rulesMaxLength}
                 className={`${inputClass} resize-none`}
                 placeholder={`No Spam\nRespect Members\nHindi/English Only`}
               />
@@ -786,44 +867,6 @@ export default function Submit() {
             </p>
           </div>
         </div>
-
-        {/* Submitter Details for Guest Submissions */}
-        {!user && (
-          <div className="bg-card border border-border/80 rounded-3xl p-6 sm:p-8 shadow-sm space-y-5">
-            <h2 className="text-base font-bold text-foreground">Your Submitter Details</h2>
-            <p className="text-xs text-muted-foreground">
-              Optional:{" "}
-              <Link href="/login" className="text-primary hover:underline">
-                sign in
-              </Link>{" "}
-              to track your submissions and manage communities in your dashboard.
-            </p>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-              <div>
-                <label className={labelClass}>Your Name *</label>
-                <input
-                  required
-                  value={form.submitterName}
-                  onChange={(e) => update("submitterName", e.target.value)}
-                  className={inputClass}
-                  placeholder="Your full name"
-                />
-              </div>
-              <div>
-                <label className={labelClass}>Your Email *</label>
-                <input
-                  required
-                  type="email"
-                  value={form.submitterEmail}
-                  onChange={(e) => update("submitterEmail", e.target.value)}
-                  className={inputClass}
-                  placeholder="your@email.com"
-                />
-              </div>
-            </div>
-          </div>
-        )}
 
         {/* SECTION 6: CONFIRMATION */}
         <div className="bg-card border border-border/80 rounded-3xl p-6 sm:p-8 shadow-sm space-y-6">
@@ -940,6 +983,9 @@ export default function Submit() {
 
                 <div className="space-y-1 min-w-0 flex-1">
                   <h3 className="font-extrabold text-lg text-foreground truncate">{form.name}</h3>
+                  {form.tagline && (
+                    <p className="text-xs text-muted-foreground truncate">{form.tagline}</p>
+                  )}
                   <div className="flex items-center gap-2 text-xs flex-wrap">
                     <span className="font-bold flex items-center gap-1 text-primary">
                       <PlatformIcon platform={form.platform} className="w-3.5 h-3.5" /> {form.platform}

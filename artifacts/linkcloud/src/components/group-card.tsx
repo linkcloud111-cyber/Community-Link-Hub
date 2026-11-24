@@ -24,6 +24,7 @@ import { PlatformIcon } from "@/components/platform-icon";
 import { CategoryIcon } from "@/components/category-icon";
 import { getPlatformVisual, getCategoryVisual } from "@/lib/taxonomy-visuals";
 import ReportModal from "@/components/report-modal";
+import { useSiteSettings } from "@/contexts/SiteSettingsContext";
 import { toast } from "sonner";
 
 interface GroupCardProps {
@@ -33,9 +34,11 @@ interface GroupCardProps {
 
 export default function GroupCard({ group, delay = 0 }: GroupCardProps) {
   const [, setLocation] = useLocation();
+  const { settings } = useSiteSettings();
   const [imageError, setImageError] = useState(false);
   const [copied, setCopied] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
+  const reportEnabled = settings?.reportSystemEnabled !== false;
 
   const isLinkActive = group.linkStatus?.toLowerCase() !== "inactive";
   const platVisual = getPlatformVisual(group.platform);
@@ -162,11 +165,16 @@ export default function GroupCard({ group, delay = 0 }: GroupCardProps) {
               </div>
             </div>
 
-            {/* Group Name & Location */}
+            {/* Group Name, Tagline & Location */}
             <div>
               <h3 className="text-base font-bold text-foreground leading-tight line-clamp-1 group-hover:text-primary transition-colors">
                 {group.name}
               </h3>
+              {group.tagline && (
+                <p className="text-xs font-medium text-muted-foreground mt-0.5 line-clamp-1">
+                  {group.tagline}
+                </p>
+              )}
               {locationParts && (
                 <p className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1 line-clamp-1">
                   <MapPin className="w-3 h-3 flex-shrink-0 text-primary/70" />
@@ -281,24 +289,28 @@ export default function GroupCard({ group, delay = 0 }: GroupCardProps) {
             </button>
 
             {/* Report */}
-            <button
-              onClick={handleReport}
-              className="p-1.5 bg-card hover:bg-destructive/10 text-muted-foreground hover:text-destructive border border-border/60 rounded-xl text-xs font-medium transition-colors"
-              title="Report Group"
-            >
-              <ShieldAlert className="w-3.5 h-3.5" />
-            </button>
+            {reportEnabled && (
+              <button
+                onClick={handleReport}
+                className="p-1.5 bg-card hover:bg-destructive/10 text-muted-foreground hover:text-destructive border border-border/60 rounded-xl text-xs font-medium transition-colors"
+                title="Report Group"
+              >
+                <ShieldAlert className="w-3.5 h-3.5" />
+              </button>
+            )}
           </div>
         </div>
       </motion.div>
 
       {/* Report Modal */}
-      <ReportModal
-        isOpen={reportOpen}
-        onClose={() => setReportOpen(false)}
-        groupId={group.id}
-        groupName={group.name}
-      />
+      {reportEnabled && (
+        <ReportModal
+          isOpen={reportOpen}
+          onClose={() => setReportOpen(false)}
+          groupId={group.id}
+          groupName={group.name}
+        />
+      )}
     </>
   );
 }

@@ -8,10 +8,10 @@ import {
   getFeaturedGroups,
   getLatestGroups,
   getSiteSettings,
-  getFAQs,
   logVisitorHit,
   logSearchQuery,
 } from "@/lib/firestore";
+import { fetchPublicFaqs } from "@/lib/cms-client";
 import type { Group, SiteSettings, FAQItem } from "@/lib/types";
 import { useAuth } from "@/contexts/AuthContext";
 import { useSiteSettings } from "@/contexts/SiteSettingsContext";
@@ -82,13 +82,13 @@ export default function Home() {
           getTrendingGroups(),
           getLatestGroups(),
           getApprovedGroups(),
-          getFAQs(),
+          fetchPublicFaqs().catch(() => []),
         ]);
         setFeatured(feat);
         setPopular(trend);
         setLatest(late);
         setAllGroupsCount(all.length);
-        setFaqs(faqData);
+        setFaqs(faqData.filter((f) => f.enabled !== false && f.status !== "draft"));
 
         const joins = all.reduce((sum, g) => sum + (g.joinCount ?? 0), 0);
         setTotalJoins(joins);
@@ -128,7 +128,7 @@ export default function Home() {
       logSearchQuery(search.trim());
       setLocation(`/groups?q=${encodeURIComponent(search.trim())}`);
     } else {
-      setLocation("/groups");
+      setLocation(settings?.heroButtonLink?.trim() || "/groups");
     }
   };
 
@@ -175,6 +175,7 @@ export default function Home() {
             </p>
 
             {/* Search Bar with Instant Autocomplete Suggestions */}
+            {settings?.searchEnabled !== false && (
             <div className="max-w-2xl mx-auto w-full mt-6 relative z-50">
               <form onSubmit={handleSearchSubmit} className="relative group">
                 <div className="absolute -inset-0.5 bg-gradient-to-r from-primary to-blue-500 rounded-2xl blur opacity-25 group-hover:opacity-40 transition duration-500 pointer-events-none" />
@@ -185,7 +186,10 @@ export default function Home() {
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
                     onFocus={() => search.trim() && setShowSuggestions(true)}
-                    placeholder="Search WhatsApp groups, study circles, cities, tech..."
+                    placeholder={
+                      settings?.searchPlaceholder?.trim() ||
+                      "Search WhatsApp groups, study circles, cities, tech..."
+                    }
                     className="w-full p-4 bg-transparent border-none outline-none text-foreground placeholder:text-muted-foreground text-sm sm:text-base"
                   />
                   {search && (
@@ -253,6 +257,7 @@ export default function Home() {
                 )}
               </AnimatePresence>
             </div>
+            )}
           </motion.div>
         </section>
       )}

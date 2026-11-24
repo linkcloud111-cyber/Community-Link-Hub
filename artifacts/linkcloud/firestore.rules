@@ -46,9 +46,9 @@ service cloud.firestore {
         getSiteSettings().groupSubmissionEnabled == true;
     }
 
-    function guestSubmissionsAllowed() {
-      return submissionsGloballyEnabled() &&
-        getSiteSettings().allowPublicSubmissions == true;
+    function siteFeatureEnabled(field) {
+      return !exists(/databases/$(database)/documents/settings/site) ||
+        getSiteSettings().get(field, true) != false;
     }
 
     function isGroupOwner(groupId) {
@@ -63,10 +63,11 @@ service cloud.firestore {
     }
 
     function isValidGroupStrings() {
-      return incoming().name is string && incoming().name.size() >= 2 && incoming().name.size() <= 100
+      return incoming().name is string && incoming().name.size() >= 2 && incoming().name.size() <= 150
+        && (!('tagline' in incoming()) || (incoming().tagline is string && incoming().tagline.size() <= 200))
         && incoming().platform is string && incoming().platform.size() > 0 && incoming().platform.size() <= 60
         && incoming().joinUrl is string && incoming().joinUrl.size() > 0 && incoming().joinUrl.size() <= 500
-        && incoming().description is string && incoming().description.size() >= 10 && incoming().description.size() <= 600
+        && incoming().description is string && incoming().description.size() >= 10 && incoming().description.size() <= 2000
         && (!('categoryId' in incoming()) || (incoming().categoryId is string && incoming().categoryId.size() <= 128))
         && (!('categoryName' in incoming()) || (incoming().categoryName is string && incoming().categoryName.size() <= 100))
         && (!('contentType' in incoming()) || (incoming().contentType is string && incoming().contentType.size() <= 100))
@@ -75,9 +76,9 @@ service cloud.firestore {
         && (!('state' in incoming()) || (incoming().state is string && incoming().state.size() <= 100))
         && (!('district' in incoming()) || (incoming().district is string && incoming().district.size() <= 100))
         && (!('city' in incoming()) || (incoming().city is string && incoming().city.size() <= 100))
-        && (!('rules' in incoming()) || (incoming().rules is string && incoming().rules.size() <= 1000))
+        && (!('rules' in incoming()) || (incoming().rules is string && incoming().rules.size() <= 2000))
         && (!('logoUrl' in incoming()) || (incoming().logoUrl is string && incoming().logoUrl.size() <= 1000))
-        && (!('tags' in incoming()) || (incoming().tags is list && incoming().tags.size() <= 20));
+        && (!('tags' in incoming()) || (incoming().tags is list && incoming().tags.size() <= 25));
     }
 
     // ─── Default Deny Catch-All ───
@@ -112,6 +113,7 @@ service cloud.firestore {
       allow list: if isWebmaster();
       allow create: if isValidId(userId) && (
         isWebmaster() || (
+          siteFeatureEnabled('userRegistrationEnabled') &&
           isUser(userId) &&
           (!('role' in incoming()) || incoming().role == 'user') &&
           (!('status' in incoming()) || incoming().status == 'pending_verification' || incoming().status == 'active') &&
@@ -191,19 +193,17 @@ service cloud.firestore {
 
       allow create: if isValidId(groupId) && isValidGroupStrings() && (
         isWebmaster() || (
+          isSignedIn() &&
           submissionsGloballyEnabled() &&
-          incoming().submittedBy is string && incoming().submittedBy.size() <= 128 &&
+          incoming().submittedBy is string && incoming().submittedBy == request.auth.uid &&
           incoming().status == 'pending' &&
+          'tags' in incoming() && incoming().tags is list && incoming().tags.size() >= 1 && incoming().tags.size() <= 25 &&
           incoming().get('featured', false) == false &&
           incoming().get('pinned', false) == false &&
           incoming().get('hidden', false) == false &&
           incoming().get('viewsCount', 0) == 0 &&
           incoming().get('joinCount', 0) == 0 &&
-          incoming().get('reportCount', 0) == 0 &&
-          (
-            (isSignedIn() && incoming().submittedBy == request.auth.uid) ||
-            (!isSignedIn() && guestSubmissionsAllowed() && incoming().submittedBy == '')
-          )
+          incoming().get('reportCount', 0) == 0
         )
       );
 
@@ -257,8 +257,7 @@ service cloud.firestore {
       allow read: if isWebmaster() || (isSignedIn() && resource.data.submittedBy == request.auth.uid);
       allow create: if isValidId(groupId) && (
         isWebmaster() ||
-        (submissionsGloballyEnabled() && isSignedIn() && incoming().submittedBy == request.auth.uid) ||
-        (guestSubmissionsAllowed() && !isSignedIn() && incoming().submittedBy == '')
+        (submissionsGloballyEnabled() && isSignedIn() && incoming().submittedBy == request.auth.uid)
       );
       allow update, delete: if isValidId(groupId) && (
         isWebmaster() ||
@@ -269,7 +268,7 @@ service cloud.firestore {
     // ─── Favorites Collection ───
     match /favorites/{favoriteId} {
       allow read: if isSignedIn() && (existing().userId == request.auth.uid || isWebmaster());
-      allow create: if isValidId(favoriteId) && isSignedIn() && incoming().userId == request.auth.uid;
+      allow create: if isValidId(favoriteId) && isSignedIn() && incoming().userId == request.auth.uid && (isWebmaster() || siteFeatureEnabled('favoritesEnabled'));
       allow delete: if isValidId(favoriteId) && isSignedIn() && (existing().userId == request.auth.uid || isWebmaster());
     }
 
@@ -284,17 +283,18 @@ service cloud.firestore {
     match /reports/{reportId} {
       allow read: if isWebmaster();
       allow create: if isValidId(reportId) &&
-        incoming().keys().hasAll(['groupId', 'reportedBy', 'reason', 'details', 'status']) &&
-        incoming().groupId is string && incoming().groupId.size() > 0 && incoming().groupId.size() <= 128 &&
+        (isWebmaster() || siteFeatureEnabled('reportSystemEnabled')) &&
+        incoming().keys().hasAll(['groupId', 'reportedBy', 'reportedByName', 'reason', 'details', 'status']) &&
+        incoming().groupId is string && incoming().groupId.trim().size() > 0 && incoming().groupId.size() <= 128 &&
         incoming().reportedBy is string && incoming().reportedBy.size() <= 128 &&
-        (!('reportedByName' in incoming()) || (incoming().reportedByName is string && incoming().reportedByName.size() <= 100)) &&
+        incoming().reportedByName is string && incoming().reportedByName.trim().size() >= 2 && incoming().reportedByName.trim().size() <= 100 &&
         (!('groupName' in incoming()) || (incoming().groupName is string && incoming().groupName.size() <= 150)) &&
-        incoming().reason is string && incoming().reason.size() > 0 && incoming().reason.size() <= 150 &&
-        incoming().details is string && incoming().details.size() <= 500 &&
+        incoming().reason is string && incoming().reason in ['Invalid Link', 'Spam', 'Scam', 'Fake Group', 'Adult Content', 'Duplicate', 'Copyright', 'Other'] &&
+        incoming().details is string && incoming().details.trim().size() >= 10 && incoming().details.trim().size() <= 500 &&
         incoming().status == 'pending' &&
         (
           (!isSignedIn() && incoming().reportedBy == '') ||
-          (isSignedIn() && (incoming().reportedBy == '' || incoming().reportedBy == request.auth.uid))
+          (isSignedIn() && incoming().reportedBy == request.auth.uid)
         );
       allow update, delete: if isValidId(reportId) && isWebmaster();
     }
@@ -303,6 +303,7 @@ service cloud.firestore {
     match /complaints/{complaintId} {
       allow read: if isWebmaster() || (isSignedIn() && existing().email == request.auth.token.email);
       allow create: if isValidId(complaintId) &&
+        (isWebmaster() || siteFeatureEnabled('complaintSystemEnabled')) &&
         incoming().keys().hasAll(['name', 'email', 'subject', 'message', 'status']) &&
         incoming().name is string && incoming().name.size() > 0 && incoming().name.size() <= 100 &&
         incoming().email is string && incoming().email.size() > 2 && incoming().email.size() <= 150 &&
@@ -317,6 +318,7 @@ service cloud.firestore {
     match /contacts/{contactId} {
       allow read: if isWebmaster() || (isSignedIn() && existing().email == request.auth.token.email);
       allow create: if isValidId(contactId) &&
+        (isWebmaster() || siteFeatureEnabled('contactFormEnabled')) &&
         incoming().keys().hasAll(['name', 'email', 'subject', 'message', 'status']) &&
         incoming().name is string && incoming().name.size() > 0 && incoming().name.size() <= 100 &&
         incoming().email is string && incoming().email.size() > 2 && incoming().email.size() <= 150 &&
@@ -401,33 +403,17 @@ service cloud.firestore {
     }
 
     // ─── Email Index ───
+    // Strictly server-managed private lookup index; client reads and writes are denied.
     match /emailIndex/{email} {
-      allow get: if isValidIndexId(email);
-      allow list: if isWebmaster();
-      allow create: if isValidIndexId(email) && (
-        isWebmaster() || (
-          isSignedIn() &&
-          incoming().uid == request.auth.uid &&
-          !exists(/databases/$(database)/documents/emailIndex/$(email))
-        )
-      );
-      allow update: if isWebmaster();
-      allow delete: if isWebmaster() || (isSignedIn() && existing().uid == request.auth.uid);
+      allow read: if isWebmaster();
+      allow write: if false;
     }
 
     // ─── Mobile Index ───
+    // Strictly server-managed private lookup index; client reads and writes are denied.
     match /mobileIndex/{phone} {
-      allow get: if isValidIndexId(phone);
-      allow list: if isWebmaster();
-      allow create: if isValidIndexId(phone) && (
-        isWebmaster() || (
-          isSignedIn() &&
-          incoming().uid == request.auth.uid &&
-          !exists(/databases/$(database)/documents/mobileIndex/$(phone))
-        )
-      );
-      allow update: if isWebmaster();
-      allow delete: if isWebmaster() || (isSignedIn() && existing().uid == request.auth.uid);
+      allow read: if isWebmaster();
+      allow write: if false;
     }
 
     // ─── Deleted Accounts Tombstone ───

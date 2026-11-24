@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Link, useLocation } from "wouter";
-import { getAdminStats } from "@/lib/firestore";
+import { getAdminNavBadgeCounts } from "@/lib/firestore";
 import {
   ShieldCheck,
   LayoutGrid,
@@ -28,13 +28,13 @@ export default function AdminNav({ stats: initialStats }: AdminNavProps) {
 
   useEffect(() => {
     if (!initialStats) {
-      getAdminStats()
+      getAdminNavBadgeCounts()
         .then((s) => {
           setStats({
-            pendingGroups: s?.pendingGroups,
-            pendingReports: s?.pendingReports,
-            unreadContacts: s?.unreadContacts,
-            pendingDeletions: s?.pendingDeletions,
+            pendingGroups: s.pendingGroups,
+            pendingReports: s.pendingReports,
+            unreadContacts: s.unreadContacts,
+            pendingDeletions: s.pendingDeletions,
           });
         })
         .catch(() => {});

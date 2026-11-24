@@ -3,6 +3,7 @@ import { Link, useSearch } from "wouter";
 import { useTaxonomy } from "@/contexts/TaxonomyContext";
 import { useLocation } from "@/contexts/LocationContext";
 import { useSiteSettings } from "@/contexts/SiteSettingsContext";
+import { useAuth } from "@/contexts/AuthContext";
 import {
   getApprovedGroups,
 } from "@/lib/firestore";
@@ -116,6 +117,7 @@ export default function GroupsPage() {
   }, [queryParams]);
 
   const { settings } = useSiteSettings();
+  const { isWebmaster } = useAuth();
   const [allApprovedGroups, setAllApprovedGroups] = useState<Group[]>([]);
 
   const filterSettings: FilterSettings = useMemo(() => {
@@ -140,10 +142,6 @@ export default function GroupsPage() {
   const [showFiltersMobile, setShowFiltersMobile] = useState(false);
   const [searchFocused, setSearchFocused] = useState(false);
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
-
-  useEffect(() => {
-    document.title = `Public Group Directory — ${settings?.siteName || "LinkCloud"}`;
-  }, [settings?.siteName]);
 
   const availableDistricts = state ? getDistrictsForState(state) : [];
   const availableCities = state ? getCitiesForDistrict(state, district) : [];
@@ -368,6 +366,30 @@ export default function GroupsPage() {
   const visibleGroups = allApprovedGroups.slice(0, visibleCount);
   const hasMore = visibleCount < allApprovedGroups.length;
 
+  if (settings?.publicDirectoryEnabled === false && !isWebmaster) {
+    return (
+      <div className="max-w-xl mx-auto py-20 px-4 text-center space-y-5">
+        <div className="w-16 h-16 rounded-2xl bg-amber-500/10 text-amber-500 flex items-center justify-center mx-auto border border-amber-500/20 shadow-lg">
+          <Compass className="w-8 h-8" />
+        </div>
+        <h1 className="text-2xl sm:text-3xl font-extrabold text-foreground">
+          Public Directory Temporarily Paused
+        </h1>
+        <p className="text-sm text-muted-foreground leading-relaxed">
+          Public community browsing is currently paused by the webmaster. Please check back later.
+        </p>
+        <div className="pt-2">
+          <Link
+            href="/"
+            className="px-6 py-2.5 bg-primary text-primary-foreground font-semibold text-sm rounded-xl hover:bg-primary/90 transition inline-block"
+          >
+            Return Home
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6 pb-20">
       <PageBreadcrumb items={[{ label: "Public Directory" }]} className="-mt-1" />
@@ -438,6 +460,7 @@ export default function GroupsPage() {
       <div className="bg-card border border-border/80 rounded-3xl p-5 sm:p-6 shadow-sm space-y-5">
         {/* Search Input & Sort Selector */}
         <div className="flex flex-col md:flex-row gap-3">
+          {settings?.searchEnabled !== false && (
           <div className="relative flex-1">
             <Search className="w-5 h-5 absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
             <input
@@ -446,7 +469,10 @@ export default function GroupsPage() {
               onFocus={() => setSearchFocused(true)}
               onBlur={() => setTimeout(() => setSearchFocused(false), 200)}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Realtime Search by group name, category, platform, state, city..."
+              placeholder={
+                settings?.searchPlaceholder?.trim() ||
+                "Realtime Search by group name, category, platform, state, city..."
+              }
               className="w-full pl-12 pr-10 py-3 bg-background border border-border rounded-2xl text-sm focus:ring-2 focus:ring-primary outline-none transition"
             />
             {search && (
@@ -480,6 +506,7 @@ export default function GroupsPage() {
               </div>
             )}
           </div>
+          )}
 
           <div className="flex items-center gap-2">
             <div className="relative min-w-[210px] flex-1 md:flex-none">
@@ -704,7 +731,32 @@ export default function GroupsPage() {
               {effectiveState && (
                 <span className="px-2 py-0.5 rounded-md bg-primary/10 text-primary border border-primary/20 font-semibold flex items-center gap-1">
                   {effectiveState}
-                  <X className="w-3 h-3 cursor-pointer" onClick={() => setState("")} />
+                  <X
+                    className="w-3 h-3 cursor-pointer"
+                    onClick={() => {
+                      setState("");
+                      setDistrict("");
+                      setCity("");
+                    }}
+                  />
+                </span>
+              )}
+              {effectiveDistrict && (
+                <span className="px-2 py-0.5 rounded-md bg-primary/10 text-primary border border-primary/20 font-semibold flex items-center gap-1">
+                  {effectiveDistrict}
+                  <X
+                    className="w-3 h-3 cursor-pointer"
+                    onClick={() => {
+                      setDistrict("");
+                      setCity("");
+                    }}
+                  />
+                </span>
+              )}
+              {effectiveCity && (
+                <span className="px-2 py-0.5 rounded-md bg-primary/10 text-primary border border-primary/20 font-semibold flex items-center gap-1">
+                  {effectiveCity}
+                  <X className="w-3 h-3 cursor-pointer" onClick={() => setCity("")} />
                 </span>
               )}
               {effectiveLinkStatus && (

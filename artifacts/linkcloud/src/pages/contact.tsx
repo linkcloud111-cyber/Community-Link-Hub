@@ -50,10 +50,51 @@ export default function ContactPage() {
     }
   }, [user, profile]);
 
-  const supportEmail = settings?.supportEmail || settings?.contactEmail || "support@linkcloud.in";
-  const supportMobile = settings?.supportMobile || "";
-  const businessAddress = settings?.businessAddress || "";
-  const officeHours = settings?.officeHours || "";
+  const officialContactEmail = (settings?.officialContactEmail || "").trim();
+  const supportEmail = (settings?.supportEmail || settings?.contactEmail || "").trim();
+  const supportMobile = (settings?.supportMobile || "").trim();
+  const whatsappContactNumber = (settings?.whatsappContactNumber || "").trim();
+  const officialWebsiteUrl = (settings?.officialWebsiteUrl || "").trim();
+  const officeHours = (settings?.officeHours || "").trim();
+
+  const formattedAddress = [
+    settings?.businessAddress,
+    settings?.city,
+    settings?.district,
+    settings?.state,
+    settings?.pinCode,
+    settings?.country,
+  ]
+    .map((v) => (v || "").trim())
+    .filter(Boolean)
+    .join(", ");
+
+  const showContactSection =
+    settings?.showCompleteContactSection !== false &&
+    settings?.showContactOnContactPage !== false;
+  const canShowContactEmail = showContactSection && settings?.showContactEmail !== false && Boolean(officialContactEmail);
+  const canShowSupportEmail = showContactSection && settings?.showSupportEmail !== false && Boolean(supportEmail);
+  const canShowPhone = showContactSection && settings?.showPhoneNumber !== false && Boolean(supportMobile);
+  const canShowWhatsApp = showContactSection && settings?.showWhatsAppContact !== false && Boolean(whatsappContactNumber);
+  const canShowAddress = showContactSection && settings?.showAddress !== false && Boolean(formattedAddress);
+  const canShowHours = showContactSection && Boolean(officeHours);
+  const canShowWebsite = showContactSection && Boolean(officialWebsiteUrl);
+
+  const hasAnyVisibleCard =
+    canShowContactEmail ||
+    canShowSupportEmail ||
+    canShowPhone ||
+    canShowWhatsApp ||
+    canShowHours ||
+    canShowAddress ||
+    canShowWebsite;
+
+  const fallbackEmail =
+    (settings?.showSupportEmail !== false && supportEmail) ||
+    (settings?.showContactEmail !== false && officialContactEmail) ||
+    "";
+
+  const whatsappDigits = whatsappContactNumber.replace(/[^0-9]/g, "");
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -98,7 +139,7 @@ export default function ContactPage() {
 
       <div className="text-center space-y-3">
         <span className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-primary/10 text-primary text-xs font-semibold uppercase tracking-wider">
-          Support & Inquiries
+          Support &amp; Inquiries
         </span>
         <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight">Contact Webmaster</h1>
         <p className="text-sm sm:text-base text-muted-foreground max-w-xl mx-auto">
@@ -107,58 +148,117 @@ export default function ContactPage() {
       </div>
 
       {/* Official Directory Contact Information from Webmaster Settings */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="p-4 rounded-2xl bg-card border border-border/80 shadow-sm space-y-1">
-          <div className="w-8 h-8 rounded-xl bg-primary/10 text-primary flex items-center justify-center mb-2">
-            <Mail className="w-4 h-4" />
-          </div>
-          <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">Official Email</p>
-          <a
-            href={`mailto:${supportEmail}`}
-            className="text-xs font-semibold text-foreground hover:text-primary transition-colors block truncate"
-            title={supportEmail}
-          >
-            {supportEmail}
-          </a>
+      {hasAnyVisibleCard && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {canShowContactEmail && (
+            <div className="p-4 rounded-2xl bg-card border border-border/80 shadow-sm space-y-1">
+              <div className="w-8 h-8 rounded-xl bg-primary/10 text-primary flex items-center justify-center mb-2">
+                <Mail className="w-4 h-4" />
+              </div>
+              <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">Contact Email</p>
+              <a
+                href={`mailto:${officialContactEmail}`}
+                className="text-xs font-semibold text-foreground hover:text-primary transition-colors block truncate"
+                title={officialContactEmail}
+              >
+                {officialContactEmail}
+              </a>
+            </div>
+          )}
+
+          {canShowSupportEmail && (
+            <div className="p-4 rounded-2xl bg-card border border-border/80 shadow-sm space-y-1">
+              <div className="w-8 h-8 rounded-xl bg-indigo-500/10 text-indigo-500 flex items-center justify-center mb-2">
+                <Mail className="w-4 h-4" />
+              </div>
+              <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">Support Email</p>
+              <a
+                href={`mailto:${supportEmail}`}
+                className="text-xs font-semibold text-foreground hover:text-primary transition-colors block truncate"
+                title={supportEmail}
+              >
+                {supportEmail}
+              </a>
+            </div>
+          )}
+
+          {canShowPhone && (
+            <div className="p-4 rounded-2xl bg-card border border-border/80 shadow-sm space-y-1">
+              <div className="w-8 h-8 rounded-xl bg-emerald-500/10 text-emerald-500 flex items-center justify-center mb-2">
+                <Phone className="w-4 h-4" />
+              </div>
+              <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">Helpline</p>
+              <a
+                href={`tel:${supportMobile.replace(/\s+/g, "")}`}
+                className="text-xs font-semibold text-foreground hover:text-emerald-500 transition-colors block"
+              >
+                {supportMobile}
+              </a>
+            </div>
+          )}
+
+          {canShowWhatsApp && (
+            <div className="p-4 rounded-2xl bg-card border border-border/80 shadow-sm space-y-1">
+              <div className="w-8 h-8 rounded-xl bg-green-500/10 text-green-500 flex items-center justify-center mb-2">
+                <MessageSquare className="w-4 h-4" />
+              </div>
+              <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">WhatsApp Desk</p>
+              {whatsappDigits.length >= 10 ? (
+                <a
+                  href={`https://wa.me/${whatsappDigits}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs font-semibold text-foreground hover:text-green-500 transition-colors block"
+                >
+                  {whatsappContactNumber}
+                </a>
+              ) : (
+                <p className="text-xs font-semibold text-foreground">{whatsappContactNumber}</p>
+              )}
+            </div>
+          )}
+
+          {canShowHours && (
+            <div className="p-4 rounded-2xl bg-card border border-border/80 shadow-sm space-y-1">
+              <div className="w-8 h-8 rounded-xl bg-blue-500/10 text-blue-500 flex items-center justify-center mb-2">
+                <Clock className="w-4 h-4" />
+              </div>
+              <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">Desk Hours</p>
+              <p className="text-xs text-foreground font-medium leading-relaxed">{officeHours}</p>
+            </div>
+          )}
+
+          {canShowAddress && (
+            <div className="p-4 rounded-2xl bg-card border border-border/80 shadow-sm space-y-1">
+              <div className="w-8 h-8 rounded-xl bg-purple-500/10 text-purple-500 flex items-center justify-center mb-2">
+                <MapPin className="w-4 h-4" />
+              </div>
+              <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">Office Address</p>
+              <p className="text-xs text-foreground font-medium leading-relaxed" title={formattedAddress}>
+                {formattedAddress}
+              </p>
+            </div>
+          )}
+
+          {canShowWebsite && (
+            <div className="p-4 rounded-2xl bg-card border border-border/80 shadow-sm space-y-1">
+              <div className="w-8 h-8 rounded-xl bg-cyan-500/10 text-cyan-500 flex items-center justify-center mb-2">
+                <ShieldCheck className="w-4 h-4" />
+              </div>
+              <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">Official Website</p>
+              <a
+                href={officialWebsiteUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs font-semibold text-foreground hover:text-primary transition-colors block truncate"
+                title={officialWebsiteUrl}
+              >
+                {officialWebsiteUrl}
+              </a>
+            </div>
+          )}
         </div>
-
-        {supportMobile && (
-          <div className="p-4 rounded-2xl bg-card border border-border/80 shadow-sm space-y-1">
-            <div className="w-8 h-8 rounded-xl bg-emerald-500/10 text-emerald-500 flex items-center justify-center mb-2">
-              <Phone className="w-4 h-4" />
-            </div>
-            <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">Helpline</p>
-            <a
-              href={`tel:${supportMobile.replace(/\s+/g, "")}`}
-              className="text-xs font-semibold text-foreground hover:text-emerald-500 transition-colors block"
-            >
-              {supportMobile}
-            </a>
-          </div>
-        )}
-
-        {officeHours && (
-          <div className="p-4 rounded-2xl bg-card border border-border/80 shadow-sm space-y-1">
-            <div className="w-8 h-8 rounded-xl bg-blue-500/10 text-blue-500 flex items-center justify-center mb-2">
-              <Clock className="w-4 h-4" />
-            </div>
-            <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">Desk Hours</p>
-            <p className="text-xs text-foreground font-medium leading-relaxed">{officeHours}</p>
-          </div>
-        )}
-
-        {businessAddress && (
-          <div className="p-4 rounded-2xl bg-card border border-border/80 shadow-sm space-y-1">
-            <div className="w-8 h-8 rounded-xl bg-purple-500/10 text-purple-500 flex items-center justify-center mb-2">
-              <MapPin className="w-4 h-4" />
-            </div>
-            <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">HQ Address</p>
-            <p className="text-xs text-foreground font-medium leading-relaxed truncate" title={businessAddress}>
-              {businessAddress}
-            </p>
-          </div>
-        )}
-      </div>
+      )}
 
       {settings?.contactFormEnabled === false ? (
         <div className="bg-card border border-border/80 rounded-3xl p-8 sm:p-12 text-center space-y-4 shadow-xl">
@@ -167,16 +267,21 @@ export default function ContactPage() {
           </div>
           <h2 className="text-2xl font-bold">Contact Form Temporarily Closed</h2>
           <p className="text-sm text-muted-foreground max-w-md mx-auto leading-relaxed">
-            Direct web submissions are currently paused. You can reach the webmaster team directly by sending an email to:
+            Direct web submissions are currently paused.
+            {fallbackEmail
+              ? " You can reach the webmaster team directly via email:"
+              : " Please check back later when public inquiries reopen."}
           </p>
-          <div className="pt-2">
-            <a
-              href={`mailto:${supportEmail}`}
-              className="px-6 py-2.5 bg-primary text-primary-foreground font-semibold text-sm rounded-xl hover:bg-primary/90 transition inline-flex items-center gap-2"
-            >
-              <Mail className="w-4 h-4" /> {supportEmail}
-            </a>
-          </div>
+          {fallbackEmail && (
+            <div className="pt-2">
+              <a
+                href={`mailto:${fallbackEmail}`}
+                className="px-6 py-2.5 bg-primary text-primary-foreground font-semibold text-sm rounded-xl hover:bg-primary/90 transition inline-flex items-center gap-2"
+              >
+                <Mail className="w-4 h-4" /> {fallbackEmail}
+              </a>
+            </div>
+          )}
         </div>
       ) : (
         <motion.div

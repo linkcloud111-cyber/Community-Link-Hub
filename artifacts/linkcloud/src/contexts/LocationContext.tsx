@@ -50,18 +50,19 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
       collection(db, "states"),
       (snap) => {
         if (snap.empty) {
-          setStates((prev) => (prev.length > 0 ? prev : DEFAULT_LOCATION_STATES));
+          setStates(DEFAULT_LOCATION_STATES);
           return;
         }
-        const list: LocationState[] = snap.docs.map((d) => {
+        const firestoreStates: LocationState[] = snap.docs.map((d) => {
           const data = d.data();
+          const isEnabled = data.enabled !== false && data.status !== "disabled";
           return {
             id: d.id,
             name: data.name || "",
             slug: data.slug || d.id,
             country: data.country || "India",
-            enabled: data.enabled !== false && data.status !== "disabled",
-            status: data.status || (data.enabled === false ? "disabled" : "active"),
+            enabled: isEnabled,
+            status: data.status || (isEnabled ? "active" : "disabled"),
             displayOrder: data.displayOrder ?? 0,
             createdAt: data.createdAt,
             updatedAt: data.updatedAt,
@@ -69,6 +70,21 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
             updatedBy: data.updatedBy || "system",
           } as LocationState;
         });
+
+        let list = firestoreStates;
+        // If Firestore only contains a few custom states (not full India seed), merge missing defaults
+        if (firestoreStates.length < 10) {
+          const existingKeys = new Set(
+            firestoreStates.map((s) => s.name.trim().toLowerCase())
+          );
+          const merged = [...firestoreStates];
+          for (const def of DEFAULT_LOCATION_STATES) {
+            if (!existingKeys.has(def.name.trim().toLowerCase())) {
+              merged.push(def);
+            }
+          }
+          list = merged;
+        }
 
         list.sort((a, b) => {
           if ((a.displayOrder ?? 0) !== (b.displayOrder ?? 0)) {
@@ -86,8 +102,13 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
     const unsubDistricts = onSnapshot(
       collection(db, "districts"),
       (snap) => {
-        const list: LocationDistrict[] = snap.docs.map((d) => {
+        if (snap.empty) {
+          setDistricts(DEFAULT_LOCATION_DISTRICTS);
+          return;
+        }
+        const firestoreDistricts: LocationDistrict[] = snap.docs.map((d) => {
           const data = d.data();
+          const isEnabled = data.enabled !== false && data.status !== "disabled";
           return {
             id: d.id,
             stateId: data.stateId || "",
@@ -95,8 +116,8 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
             name: data.name || "",
             slug: data.slug || d.id,
             country: data.country || "India",
-            enabled: data.enabled !== false && data.status !== "disabled",
-            status: data.status || (data.enabled === false ? "disabled" : "active"),
+            enabled: isEnabled,
+            status: data.status || (isEnabled ? "active" : "disabled"),
             displayOrder: data.displayOrder ?? 0,
             createdAt: data.createdAt,
             updatedAt: data.updatedAt,
@@ -104,6 +125,23 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
             updatedBy: data.updatedBy || "system",
           } as LocationDistrict;
         });
+
+        let list = firestoreDistricts;
+        if (firestoreDistricts.length < 50) {
+          const existingKeys = new Set(
+            firestoreDistricts.map(
+              (d) => `${d.stateName.trim().toLowerCase()}::${d.name.trim().toLowerCase()}`
+            )
+          );
+          const merged = [...firestoreDistricts];
+          for (const def of DEFAULT_LOCATION_DISTRICTS) {
+            const k = `${def.stateName.trim().toLowerCase()}::${def.name.trim().toLowerCase()}`;
+            if (!existingKeys.has(k)) {
+              merged.push(def);
+            }
+          }
+          list = merged;
+        }
 
         list.sort((a, b) => {
           if ((a.displayOrder ?? 0) !== (b.displayOrder ?? 0)) {
@@ -123,6 +161,7 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
       (snap) => {
         const list: LocationCity[] = snap.docs.map((d) => {
           const data = d.data();
+          const isEnabled = data.enabled !== false && data.status !== "disabled";
           return {
             id: d.id,
             stateId: data.stateId || "",
@@ -132,8 +171,8 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
             name: data.name || "",
             slug: data.slug || d.id,
             country: data.country || "India",
-            enabled: data.enabled !== false && data.status !== "disabled",
-            status: data.status || (data.enabled === false ? "disabled" : "active"),
+            enabled: isEnabled,
+            status: data.status || (isEnabled ? "active" : "disabled"),
             displayOrder: data.displayOrder ?? 0,
             createdAt: data.createdAt,
             updatedAt: data.updatedAt,
@@ -178,10 +217,14 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
   const getCitiesForDistrict = (stateName: string, districtName?: string, includeDisabled = false) => {
     if (!stateName) return [];
     const source = includeDisabled ? cities : activeCities;
+    const normalizedState = stateName.toLowerCase().trim();
+    const normalizedDistrict = (districtName || "").toLowerCase().trim();
     return source.filter((c) => {
-      const stateMatch = c.stateName.toLowerCase().trim() === stateName.toLowerCase().trim();
-      if (!districtName) return stateMatch;
-      return stateMatch && (c.districtName || "").toLowerCase().trim() === districtName.toLowerCase().trim();
+      const stateMatch = c.stateName.toLowerCase().trim() === normalizedState;
+      if (!stateMatch) return false;
+      if (!normalizedDistrict) return true;
+      const cityDistrict = (c.districtName || "").toLowerCase().trim();
+      return cityDistrict === normalizedDistrict || cityDistrict === "";
     });
   };
 

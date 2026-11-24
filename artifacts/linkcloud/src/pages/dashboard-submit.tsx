@@ -5,6 +5,12 @@ import { useSiteSettings } from "@/contexts/SiteSettingsContext";
 import { useTaxonomy } from "@/contexts/TaxonomyContext";
 import { useLocation as useAppLocation } from "@/contexts/LocationContext";
 import { createGroup, checkDuplicateGroup } from "@/lib/firestore";
+import {
+  parseAndValidateTags,
+  getLiveTagStats,
+  getGroupLimits,
+  MAX_TAG_LENGTH,
+} from "@/lib/group-validation";
 import { uploadToCloudinary } from "@/lib/cloudinary";
 import { getPlatformLinkHints, normalizePlatformKey, validateInviteLink } from "@/lib/utils";
 import { toast } from "sonner";
@@ -40,6 +46,7 @@ const DRAFT_KEY = "linkcloud_submit_draft";
 export default function DashboardSubmit() {
   const { user, isWebmaster, profile } = useAuth();
   const { settings } = useSiteSettings();
+  const groupLimits = getGroupLimits(settings);
   const [, setLocation] = useLocation();
   usePageTitle("Submit a Community", "Public Directory");
   const {
@@ -57,6 +64,7 @@ export default function DashboardSubmit() {
 
   // Form Fields
   const [name, setName] = useState("");
+  const [tagline, setTagline] = useState("");
   const [platform, setPlatform] = useState("");
   const [categoryId, setCategoryId] = useState("");
   const [contentType, setContentType] = useState("");
@@ -169,10 +177,11 @@ export default function DashboardSubmit() {
 
   // Auto Save Draft & dirty flag
   useEffect(() => {
-    if (name || joinUrl || description || state || city || rules) {
+    if (name || tagline || joinUrl || description || state || city || rules || tagsInput) {
       setIsDirty(true);
       const draftObj = {
         name,
+        tagline,
         platform,
         categoryId,
         contentType,
@@ -183,11 +192,12 @@ export default function DashboardSubmit() {
         city,
         rules,
         minimumAge,
+        tagsInput,
         joinUrl,
       };
       localStorage.setItem(draftKey, JSON.stringify(draftObj));
     }
-  }, [name, platform, categoryId, contentType, description, language, state, district, city, rules, minimumAge, joinUrl, draftKey]);
+  }, [name, tagline, platform, categoryId, contentType, description, language, state, district, city, rules, minimumAge, tagsInput, joinUrl, draftKey]);
 
   // Unsaved changes warning
   useEffect(() => {
@@ -208,6 +218,7 @@ export default function DashboardSubmit() {
     try {
       const data = JSON.parse(saved);
       if (data.name) setName(data.name);
+      if (data.tagline) setTagline(data.tagline);
       if (data.platform) setPlatform(data.platform);
       if (data.categoryId) setCategoryId(data.categoryId);
       if (data.contentType) setContentType(data.contentType);
@@ -218,6 +229,7 @@ export default function DashboardSubmit() {
       if (data.city) setCity(data.city);
       if (data.rules) setRules(data.rules);
       if (data.minimumAge) setMinimumAge(data.minimumAge);
+      if (data.tagsInput) setTagsInput(data.tagsInput);
       if (data.joinUrl) setJoinUrl(data.joinUrl);
       toast.success("Saved submission draft restored!");
     } catch {
@@ -262,7 +274,7 @@ export default function DashboardSubmit() {
     if (platform) filled++;
     if (categoryId) filled++;
     if (contentType) filled++;
-    if (description.trim().length >= 20 && description.trim().length <= 500) filled++;
+    if (description.trim().length >= groupLimits.descriptionMinLength && description.trim().length <= groupLimits.descriptionMaxLength) filled++;
     if (language) filled++;
     if (state) filled++;
     if (district) filled++;
@@ -281,15 +293,39 @@ export default function DashboardSubmit() {
       setLocation("/login");
       return;
     }
-    if (!name.trim()) { toast.error("Group Name is required."); return; }
+    if (!name.trim() || name.trim().length < 3) { toast.error("Group Name must be at least 3 characters."); return; }
+    if (name.trim().length > groupLimits.nameMaxLength) {
+      toast.error(`Group Name must not exceed ${groupLimits.nameMaxLength} characters.`);
+      return;
+    }
+    if (tagline.trim().length > groupLimits.taglineMaxLength) {
+      toast.error(`Short Tagline must not exceed ${groupLimits.taglineMaxLength} characters.`);
+      return;
+    }
     if (duplicateName) { toast.error("A group with this exact name already exists."); return; }
     if (!categoryId) { toast.error("Please select a Category."); return; }
     if (!description.trim()) { toast.error("Description is required."); return; }
-    if (description.trim().length < 20) { toast.error("Description must be at least 20 characters."); return; }
-    if (description.trim().length > 500) { toast.error("Description must not exceed 500 characters."); return; }
+    if (description.trim().length < groupLimits.descriptionMinLength) {
+      toast.error(`Description must be at least ${groupLimits.descriptionMinLength} characters.`);
+      return;
+    }
+    if (description.trim().length > groupLimits.descriptionMaxLength) {
+      toast.error(`Description must not exceed ${groupLimits.descriptionMaxLength} characters.`);
+      return;
+    }
+    const tagCheck = parseAndValidateTags(tagsInput, { required: true, maxTags: groupLimits.maxTags });
+    if (!tagCheck.valid) { toast.error(tagCheck.error || "Please enter valid tags."); return; }
+    if (groupLimits.requireGroupLogo && !logoFile) {
+      toast.error("Group Logo upload is required by Webmaster settings.");
+      return;
+    }
     if (!state) { toast.error("Please select a State."); return; }
     if (!district) { toast.error("Please select a District."); return; }
     if (!city.trim()) { toast.error("City is required."); return; }
+    if (rules.trim().length > groupLimits.rulesMaxLength) {
+      toast.error(`Rules must not exceed ${groupLimits.rulesMaxLength} characters.`);
+      return;
+    }
     if (!joinUrl.trim()) { toast.error("Invite Link is required."); return; }
     if (urlFormatError) { toast.error(urlFormatError); return; }
     if (duplicateUrl) { toast.error("This Invite Link has already been submitted to LinkCloud."); return; }
@@ -311,23 +347,23 @@ export default function DashboardSubmit() {
       if (logoFile) {
         logoUrl = await uploadToCloudinary(
           logoFile,
-          settings?.cloudinaryUploadPreset,
-          settings?.cloudinaryCloudName
+          settings?.cloudinaryUploadPreset || settings?.cloudinarySettings?.uploadPreset,
+          settings?.cloudinaryCloudName || settings?.cloudinarySettings?.cloudName
         );
       }
 
+      const tagCheck = parseAndValidateTags(tagsInput, { required: true, maxTags: groupLimits.maxTags });
+      if (!tagCheck.valid) {
+        toast.error(tagCheck.error || "Please enter valid tags.");
+        setIsSubmitting(false);
+        return;
+      }
+
       const categoryName = categories.find((c) => c.id === categoryId)?.name || "";
-      const tags = Array.from(
-        new Set(
-          tagsInput
-            .split(",")
-            .map((t) => t.trim().toLowerCase())
-            .filter(Boolean)
-        )
-      );
 
       await createGroup({
         name: name.trim(),
+        tagline: tagline.trim(),
         platform,
         categoryId,
         categoryName,
@@ -340,12 +376,12 @@ export default function DashboardSubmit() {
         city: city.trim(),
         rules: rules.trim(),
         minimumAge: minimumAge || "All Ages",
-        tags,
+        tags: tagCheck.tags,
         joinUrl: joinUrl.trim(),
         submittedBy: user.uid,
         submittedByName: profile.displayName || user.displayName || user.email || "User",
         submittedByEmail: user.email || "",
-        status: (isWebmaster || profile?.role === "webmaster") ? "approved" : "pending",
+        status: (isWebmaster || profile?.role === "webmaster" || groupLimits.autoApproveGroups) ? "approved" : "pending",
       });
 
       // Clear draft
@@ -403,12 +439,12 @@ export default function DashboardSubmit() {
 
         <div className="space-y-2">
           <h1 className="text-3xl font-extrabold text-foreground">
-            {isWebmaster ? "Group Approved & Published!" : "Submission Successful!"}
+            {isWebmaster || groupLimits.autoApproveGroups ? "Group Approved & Published!" : "Submission Successful!"}
           </h1>
           <p className="text-muted-foreground text-sm max-w-lg mx-auto">
             Your group <strong className="text-foreground">"{name}"</strong> has been submitted successfully.
-            {isWebmaster
-              ? " It was automatically approved with Webmaster authority and is now live on LinkCloud."
+            {isWebmaster || groupLimits.autoApproveGroups
+              ? " It has been approved and is now live on LinkCloud."
               : " It is currently under review by the Web Administrator."}
           </p>
         </div>
@@ -431,11 +467,11 @@ export default function DashboardSubmit() {
           <div className="flex justify-between py-1">
             <span className="text-muted-foreground font-medium">Status</span>
             <span className={`font-bold px-2 py-0.5 rounded-full text-[10px] uppercase ${
-              isWebmaster
+              isWebmaster || groupLimits.autoApproveGroups
                 ? "text-emerald-600 bg-emerald-500/10 border border-emerald-500/20"
                 : "text-amber-600 bg-amber-500/10"
             }`}>
-              {isWebmaster ? "Approved & Live" : "Pending Review"}
+              {isWebmaster || groupLimits.autoApproveGroups ? "Approved & Live" : "Pending Review"}
             </span>
           </div>
         </div>
@@ -451,6 +487,7 @@ export default function DashboardSubmit() {
           <button
             onClick={() => {
               setName("");
+              setTagline("");
               setDescription("");
               setRules("");
               setJoinUrl("");
@@ -463,30 +500,6 @@ export default function DashboardSubmit() {
           >
             Submit Another Group
           </button>
-        </div>
-      </div>
-    );
-  }
-
-  if (settings?.groupSubmissionEnabled !== true && !isWebmaster && profile?.role !== "webmaster") {
-    return (
-      <div className="max-w-2xl mx-auto py-16 px-4 text-center space-y-5">
-        <div className="w-16 h-16 rounded-2xl bg-amber-500/10 text-amber-500 flex items-center justify-center mx-auto border border-amber-500/20 shadow-lg">
-          <ShieldAlert className="w-8 h-8" />
-        </div>
-        <h1 className="text-2xl sm:text-3xl font-extrabold text-foreground">
-          Community Submissions Closed
-        </h1>
-        <p className="text-sm text-muted-foreground max-w-md mx-auto leading-relaxed">
-          Public submissions are temporarily paused by the webmaster for scheduled database review. Please check back soon or browse existing verified groups.
-        </p>
-        <div className="pt-2">
-          <Link
-            href="/groups"
-            className="px-6 py-2.5 bg-primary text-primary-foreground font-semibold text-sm rounded-xl hover:bg-primary/90 transition inline-block shadow-md"
-          >
-            Browse Verified Communities
-          </Link>
         </div>
       </div>
     );
@@ -587,13 +600,30 @@ export default function DashboardSubmit() {
                 onChange={(e) => setName(e.target.value)}
                 className={`${inputClass} ${duplicateName ? "border-destructive ring-1 ring-destructive" : ""}`}
                 placeholder="e.g. India Tech & Developers Club"
-                maxLength={80}
+                maxLength={groupLimits.nameMaxLength}
               />
               {duplicateName && (
                 <p className="text-xs text-destructive mt-1.5 flex items-center gap-1 font-semibold">
                   <AlertCircle className="w-3.5 h-3.5" /> A community with this exact name already exists.
                 </p>
               )}
+            </div>
+
+            {/* Optional Tagline */}
+            <div>
+              <div className="flex justify-between items-center mb-1.5">
+                <label className={labelClass}>Short Tagline (Optional)</label>
+                <span className="text-[11px] text-muted-foreground font-semibold">
+                  {tagline.length} / {groupLimits.taglineMaxLength}
+                </span>
+              </div>
+              <input
+                value={tagline}
+                onChange={(e) => setTagline(e.target.value)}
+                className={inputClass}
+                placeholder="One-line summary shown on directory cards"
+                maxLength={groupLimits.taglineMaxLength}
+              />
             </div>
 
             {/* FIELD 2: Platform * */}
@@ -703,14 +733,14 @@ export default function DashboardSubmit() {
                 <label className={labelClass}>6. Description *</label>
                 <span
                   className={`text-xs font-bold ${
-                    description.length > 500
+                    description.length > groupLimits.descriptionMaxLength
                       ? "text-destructive"
-                      : description.length < 20
+                      : description.length < groupLimits.descriptionMinLength
                       ? "text-amber-500"
                       : "text-muted-foreground"
                   }`}
                 >
-                  {description.length} / 500 Characters
+                  {description.length} / {groupLimits.descriptionMaxLength} Characters
                 </span>
               </div>
               <textarea
@@ -718,33 +748,64 @@ export default function DashboardSubmit() {
                 rows={4}
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
-                maxLength={500}
+                maxLength={groupLimits.descriptionMaxLength}
                 className={`${inputClass} resize-none`}
                 placeholder="Describe what your community is about, rules, and benefits for new members..."
               />
               <p className="text-[11px] text-muted-foreground mt-1">
-                Minimum 20 characters, Maximum 500 characters. Character counter provided.
+                Minimum {groupLimits.descriptionMinLength} characters, Maximum {groupLimits.descriptionMaxLength} characters. Character counter provided.
               </p>
             </div>
 
             {/* FIELD 7: Tags * */}
             <div>
-              <label className={labelClass}>7. Tags *</label>
-              <input
-                required
-                value={tagsInput}
-                onChange={(e) => setTagsInput(e.target.value)}
-                className={inputClass}
-                placeholder="jobs, electrician, whatsapp, cg, room rent"
-              />
-              <p className="text-[11px] text-muted-foreground mt-1">
-                Enter keywords separated by commas (e.g. jobs, electrician, whatsapp, cg, room rent)
-              </p>
+              {(() => {
+                const tagStats = getLiveTagStats(tagsInput, groupLimits.maxTags);
+                const tagCheck = tagsInput.trim()
+                  ? parseAndValidateTags(tagsInput, { required: true, maxTags: groupLimits.maxTags })
+                  : null;
+                return (
+                  <>
+                    <div className="flex justify-between items-center mb-1.5">
+                      <label className={labelClass}>7. Tags *</label>
+                      <span
+                        className={`text-xs font-bold ${
+                          tagStats.count > groupLimits.maxTags || (tagCheck && !tagCheck.valid)
+                            ? "text-destructive"
+                            : "text-muted-foreground"
+                        }`}
+                      >
+                        {tagStats.count} / {groupLimits.maxTags} Tags ({tagStats.remaining} remaining)
+                      </span>
+                    </div>
+                    <input
+                      required
+                      value={tagsInput}
+                      onChange={(e) => setTagsInput(e.target.value)}
+                      className={`${inputClass} ${
+                        tagCheck && !tagCheck.valid ? "border-destructive focus:ring-destructive" : ""
+                      }`}
+                      placeholder="jobs, electrician, whatsapp, cg, room rent"
+                    />
+                    {tagCheck && !tagCheck.valid ? (
+                      <p className="text-xs font-medium text-destructive mt-1 flex items-center gap-1">
+                        <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" /> {tagCheck.error}
+                      </p>
+                    ) : (
+                      <p className="text-[11px] text-muted-foreground mt-1">
+                        Up to {groupLimits.maxTags} comma-separated tags (max {MAX_TAG_LENGTH} characters per tag, no empty or duplicate tags).
+                      </p>
+                    )}
+                  </>
+                );
+              })()}
             </div>
 
-            {/* FIELD 8: Group Logo (Optional) */}
+            {/* FIELD 8: Group Logo */}
             <div>
-              <label className={labelClass}>8. Group Logo (Optional, Max 2 MB)</label>
+              <label className={labelClass}>
+                8. Group Logo {groupLimits.requireGroupLogo ? "* (Max 2 MB)" : "(Optional, Max 2 MB)"}
+              </label>
               <div className="flex flex-col sm:flex-row items-start sm:items-center gap-5 p-4 bg-background border border-border rounded-2xl">
                 <div className="relative w-20 h-20 rounded-2xl bg-muted border border-border flex items-center justify-center overflow-hidden flex-shrink-0">
                   {logoPreview ? (
@@ -837,7 +898,10 @@ export default function DashboardSubmit() {
                 required
                 disabled={!state}
                 value={district}
-                onChange={(e) => setDistrict(e.target.value)}
+                onChange={(e) => {
+                  setDistrict(e.target.value);
+                  setCity("");
+                }}
                 className={`${inputClass} cursor-pointer disabled:opacity-50`}
               >
                 <option value="">{state ? "Select District" : "Select State First"}</option>
@@ -901,12 +965,17 @@ export default function DashboardSubmit() {
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
             {/* FIELD 12: Rules (Optional) */}
             <div className="sm:col-span-2">
-              <label className={labelClass}>12. Rules (Optional)</label>
+              <div className="flex justify-between items-center mb-1.5">
+                <label className={labelClass}>12. Rules (Optional)</label>
+                <span className="text-[11px] text-muted-foreground font-semibold">
+                  {rules.length} / {groupLimits.rulesMaxLength}
+                </span>
+              </div>
               <textarea
                 rows={3}
                 value={rules}
                 onChange={(e) => setRules(e.target.value)}
-                maxLength={300}
+                maxLength={groupLimits.rulesMaxLength}
                 className={`${inputClass} resize-none`}
                 placeholder={`No Spam\nRespect Members\nHindi/English Only`}
               />
@@ -1051,10 +1120,18 @@ export default function DashboardSubmit() {
 
             <button
               type="submit"
-              disabled={duplicateName || duplicateUrl || !!urlFormatError || !termsAccepted}
+              disabled={duplicateName || duplicateUrl || !!urlFormatError || !termsAccepted || checkingDuplicates || isSubmitting}
               className="w-full sm:w-auto flex items-center justify-center gap-2 px-8 py-3.5 bg-primary text-primary-foreground font-extrabold rounded-2xl hover:bg-primary/90 transition shadow-lg shadow-primary/20 disabled:opacity-50"
             >
-              <Eye className="w-4 h-4" /> 16. Preview & Confirm Submission
+              {checkingDuplicates ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" /> Checking duplicates...
+                </>
+              ) : (
+                <>
+                  <Eye className="w-4 h-4" /> 16. Preview & Confirm Submission
+                </>
+              )}
             </button>
           </div>
         </div>
@@ -1093,6 +1170,9 @@ export default function DashboardSubmit() {
 
                 <div className="space-y-1 min-w-0 flex-1">
                   <h3 className="font-extrabold text-lg text-foreground truncate">{name}</h3>
+                  {tagline && (
+                    <p className="text-xs text-muted-foreground truncate">{tagline}</p>
+                  )}
                   <div className="flex items-center gap-2 text-xs flex-wrap">
                     <span className="font-bold flex items-center gap-1 text-primary">
                       <PlatformIcon platform={platform} className="w-3.5 h-3.5" /> {platform}

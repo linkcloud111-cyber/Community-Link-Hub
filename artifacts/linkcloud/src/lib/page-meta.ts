@@ -1,7 +1,12 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useLocation } from "wouter";
 import { getSiteSettings } from "./firestore";
 import { useSiteSettings } from "@/contexts/SiteSettingsContext";
+import {
+  normalizeHttpBaseUrl,
+  resolveCanonicalUrl,
+  resolveSeoImageUrl,
+} from "./settings-validation";
 import type { SiteSettings } from "./types";
 
 export interface SEOProps {
@@ -10,8 +15,13 @@ export interface SEOProps {
   description?: string;
   keywords?: string;
   canonicalPath?: string;
+  canonicalUrl?: string;
+  ogTitle?: string;
+  ogDescription?: string;
   ogImage?: string;
   ogType?: "website" | "article";
+  twitterTitle?: string;
+  twitterDescription?: string;
   noIndex?: boolean;
   jsonLd?: Record<string, any>;
 }
@@ -49,6 +59,7 @@ export function clearSiteSettingsCache() {
  */
 const PRIVATE_ROUTE_PREFIXES = [
   "/webmaster",
+  "/admin",
   "/dashboard",
   "/submit",
   "/login",
@@ -59,15 +70,204 @@ const PRIVATE_ROUTE_PREFIXES = [
   "/reset-password",
 ];
 
-function isPrivateRoute(path: string): boolean {
+export function isPrivateRoute(path: string): boolean {
+  const cleanPath = (path || "/").split("?")[0].split("#")[0] || "/";
   return PRIVATE_ROUTE_PREFIXES.some(
-    (prefix) => path === prefix || path.startsWith(`${prefix}/`)
+    (prefix) => cleanPath === prefix || cleanPath.startsWith(`${prefix}/`)
   );
 }
 
+export interface ResolvedDocumentHead {
+  pageTitle: string;
+  description: string;
+  keywords: string;
+  robots: "index, follow" | "noindex, nofollow";
+  canonicalUrl: string;
+  ogTitle: string;
+  ogDescription: string;
+  ogUrl: string;
+  ogType: "website" | "article";
+  ogSiteName: string;
+  ogImage: string;
+  twitterTitle: string;
+  twitterDescription: string;
+  twitterImage: string;
+  globalJsonLd: Record<string, any>;
+  pageJsonLd?: Record<string, any>;
+}
+
+/**
+ * Pure, deterministic SEO resolution function combining global SiteSettings
+ * with active route/page overrides.
+ */
+export function resolveDocumentHeadMetadata(params: {
+  location: string;
+  settings?: Partial<SiteSettings> | null;
+  page?: SEOProps | null;
+  runtimeOrigin?: string;
+}): ResolvedDocumentHead {
+  const { location, settings, page, runtimeOrigin } = params;
+  const cleanPath = (location || "/").split("?")[0].split("#")[0] || "/";
+  const isHomeRoute = cleanPath === "/";
+
+  const siteName = settings?.siteName?.trim() || "LinkCloud";
+  const defaultDesc =
+    settings?.metaDescription?.trim() ||
+    settings?.siteDescription?.trim() ||
+    "India's Premium WhatsApp & Telegram Community Directory. Discover verified active groups.";
+  const defaultKeywords =
+    settings?.metaKeywords?.trim() ||
+    "WhatsApp groups, Telegram channels, Discord servers, India group links";
+
+  const detectedOrigin =
+    runtimeOrigin ||
+    (typeof import.meta !== "undefined" ? (import.meta as any).env?.VITE_APP_URL : "") ||
+    "http://localhost:3000";
+
+  // Respect Webmaster's configured canonicalUrl unconditionally when valid
+  const canonicalBase = normalizeHttpBaseUrl(settings?.canonicalUrl, detectedOrigin);
+
+  // 1. Document <title>
+  const pageTitleInput = page?.title?.trim();
+  const pageSubtitleInput = page?.subtitle?.trim();
+  let pageTitle = siteName;
+  if (pageTitleInput) {
+    if (pageTitleInput.includes(siteName)) {
+      pageTitle = pageTitleInput;
+    } else if (pageSubtitleInput) {
+      pageTitle = `${pageTitleInput} — ${pageSubtitleInput} | ${siteName}`;
+    } else {
+      pageTitle = `${pageTitleInput} — ${siteName}`;
+    }
+  } else if (settings?.metaTitle?.trim()) {
+    pageTitle = settings.metaTitle.trim();
+  } else if (settings?.siteTagline?.trim()) {
+    pageTitle = `${siteName} — ${settings.siteTagline.trim()}`;
+  }
+
+  // 2. Meta Description & Keywords
+  const finalDesc = page?.description?.trim() || defaultDesc;
+  const finalKeywords = page?.keywords?.trim() || defaultKeywords;
+
+  // 3. Robots directive (private routes & maintenance mode always force noindex)
+  const forceNoIndex =
+    isPrivateRoute(cleanPath) ||
+    Boolean(settings?.maintenanceMode) ||
+    page?.noIndex === true;
+  const robots: "index, follow" | "noindex, nofollow" = forceNoIndex
+    ? "noindex, nofollow"
+    : "index, follow";
+
+  // 4. Canonical URL (supports both full http(s) URLs and relative paths)
+  const fullCanonical = resolveCanonicalUrl(
+    page?.canonicalUrl || page?.canonicalPath,
+    canonicalBase,
+    cleanPath
+  );
+
+  // 5. Open Graph & Twitter Hierarchy:
+  //    Page explicit OG/Twitter -> Page Title/Desc (or Home global OG/Twitter override) -> Global Fallback
+  const resolvedOgTitle =
+    page?.ogTitle?.trim() ||
+    (isHomeRoute && settings?.ogTitle?.trim() ? settings.ogTitle.trim() : "") ||
+    (pageTitleInput ? pageTitle : settings?.ogTitle?.trim() || pageTitle);
+
+  const resolvedOgDesc =
+    page?.ogDescription?.trim() ||
+    (page?.description?.trim() ? page.description.trim() : "") ||
+    (settings?.ogDescription?.trim() ? settings.ogDescription.trim() : "") ||
+    finalDesc;
+
+  const resolvedTwitterTitle =
+    page?.twitterTitle?.trim() ||
+    page?.ogTitle?.trim() ||
+    (isHomeRoute && settings?.twitterCardTitle?.trim() ? settings.twitterCardTitle.trim() : "") ||
+    resolvedOgTitle;
+
+  const resolvedTwitterDesc =
+    page?.twitterDescription?.trim() ||
+    page?.ogDescription?.trim() ||
+    (page?.description?.trim() ? page.description.trim() : "") ||
+    (settings?.twitterCardDescription?.trim() ? settings.twitterCardDescription.trim() : "") ||
+    resolvedOgDesc;
+
+  const resolvedOgImage = resolveSeoImageUrl(
+    page?.ogImage || settings?.ogImage,
+    canonicalBase
+  );
+  const resolvedTwitterImage =
+    resolveSeoImageUrl(page?.ogImage || settings?.twitterCardImage || settings?.ogImage, canonicalBase) ||
+    resolvedOgImage;
+
+  // 6. Global Schema.org JSON-LD
+  let globalJsonLd: Record<string, any> = {
+    "@context": "https://schema.org",
+    "@type": "WebSite",
+    name: siteName,
+    url: canonicalBase,
+    description: defaultDesc,
+    potentialAction: {
+      "@type": "SearchAction",
+      target: `${canonicalBase}/groups?q={search_term_string}`,
+      "query-input": "required name=search_term_string",
+    },
+  };
+  if (settings?.structuredDataJson?.trim()) {
+    try {
+      const parsed = JSON.parse(settings.structuredDataJson);
+      if (parsed && typeof parsed === "object") {
+        globalJsonLd = parsed;
+      }
+    } catch {
+      // Keep generated valid WebSite schema if stored JSON is malformed
+    }
+  }
+
+  return {
+    pageTitle,
+    description: finalDesc,
+    keywords: finalKeywords,
+    robots,
+    canonicalUrl: fullCanonical,
+    ogTitle: resolvedOgTitle,
+    ogDescription: resolvedOgDesc,
+    ogUrl: fullCanonical,
+    ogType: page?.ogType || "website",
+    ogSiteName: siteName,
+    ogImage: resolvedOgImage,
+    twitterTitle: resolvedTwitterTitle,
+    twitterDescription: resolvedTwitterDesc,
+    twitterImage: resolvedTwitterImage,
+    globalJsonLd,
+    pageJsonLd: page?.jsonLd,
+  };
+}
+
+// ─── Single Authoritative Head Tag Manager ───────────────────────────────────
+
+interface ActivePageOverride {
+  token: symbol;
+  path: string;
+  props: SEOProps;
+}
+
+let activePageOverride: ActivePageOverride | null = null;
+
 function setOrCreateMeta(name: string, content: string, isProperty = false) {
+  if (typeof document === "undefined") return;
   const attr = isProperty ? "property" : "name";
-  let el = document.querySelector<HTMLMetaElement>(`meta[${attr}="${name}"]`);
+  const matches = Array.from(
+    document.head.querySelectorAll<HTMLMetaElement>(`meta[${attr}="${name}"]`)
+  );
+  // Deduplicate if any extra tag ever exists
+  for (let i = 1; i < matches.length; i++) {
+    matches[i].remove();
+  }
+  let el = matches[0] || null;
+  if (!content) {
+    if (el) el.remove();
+    return;
+  }
   if (!el) {
     el = document.createElement("meta");
     el.setAttribute(attr, name);
@@ -77,7 +277,14 @@ function setOrCreateMeta(name: string, content: string, isProperty = false) {
 }
 
 function setOrCreateCanonical(url: string) {
-  let el = document.querySelector<HTMLLinkElement>('link[rel="canonical"]');
+  if (typeof document === "undefined") return;
+  const matches = Array.from(
+    document.head.querySelectorAll<HTMLLinkElement>('link[rel="canonical"]')
+  );
+  for (let i = 1; i < matches.length; i++) {
+    matches[i].remove();
+  }
+  let el = matches[0] || null;
   if (!el) {
     el = document.createElement("link");
     el.setAttribute("rel", "canonical");
@@ -86,8 +293,18 @@ function setOrCreateCanonical(url: string) {
   el.href = url;
 }
 
-function setOrCreateJsonLd(id: string, data: Record<string, any>) {
-  let el = document.querySelector<HTMLScriptElement>(`script#${id}`);
+function setOrCreateJsonLd(id: string, data?: Record<string, any>) {
+  if (typeof document === "undefined") return;
+  // Remove legacy duplicate script ID if present
+  if (id === "linkcloud-global-jsonld") {
+    const legacy = document.getElementById("lc-webmaster-jsonld");
+    if (legacy) legacy.remove();
+  }
+  let el = document.getElementById(id) as HTMLScriptElement | null;
+  if (!data) {
+    if (el) el.remove();
+    return;
+  }
   if (!el) {
     el = document.createElement("script");
     el.id = id;
@@ -97,12 +314,49 @@ function setOrCreateJsonLd(id: string, data: Record<string, any>) {
   try {
     el.textContent = JSON.stringify(data);
   } catch {
-    // ignore
+    // ignore serialization edge cases
   }
 }
 
+function applyUnifiedHead(location: string, settings?: Partial<SiteSettings> | null) {
+  if (typeof document === "undefined") return;
+  const cleanPath = (location || "/").split("?")[0].split("#")[0] || "/";
+  const activePage =
+    activePageOverride && activePageOverride.path === cleanPath
+      ? activePageOverride.props
+      : null;
+
+  const resolved = resolveDocumentHeadMetadata({
+    location: cleanPath,
+    settings,
+    page: activePage,
+    runtimeOrigin: typeof window !== "undefined" ? window.location.origin : undefined,
+  });
+
+  document.title = resolved.pageTitle;
+  setOrCreateMeta("description", resolved.description);
+  setOrCreateMeta("keywords", resolved.keywords);
+  setOrCreateMeta("robots", resolved.robots);
+  setOrCreateCanonical(resolved.canonicalUrl);
+
+  setOrCreateMeta("og:title", resolved.ogTitle, true);
+  setOrCreateMeta("og:description", resolved.ogDescription, true);
+  setOrCreateMeta("og:url", resolved.ogUrl, true);
+  setOrCreateMeta("og:type", resolved.ogType, true);
+  setOrCreateMeta("og:site_name", resolved.ogSiteName, true);
+  setOrCreateMeta("og:image", resolved.ogImage, true);
+
+  setOrCreateMeta("twitter:card", "summary_large_image");
+  setOrCreateMeta("twitter:title", resolved.twitterTitle);
+  setOrCreateMeta("twitter:description", resolved.twitterDescription);
+  setOrCreateMeta("twitter:image", resolved.twitterImage);
+
+  setOrCreateJsonLd("linkcloud-global-jsonld", resolved.globalJsonLd);
+  setOrCreateJsonLd("page-jsonld", resolved.pageJsonLd);
+}
+
 /**
- * Page-level hook for setting explicit SEO metadata reactively with Webmaster settings
+ * Page-level hook for setting explicit SEO metadata reactively through the single unified head writer.
  */
 export function usePageSEO({
   title,
@@ -110,105 +364,65 @@ export function usePageSEO({
   description,
   keywords,
   canonicalPath,
+  canonicalUrl,
+  ogTitle,
+  ogDescription,
   ogImage,
   ogType = "website",
+  twitterTitle,
+  twitterDescription,
   noIndex,
   jsonLd,
 }: SEOProps) {
   const [location] = useLocation();
   const { settings } = useSiteSettings();
+  const tokenRef = useRef<symbol>(Symbol("page-seo"));
 
   useEffect(() => {
-    const siteName = settings?.siteName || "LinkCloud";
-    const defaultDesc =
-      settings?.metaDescription ||
-      settings?.siteDescription ||
-      "India's Premium WhatsApp & Telegram Community Directory. Discover verified active groups.";
-    const defaultKeywords =
-      settings?.metaKeywords ||
-      "WhatsApp groups, Telegram channels, Discord servers, India group links";
-    const detectedOrigin =
-      typeof window !== "undefined" &&
-      window.location.origin &&
-      !window.location.origin.includes("localhost")
-        ? window.location.origin
-        : "https://linkcloud.in";
-    const configuredCanonical = settings?.canonicalUrl?.trim();
-    const canonicalBase = (
-      configuredCanonical && configuredCanonical !== "https://linkcloud.in"
-        ? configuredCanonical
-        : detectedOrigin
-    ).replace(/\/$/, "");
-    const defaultOgImage =
-      settings?.ogImage || `${canonicalBase}/og-banner.png`;
-    const defaultTwitterImage =
-      settings?.twitterCardImage || defaultOgImage;
+    const cleanPath = (location || "/").split("?")[0].split("#")[0] || "/";
+    const token = tokenRef.current;
 
-    // 1. Calculate Document Title
-    let pageTitle = siteName;
-    if (title) {
-      if (title.includes(siteName)) {
-        pageTitle = title;
-      } else if (subtitle) {
-        pageTitle = `${title} — ${subtitle} | ${siteName}`;
-      } else {
-        pageTitle = `${title} — ${siteName}`;
+    activePageOverride = {
+      token,
+      path: cleanPath,
+      props: {
+        title,
+        subtitle,
+        description,
+        keywords,
+        canonicalPath,
+        canonicalUrl,
+        ogTitle,
+        ogDescription,
+        ogImage,
+        ogType,
+        twitterTitle,
+        twitterDescription,
+        noIndex,
+        jsonLd,
+      },
+    };
+
+    applyUnifiedHead(cleanPath, settings);
+
+    return () => {
+      if (activePageOverride?.token === token) {
+        activePageOverride = null;
       }
-    } else if (settings?.metaTitle) {
-      pageTitle = settings.metaTitle;
-    } else if (settings?.siteTagline) {
-      pageTitle = `${siteName} — ${settings.siteTagline}`;
-    }
-    document.title = pageTitle;
-
-    // 2. Meta Description & Keywords
-    const finalDesc = description || defaultDesc;
-    const finalKeywords = keywords || defaultKeywords;
-    setOrCreateMeta("description", finalDesc);
-    setOrCreateMeta("keywords", finalKeywords);
-
-    // 3. Robots Tag (Check private route vs public vs maintenance mode)
-    const forceNoIndex =
-      noIndex !== undefined
-        ? noIndex
-        : isPrivateRoute(location) || Boolean(settings?.maintenanceMode);
-    if (forceNoIndex) {
-      setOrCreateMeta("robots", "noindex, nofollow");
-    } else {
-      setOrCreateMeta("robots", "index, follow");
-    }
-
-    // 4. Canonical URL
-    const currentPath = canonicalPath || location.split("?")[0];
-    const fullCanonical = `${canonicalBase}${currentPath === "/" ? "" : currentPath}`;
-    setOrCreateCanonical(fullCanonical);
-
-    // 5. OpenGraph Tags
-    setOrCreateMeta("og:title", pageTitle, true);
-    setOrCreateMeta("og:description", finalDesc, true);
-    setOrCreateMeta("og:url", fullCanonical, true);
-    setOrCreateMeta("og:type", ogType, true);
-    setOrCreateMeta("og:site_name", siteName, true);
-    setOrCreateMeta("og:image", ogImage || defaultOgImage, true);
-
-    // 6. Twitter Card Tags
-    setOrCreateMeta("twitter:card", "summary_large_image");
-    setOrCreateMeta("twitter:title", pageTitle);
-    setOrCreateMeta("twitter:description", finalDesc);
-    setOrCreateMeta("twitter:image", ogImage || defaultTwitterImage);
-
-    // 7. Structured Data (JSON-LD)
-    if (jsonLd) {
-      setOrCreateJsonLd("page-jsonld", jsonLd);
-    }
+    };
   }, [
     title,
     subtitle,
     description,
     keywords,
     canonicalPath,
+    canonicalUrl,
+    ogTitle,
+    ogDescription,
     ogImage,
     ogType,
+    twitterTitle,
+    twitterDescription,
     noIndex,
     jsonLd,
     location,
@@ -224,63 +438,15 @@ export function usePageTitle(title?: string, subtitle?: string, description?: st
 }
 
 /**
- * Global SEO hook running continuously in App.tsx
- * Automatically ensures noindex on private paths, injects WebSite structured data,
- * and tracks route canonical changes.
+ * Global SEO hook running in App.tsx.
+ * Ensures routes without page-level SEO still get global metadata, canonicals,
+ * private-route noindex enforcement, and clean removal of stale page-jsonld.
  */
 export function useGlobalSEO() {
   const [location] = useLocation();
   const { settings } = useSiteSettings();
 
   useEffect(() => {
-    const canonicalBase = (
-      settings?.canonicalUrl || "https://linkcloud.in"
-    ).replace(/\/$/, "");
-    const cleanPath = location.split("?")[0];
-    const fullCanonical = `${canonicalBase}${cleanPath === "/" ? "" : cleanPath}`;
-
-    // Enforce strict robots rule based on path
-    if (isPrivateRoute(cleanPath) || settings?.maintenanceMode) {
-      setOrCreateMeta("robots", "noindex, nofollow");
-    } else {
-      setOrCreateMeta("robots", "index, follow");
-    }
-
-    setOrCreateCanonical(fullCanonical);
-
-    // Inject Global Schema.org WebSite JSON-LD
-    if (settings?.structuredDataJson) {
-      try {
-        const parsed = JSON.parse(settings.structuredDataJson);
-        setOrCreateJsonLd("linkcloud-global-jsonld", parsed);
-      } catch {
-        setOrCreateJsonLd("linkcloud-global-jsonld", {
-          "@context": "https://schema.org",
-          "@type": "WebSite",
-          name: settings?.siteName || "LinkCloud",
-          url: canonicalBase,
-          description: settings?.metaDescription || settings?.siteDescription || "India's Public Community Directory",
-          potentialAction: {
-            "@type": "SearchAction",
-            target: `${canonicalBase}/groups?q={search_term_string}`,
-            "query-input": "required name=search_term_string",
-          },
-        });
-      }
-    } else {
-      setOrCreateJsonLd("linkcloud-global-jsonld", {
-        "@context": "https://schema.org",
-        "@type": "WebSite",
-        name: settings?.siteName || "LinkCloud",
-        url: canonicalBase,
-        description: settings?.metaDescription || settings?.siteDescription || "India's Premium Community Directory",
-        potentialAction: {
-          "@type": "SearchAction",
-          target: `${canonicalBase}/groups?q={search_term_string}`,
-          "query-input": "required name=search_term_string",
-        },
-      });
-    }
+    applyUnifiedHead(location, settings);
   }, [location, settings]);
 }
-

@@ -59,7 +59,7 @@ export default function GroupDetail() {
 
   const canonicalBase = (
     settings?.canonicalUrl ||
-    (typeof window !== "undefined" ? window.location.origin : "https://linkcloud.in")
+    (typeof window !== "undefined" ? window.location.origin : "")
   ).replace(/\/$/, "");
 
   usePageSEO({
@@ -103,12 +103,13 @@ export default function GroupDetail() {
           return;
         }
 
-        // Security check: Only approved & non-hidden groups are visible publicly
+        // Security & Directory gate: Only approved & non-hidden groups are visible publicly when directory is enabled
         const isOwner = user && (data.submittedBy === user.uid || (data as any).submitterUid === user.uid);
         const isWebmasterUser = isWebmaster || profile?.role === "webmaster";
         const isApprovedPublic = data.status === "approved" && !data.hidden;
+        const directoryPaused = settings?.publicDirectoryEnabled === false;
 
-        if (!isApprovedPublic && !isOwner && !isWebmasterUser) {
+        if ((!isApprovedPublic || directoryPaused) && !isOwner && !isWebmasterUser) {
           setAccessDenied(true);
           setGroup(null);
           setLoading(false);
@@ -318,6 +319,12 @@ export default function GroupDetail() {
                     <BadgeCheck className="w-6 h-6 text-amber-500 flex-shrink-0" />
                   )}
                 </div>
+
+                {group.tagline && (
+                  <p className="text-sm sm:text-base font-medium text-muted-foreground leading-snug">
+                    {group.tagline}
+                  </p>
+                )}
 
                 {/* Badges row */}
                 <div className="flex flex-wrap gap-2">

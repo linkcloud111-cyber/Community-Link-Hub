@@ -52,7 +52,7 @@ import {
 
 export default function AdminUsers() {
   const { user: currentUser } = useAuth();
-  const { states, getDistrictsForState } = useAppLocation();
+  const { states, activeStates, getDistrictsForState, getCitiesForDistrict } = useAppLocation();
   const [tab, setTab] = useState<"users" | "deletions">("users");
 
   const [users, setUsers] = useState<UserProfile[]>([]);
@@ -147,7 +147,7 @@ export default function AdminUsers() {
       return;
     }
 
-    const webmasterEmail = currentUser?.email || "webmaster@linkcloud.in";
+    const webmasterEmail = currentUser?.email || "webmaster@localhost.invalid";
     const webmasterUid = currentUser?.uid || "webmaster";
 
     setUpdating(uid);
@@ -365,6 +365,8 @@ export default function AdminUsers() {
       await updateUserProfile(editUser.uid, {
         displayName: editUser.displayName,
         phone: editUser.phone,
+        dob: editUser.dob || "",
+        address: editUser.address || "",
         state: editUser.state,
         district: editUser.district,
         city: editUser.city,
@@ -379,6 +381,8 @@ export default function AdminUsers() {
         UpdatedFields: {
           displayName: editUser.displayName,
           phone: editUser.phone,
+          dob: editUser.dob || "",
+          address: editUser.address || "",
           state: editUser.state,
           district: editUser.district,
           city: editUser.city,
@@ -394,6 +398,8 @@ export default function AdminUsers() {
                 ...u,
                 displayName: editUser.displayName,
                 phone: editUser.phone,
+                dob: editUser.dob || "",
+                address: editUser.address || "",
                 state: editUser.state,
                 district: editUser.district,
                 city: editUser.city,
@@ -410,6 +416,8 @@ export default function AdminUsers() {
                 ...prev,
                 displayName: editUser.displayName,
                 phone: editUser.phone,
+                dob: editUser.dob || "",
+                address: editUser.address || "",
                 state: editUser.state,
                 district: editUser.district,
                 city: editUser.city,
@@ -1241,106 +1249,186 @@ export default function AdminUsers() {
       )}
 
       {/* Edit User Modal */}
-      {editUser && (
-        <div className="fixed inset-0 bg-background/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <form onSubmit={handleSaveUserEdit} className="bg-card border border-border rounded-3xl p-6 max-w-lg w-full space-y-4 shadow-xl">
-            <div className="flex items-center justify-between border-b border-border pb-3">
-              <h2 className="text-lg font-bold flex items-center gap-2">
-                <Edit3 className="w-5 h-5 text-primary" /> Edit User Profile
-              </h2>
-              <button type="button" onClick={() => setEditUser(null)} className="p-1.5 hover:bg-muted rounded-xl">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="space-y-3 text-xs">
-              <div>
-                <label className="font-bold text-muted-foreground mb-1 block">Full Name</label>
-                <input
-                  value={editUser.displayName || ""}
-                  onChange={(e) => setEditUser({ ...editUser, displayName: e.target.value })}
-                  className="w-full p-2.5 bg-background border border-border rounded-xl outline-none focus:ring-2 focus:ring-primary"
-                  required
-                />
+      {editUser && (() => {
+        const editDistricts = editUser.state ? getDistrictsForState(editUser.state) : [];
+        const editCities = editUser.state ? getCitiesForDistrict(editUser.state, editUser.district) : [];
+        return (
+          <div className="fixed inset-0 bg-background/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <form onSubmit={handleSaveUserEdit} className="bg-card border border-border rounded-3xl p-6 max-w-lg w-full space-y-4 shadow-xl max-h-[90vh] overflow-y-auto">
+              <div className="flex items-center justify-between border-b border-border pb-3">
+                <h2 className="text-lg font-bold flex items-center gap-2">
+                  <Edit3 className="w-5 h-5 text-primary" /> Edit User Profile
+                </h2>
+                <button type="button" onClick={() => setEditUser(null)} className="p-1.5 hover:bg-muted rounded-xl">
+                  <X className="w-5 h-5" />
+                </button>
               </div>
 
-              <div>
-                <label className="font-bold text-muted-foreground mb-1 block">
-                  Email Address <span className="text-[10px] font-normal text-muted-foreground">(Managed via Auth)</span>
-                </label>
-                <input
-                  type="email"
-                  value={editUser.email || ""}
-                  disabled
-                  className="w-full p-2.5 bg-muted/40 border border-border rounded-xl outline-none text-muted-foreground cursor-not-allowed"
-                />
-              </div>
-
-              <div>
-                <label className="font-bold text-muted-foreground mb-1 block">Mobile Phone Number</label>
-                <input
-                  value={editUser.phone || ""}
-                  onChange={(e) => setEditUser({ ...editUser, phone: e.target.value })}
-                  className="w-full p-2.5 bg-background border border-border rounded-xl outline-none focus:ring-2 focus:ring-primary"
-                  placeholder="+91 9876543210"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-3 text-xs">
                 <div>
-                  <label className="font-bold text-muted-foreground mb-1 block">State</label>
+                  <label className="font-bold text-muted-foreground mb-1 block">Full Name</label>
                   <input
-                    value={editUser.state || ""}
-                    onChange={(e) => setEditUser({ ...editUser, state: e.target.value })}
+                    value={editUser.displayName || ""}
+                    onChange={(e) => setEditUser({ ...editUser, displayName: e.target.value })}
                     className="w-full p-2.5 bg-background border border-border rounded-xl outline-none focus:ring-2 focus:ring-primary"
+                    required
                   />
                 </div>
+
                 <div>
-                  <label className="font-bold text-muted-foreground mb-1 block">District</label>
+                  <label className="font-bold text-muted-foreground mb-1 block">
+                    Email Address <span className="text-[10px] font-normal text-muted-foreground">(Managed via Auth)</span>
+                  </label>
                   <input
-                    value={editUser.district || ""}
-                    onChange={(e) => setEditUser({ ...editUser, district: e.target.value })}
+                    type="email"
+                    value={editUser.email || ""}
+                    disabled
+                    className="w-full p-2.5 bg-muted/40 border border-border rounded-xl outline-none text-muted-foreground cursor-not-allowed"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <div>
+                    <label className="font-bold text-muted-foreground mb-1 block">Mobile Phone Number</label>
+                    <input
+                      value={editUser.phone || ""}
+                      onChange={(e) => setEditUser({ ...editUser, phone: e.target.value })}
+                      className="w-full p-2.5 bg-background border border-border rounded-xl outline-none focus:ring-2 focus:ring-primary"
+                      placeholder="+91 9876543210"
+                    />
+                  </div>
+                  <div>
+                    <label className="font-bold text-muted-foreground mb-1 block">Date of Birth</label>
+                    <input
+                      type="date"
+                      value={editUser.dob || ""}
+                      onChange={(e) => setEditUser({ ...editUser, dob: e.target.value })}
+                      className="w-full p-2.5 bg-background border border-border rounded-xl outline-none focus:ring-2 focus:ring-primary"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <div>
+                    <label className="font-bold text-muted-foreground mb-1 block">State</label>
+                    <select
+                      value={editUser.state || ""}
+                      onChange={(e) =>
+                        setEditUser({
+                          ...editUser,
+                          state: e.target.value,
+                          district: "",
+                          city: "",
+                        })
+                      }
+                      className="w-full p-2.5 bg-background border border-border rounded-xl outline-none focus:ring-2 focus:ring-primary"
+                    >
+                      <option value="">Select State</option>
+                      {activeStates.map((s) => (
+                        <option key={s.id} value={s.name}>
+                          {s.name}
+                        </option>
+                      ))}
+                      {editUser.state && !activeStates.some((s) => s.name === editUser.state) && (
+                        <option value={editUser.state}>{editUser.state}</option>
+                      )}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="font-bold text-muted-foreground mb-1 block">District</label>
+                    <select
+                      value={editUser.district || ""}
+                      disabled={!editUser.state}
+                      onChange={(e) =>
+                        setEditUser({
+                          ...editUser,
+                          district: e.target.value,
+                          city: "",
+                        })
+                      }
+                      className="w-full p-2.5 bg-background border border-border rounded-xl outline-none focus:ring-2 focus:ring-primary disabled:opacity-50"
+                    >
+                      <option value="">{editUser.state ? "Select District" : "Select State First"}</option>
+                      {editDistricts.map((d) => (
+                        <option key={d.id} value={d.name}>
+                          {d.name}
+                        </option>
+                      ))}
+                      {editUser.district && !editDistricts.some((d) => d.name === editUser.district) && (
+                        <option value={editUser.district}>{editUser.district}</option>
+                      )}
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="font-bold text-muted-foreground mb-1 block">City / Town</label>
+                  {editCities.length > 0 ? (
+                    <select
+                      value={editUser.city || ""}
+                      disabled={!editUser.state}
+                      onChange={(e) => setEditUser({ ...editUser, city: e.target.value })}
+                      className="w-full p-2.5 bg-background border border-border rounded-xl outline-none focus:ring-2 focus:ring-primary disabled:opacity-50"
+                    >
+                      <option value="">Select City</option>
+                      {editCities.map((c) => (
+                        <option key={c.id} value={c.name}>
+                          {c.name}
+                        </option>
+                      ))}
+                      {editUser.city && !editCities.some((c) => c.name === editUser.city) && (
+                        <option value={editUser.city}>{editUser.city}</option>
+                      )}
+                    </select>
+                  ) : (
+                    <input
+                      value={editUser.city || ""}
+                      onChange={(e) => setEditUser({ ...editUser, city: e.target.value })}
+                      placeholder="City / Town"
+                      className="w-full p-2.5 bg-background border border-border rounded-xl outline-none focus:ring-2 focus:ring-primary"
+                    />
+                  )}
+                </div>
+
+                <div>
+                  <label className="font-bold text-muted-foreground mb-1 block">Address</label>
+                  <textarea
+                    value={editUser.address || ""}
+                    onChange={(e) => setEditUser({ ...editUser, address: e.target.value })}
+                    rows={2}
                     className="w-full p-2.5 bg-background border border-border rounded-xl outline-none focus:ring-2 focus:ring-primary"
+                    placeholder="Street address or locality..."
+                  />
+                </div>
+
+                <div>
+                  <label className="font-bold text-muted-foreground mb-1 block">Bio / Notes</label>
+                  <textarea
+                    value={editUser.bio || ""}
+                    onChange={(e) => setEditUser({ ...editUser, bio: e.target.value })}
+                    rows={2}
+                    className="w-full p-2.5 bg-background border border-border rounded-xl outline-none focus:ring-2 focus:ring-primary"
+                    placeholder="Short user description or administrative notes..."
                   />
                 </div>
               </div>
 
-              <div>
-                <label className="font-bold text-muted-foreground mb-1 block">City</label>
-                <input
-                  value={editUser.city || ""}
-                  onChange={(e) => setEditUser({ ...editUser, city: e.target.value })}
-                  className="w-full p-2.5 bg-background border border-border rounded-xl outline-none focus:ring-2 focus:ring-primary"
-                />
+              <div className="flex justify-end gap-2 pt-3 border-t border-border">
+                <button type="button" onClick={() => setEditUser(null)} className="px-4 py-2 bg-muted rounded-xl text-xs font-bold transition hover:bg-muted/80">
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={updating === editUser.uid}
+                  className="px-4 py-2 bg-primary text-primary-foreground hover:bg-primary/90 rounded-xl text-xs font-bold flex items-center gap-1.5 transition"
+                >
+                  {updating === editUser.uid ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Save Changes"}
+                </button>
               </div>
-
-              <div>
-                <label className="font-bold text-muted-foreground mb-1 block">Bio / Notes</label>
-                <textarea
-                  value={editUser.bio || ""}
-                  onChange={(e) => setEditUser({ ...editUser, bio: e.target.value })}
-                  rows={2}
-                  className="w-full p-2.5 bg-background border border-border rounded-xl outline-none focus:ring-2 focus:ring-primary"
-                  placeholder="Short user description or administrative notes..."
-                />
-              </div>
-            </div>
-
-            <div className="flex justify-end gap-2 pt-3 border-t border-border">
-              <button type="button" onClick={() => setEditUser(null)} className="px-4 py-2 bg-muted rounded-xl text-xs font-bold transition hover:bg-muted/80">
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={updating === editUser.uid}
-                className="px-4 py-2 bg-primary text-primary-foreground hover:bg-primary/90 rounded-xl text-xs font-bold flex items-center gap-1.5 transition"
-              >
-                {updating === editUser.uid ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Save Changes"}
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
+            </form>
+          </div>
+        );
+      })()}
 
       {/* Delete Confirmation Modal */}
       {deleteTargetUser && (

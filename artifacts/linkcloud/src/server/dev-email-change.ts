@@ -79,8 +79,29 @@ export async function handleDevEmailChangeRequest(
   }
 
   const body = await parseBody(req);
-  const newEmail = (body.newEmail || "").trim().toLowerCase();
+  let newEmail = (body.newEmail || body.pendingEmail || "").trim().toLowerCase();
   currentAuthEmail = currentAuthEmail || (body.currentEmail || "").trim().toLowerCase();
+
+  const firestore = app ? getFirestore(app) : null;
+
+  if (!newEmail && firestore) {
+    try {
+      const activeSnap = await firestore
+        .collection("users")
+        .doc(uid)
+        .collection("emailChanges")
+        .doc("active")
+        .get();
+      if (activeSnap.exists) {
+        const activeTarget = String(activeSnap.data()?.targetEmail || "").trim().toLowerCase();
+        if (activeTarget) {
+          newEmail = activeTarget;
+        }
+      }
+    } catch (activeErr) {
+      console.warn("[Dev Server] active pending email lookup note:", activeErr);
+    }
+  }
 
   if (!newEmail || !newEmail.endsWith("@gmail.com")) {
     sendJson(res, { error: "Only personal Gmail addresses (@gmail.com) are supported." }, 400);
@@ -92,7 +113,6 @@ export async function handleDevEmailChangeRequest(
     return;
   }
 
-  const firestore = app ? getFirestore(app) : null;
   const now = Date.now();
 
   // Check email uniqueness in emailIndex
@@ -212,7 +232,7 @@ export async function handleDevEmailChangeRequest(
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          from: "LinkCloud Security <verify@linkcloud.in>",
+          from: process.env.RESEND_FROM_EMAIL || "LinkCloud Security <noreply@resend.dev>",
           to: [newEmail],
           subject: "Confirm your LinkCloud email change",
           html: `<p>Please click this link to confirm your email change: <a href="${verificationLink}">${verificationLink}</a>. Link is valid for 5 minutes.</p>`,

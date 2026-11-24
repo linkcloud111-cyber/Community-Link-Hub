@@ -5,7 +5,8 @@
       "description": "Public social messaging group or channel submission",
       "type": "object",
       "properties": {
-        "name": { "type": "string", "minLength": 2, "maxLength": 100 },
+        "name": { "type": "string", "minLength": 2, "maxLength": 150 },
+        "tagline": { "type": "string", "maxLength": 200 },
         "platform": { "type": "string" },
         "categoryId": { "type": "string" },
         "categoryName": { "type": "string" },
@@ -16,8 +17,8 @@
         "contentType": { "type": "string" },
         "linkStatus": { "type": "string", "enum": ["active", "inactive"] },
         "minimumAge": { "type": "string" },
-        "description": { "type": "string", "maxLength": 500 },
-        "rules": { "type": "string", "maxLength": 500 },
+        "description": { "type": "string", "maxLength": 2000 },
+        "rules": { "type": "string", "maxLength": 2000 },
         "tags": { "type": "array" },
         "joinUrl": { "type": "string" },
         "logoUrl": { "type": "string" },
@@ -116,7 +117,7 @@
         "phone": { "type": "string" },
         "subject": { "type": "string", "maxLength": 150 },
         "message": { "type": "string", "maxLength": 1500 },
-        "status": { "type": "string", "enum": ["pending", "reviewed", "resolved"] }
+        "status": { "type": "string", "enum": ["pending", "investigating", "reviewed", "resolved", "dismissed"] }
       },
       "required": ["name", "email", "subject", "message", "status"]
     },
@@ -174,15 +175,60 @@
     },
     "SiteSettings": {
       "title": "SiteSettings",
-      "description": "Global website configuration and settings",
+      "description": "Global website configuration, identity, contact visibility switches, group moderation limits, and SEO settings",
       "type": "object",
       "properties": {
         "siteName": { "type": "string" },
         "siteTagline": { "type": "string" },
         "maintenanceMode": { "type": "boolean" },
         "groupSubmissionEnabled": { "type": "boolean" },
-        "allowPublicSubmissions": { "type": "boolean" }
+        "allowPublicSubmissions": { "type": "boolean" },
+        "requireGroupApproval": { "type": "boolean" },
+        "enableGroupLogoUpload": { "type": "boolean" },
+        "groupNameMaxLength": { "type": "number" },
+        "groupTaglineMaxLength": { "type": "number" },
+        "groupDescriptionMaxLength": { "type": "number" },
+        "groupRulesMaxLength": { "type": "number" },
+        "groupMaxTags": { "type": "number" },
+        "officialContactEmail": { "type": "string" },
+        "supportEmail": { "type": "string" },
+        "whatsappContactNumber": { "type": "string" },
+        "city": { "type": "string" },
+        "district": { "type": "string" },
+        "state": { "type": "string" },
+        "pinCode": { "type": "string" },
+        "country": { "type": "string" },
+        "officialWebsiteUrl": { "type": "string" },
+        "showEmail": { "type": "boolean" },
+        "showWhatsApp": { "type": "boolean" },
+        "showCity": { "type": "boolean" },
+        "showDistrict": { "type": "boolean" },
+        "showState": { "type": "boolean" },
+        "showPinCode": { "type": "boolean" },
+        "showCountry": { "type": "boolean" },
+        "showWebsiteUrl": { "type": "boolean" },
+        "allowPublicGroupContact": { "type": "boolean" }
       }
+    },
+    "CmsPageDocument": {
+      "title": "CmsPageDocument",
+      "description": "Structured CMS explore/legal page with Explore ordering & visibility controls",
+      "type": "object",
+      "properties": {
+        "slug": { "type": "string" },
+        "route": { "type": "string" },
+        "title": { "type": "string" },
+        "status": { "type": "string", "enum": ["draft", "published"] },
+        "enabled": { "type": "boolean" },
+        "publicVisible": { "type": "boolean" },
+        "footerVisible": { "type": "boolean" },
+        "navVisible": { "type": "boolean" },
+        "displayOrder": { "type": "number" },
+        "isLegalPage": { "type": "boolean" },
+        "version": { "type": "number" },
+        "lastUpdated": { "type": "string" }
+      },
+      "required": ["slug", "route", "title", "status"]
     },
     "Announcement": {
       "title": "Announcement",
@@ -407,6 +453,10 @@
     "/cities/{cityId}": {
       "schema": "object",
       "description": "India cities"
+    },
+    "/cms_pages/{slug}": {
+      "schema": { "$ref": "#/entities/CmsPageDocument" },
+      "description": "Published CMS pages managed exclusively via server Admin API"
     }
   }
 }

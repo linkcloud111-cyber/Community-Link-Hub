@@ -12,6 +12,8 @@ import {
   Camera,
 } from "lucide-react";
 import type { UserProfile } from "@/lib/types";
+import { useSiteSettings } from "@/contexts/SiteSettingsContext";
+import { useAuth } from "@/contexts/AuthContext";
 import {
   EmailVerificationTooltip,
   EmailVerificationHelperText,
@@ -38,6 +40,9 @@ export function ProfileTab({
   onOpenPhoneModal,
   onCheckEmailStatus,
 }: ProfileTabProps) {
+  const { settings } = useSiteSettings();
+  const { isWebmaster } = useAuth();
+  const canEditProfile = Boolean(isWebmaster || settings?.profileEditingEnabled !== false);
   const displayName = profile?.displayName || "User";
   const userEmail = profile?.email || email || "No email";
   const activePendingEmail = pendingEmail || profile?.pendingEmail;
@@ -60,13 +65,19 @@ export function ProfileTab({
           </div>
         </div>
 
-        <button
-          onClick={onEditProfile}
-          className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold text-white bg-purple-600 hover:bg-purple-700 transition shadow-sm self-start sm:self-auto"
-        >
-          <Edit3 className="w-4 h-4" />
-          <span>Edit Profile</span>
-        </button>
+        {canEditProfile ? (
+          <button
+            onClick={onEditProfile}
+            className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold text-white bg-purple-600 hover:bg-purple-700 transition shadow-sm self-start sm:self-auto"
+          >
+            <Edit3 className="w-4 h-4" />
+            <span>Edit Profile</span>
+          </button>
+        ) : (
+          <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800/50 self-start sm:self-auto">
+            Profile editing paused by Webmaster
+          </span>
+        )}
       </div>
 
       {/* Profile Overview Card */}
@@ -81,14 +92,16 @@ export function ProfileTab({
                 displayName.slice(0, 2).toUpperCase() || "US"
               )}
             </div>
-            <button
-              onClick={onEditProfile}
-              className="absolute -bottom-1 -right-1 min-w-[44px] min-h-[44px] flex items-center justify-center bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs shadow transition"
-              title="Change Avatar"
-              aria-label="Change Avatar"
-            >
-              <Camera className="w-4 h-4" />
-            </button>
+            {canEditProfile && (
+              <button
+                onClick={onEditProfile}
+                className="absolute -bottom-1 -right-1 min-w-[44px] min-h-[44px] flex items-center justify-center bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs shadow transition"
+                title="Change Avatar"
+                aria-label="Change Avatar"
+              >
+                <Camera className="w-4 h-4" />
+              </button>
+            )}
           </div>
 
           <div className="space-y-1.5 text-center sm:text-left flex-1">

@@ -23,7 +23,6 @@ import { auth } from "@/lib/firebase";
 import {
   resendVerificationEmail,
   resendPendingEmailVerification,
-  resendVerificationEmailSecure,
   EMAIL_RESEND_COOLDOWN_MS,
   EMAIL_CHANGE_TTL_MS,
 } from "@/lib/auth";
@@ -71,6 +70,13 @@ export function SettingsTab({
   const effectivePendingEmail = pendingEmail || profile?.pendingEmail;
   const targetEmailForVerification = effectivePendingEmail || currentEmail;
   const verified = Boolean(isEmailVerified || profile?.emailVerified || currentUser?.emailVerified);
+
+  useEffect(() => {
+    if (!profile) return;
+    setEmailAlerts(profile.emailAlerts !== false);
+    setGroupApprovalAlerts(profile.groupApprovalAlerts !== false);
+    setShowPhonePublicly(Boolean(profile.showPhonePublicly));
+  }, [profile]);
 
   // Initialize Cooldown from LocalStorage
   useEffect(() => {
@@ -144,7 +150,7 @@ export function SettingsTab({
       setResendFeedback({
         sentAt: Date.now(),
         targetEmail: targetEmailForVerification,
-        expiresInMins: Math.round(EMAIL_CHANGE_TTL_MS / 60000), // 15 minutes
+        expiresInMins: Math.round(EMAIL_CHANGE_TTL_MS / 60000), // 5 minutes
       });
 
       toast.success(`Verification email sent to ${targetEmailForVerification}!`, {
@@ -352,7 +358,7 @@ export function SettingsTab({
                   <Inbox className="w-3 h-3" /> Check Spam or Junk folder if not in Primary
                 </span>
                 <span className="flex items-center gap-1">
-                  <ShieldCheck className="w-3 h-3" /> Sender: noreply@linkcloud.in
+                  <ShieldCheck className="w-3 h-3" /> Official Verification Dispatch
                 </span>
               </div>
             </div>

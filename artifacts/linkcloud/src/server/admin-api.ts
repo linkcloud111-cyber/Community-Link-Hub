@@ -2,6 +2,7 @@ import type { IncomingMessage, ServerResponse } from "http";
 import { initializeApp, getApps, cert, type App } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
 import { getFirestore } from "firebase-admin/firestore";
+import { validateAdminSettingsPayload } from "../lib/settings-validation";
 
 let adminApp: App | null = null;
 
@@ -67,6 +68,114 @@ function parseBody(req: IncomingMessage): Promise<any> {
   });
 }
 
+function isFirestoreQuotaError(err: any): boolean {
+  const code = Number(err?.code);
+  const msg = String(err?.message || err || "");
+  return (
+    code === 8 ||
+    msg.includes("RESOURCE_EXHAUSTED") ||
+    msg.includes("Quota exceeded")
+  );
+}
+
+function isFirestoreTransientError(err: any): boolean {
+  const code = Number(err?.code);
+  const msg = String(err?.message || err || "");
+  return (
+    isFirestoreQuotaError(err) ||
+    code === 14 ||
+    code === 4 ||
+    msg.includes("UNAVAILABLE") ||
+    msg.includes("DEADLINE_EXHAUSTED") ||
+    msg.includes("DEADLINE_EXCEEDED")
+  );
+}
+
+function sendAdminError(res: ServerResponse, err: any, fallbackMessage: string) {
+  if (isFirestoreQuotaError(err)) {
+    sendJson(
+      res,
+      {
+        error:
+          "Firestore daily quota exceeded. Daily quota resets tomorrow; please try again later or check your Firebase Spark/Blaze plan.",
+      },
+      503
+    );
+    return;
+  }
+  if (isFirestoreTransientError(err)) {
+    sendJson(
+      res,
+      {
+        error: "Database service is temporarily unavailable. Please try again shortly.",
+      },
+      503
+    );
+    return;
+  }
+  sendJson(res, { error: err?.message || fallbackMessage }, 500);
+}
+
+const WEBMASTER_ROLE_CACHE_TTL_MS = 60_000;
+const webmasterRoleCache = new Map<string, number>();
+const inFlightRoleChecks = new Map<string, Promise<boolean>>();
+
+async function resolveWebmasterAuthorityInFirestore(
+  app: App,
+  uid: string
+): Promise<boolean> {
+  const now = Date.now();
+  const cachedExpiry = webmasterRoleCache.get(uid);
+  if (cachedExpiry && cachedExpiry > now) {
+    return true;
+  }
+  if (cachedExpiry) {
+    webmasterRoleCache.delete(uid);
+  }
+
+  const pending = inFlightRoleChecks.get(uid);
+  if (pending) {
+    return pending;
+  }
+
+  const checkPromise = (async () => {
+    const firestore = getFirestore(app);
+
+    // 1. Check /webmaster/{uid}
+    const webmasterDoc = await firestore.collection("webmaster").doc(uid).get();
+    if (webmasterDoc.exists) {
+      const data = webmasterDoc.data() || {};
+      if (data.active !== false && (data.role === "webmaster" || !data.role)) {
+        if (webmasterRoleCache.size >= 50) {
+          webmasterRoleCache.clear();
+        }
+        webmasterRoleCache.set(uid, Date.now() + WEBMASTER_ROLE_CACHE_TTL_MS);
+        return true;
+      }
+    }
+
+    // 2. Check /users/{uid}
+    const userDoc = await firestore.collection("users").doc(uid).get();
+    if (userDoc.exists) {
+      const data = userDoc.data() || {};
+      if (data.role === "webmaster" && data.status === "active") {
+        if (webmasterRoleCache.size >= 50) {
+          webmasterRoleCache.clear();
+        }
+        webmasterRoleCache.set(uid, Date.now() + WEBMASTER_ROLE_CACHE_TTL_MS);
+        return true;
+      }
+    }
+
+    return false;
+  })().finally(() => {
+    inFlightRoleChecks.delete(uid);
+  });
+
+  inFlightRoleChecks.set(uid, checkPromise);
+  return checkPromise;
+}
+
 /**
  * Verifies that the incoming request has a valid Firebase ID Token
  * and that the token belongs to an authorized Webmaster.
@@ -107,31 +216,26 @@ export async function verifyWebmasterToken(
     };
   }
 
+  let uid: string;
+  let email = "";
   try {
     const auth = getAuth(app);
     const decoded = await auth.verifyIdToken(idToken);
-    const uid = decoded.uid;
-    const email = decoded.email || "";
+    uid = decoded.uid;
+    email = decoded.email || "";
+  } catch (err: any) {
+    console.warn("[Admin API] Token verification failed:", err?.message || err);
+    return {
+      valid: false,
+      error: "Invalid or expired authentication token.",
+      statusCode: 401,
+    };
+  }
 
-    // Verify Webmaster role in Firestore
-    const firestore = getFirestore(app);
-
-    // 1. Check /webmaster/{uid}
-    const webmasterDoc = await firestore.collection("webmaster").doc(uid).get();
-    if (webmasterDoc.exists) {
-      const data = webmasterDoc.data() || {};
-      if (data.active !== false && (data.role === "webmaster" || !data.role)) {
-        return { valid: true, uid, email };
-      }
-    }
-
-    // 2. Check /users/{uid}
-    const userDoc = await firestore.collection("users").doc(uid).get();
-    if (userDoc.exists) {
-      const data = userDoc.data() || {};
-      if (data.role === "webmaster" && data.status === "active") {
-        return { valid: true, uid, email };
-      }
+  try {
+    const isAuthorized = await resolveWebmasterAuthorityInFirestore(app, uid);
+    if (isAuthorized) {
+      return { valid: true, uid, email };
     }
 
     return {
@@ -140,11 +244,37 @@ export async function verifyWebmasterToken(
       statusCode: 403,
     };
   } catch (err: any) {
-    console.warn("[Admin API] Token verification failed:", err?.message || err);
+    if (isFirestoreQuotaError(err)) {
+      console.warn(
+        "[Admin API] Firestore quota exceeded during Webmaster verification:",
+        err?.message || err
+      );
+      return {
+        valid: false,
+        error:
+          "Firestore daily quota exceeded. Daily quota resets tomorrow; please wait or check your Firebase Spark/Blaze plan usage.",
+        statusCode: 503,
+      };
+    }
+
+    if (isFirestoreTransientError(err)) {
+      console.warn(
+        "[Admin API] Firestore temporarily unavailable during Webmaster verification:",
+        err?.message || err
+      );
+      return {
+        valid: false,
+        error:
+          "Database service is temporarily unavailable while verifying Webmaster permissions. Please try again shortly.",
+        statusCode: 503,
+      };
+    }
+
+    console.warn("[Admin API] Webmaster authority lookup failed:", err?.message || err);
     return {
       valid: false,
-      error: "Invalid or expired authentication token.",
-      statusCode: 401,
+      error: "Unable to verify Webmaster permissions at this time.",
+      statusCode: 503,
     };
   }
 }
@@ -170,7 +300,7 @@ export async function handleAdminUserStatusRequest(
   }
 
   const callerUid = authResult.uid!;
-  const callerEmail = authResult.email || "webmaster@linkcloud.in";
+  const callerEmail = authResult.email || "webmaster@localhost.invalid";
 
   const data = await parseBody(req);
   const { uid: targetUid, status } = data;
@@ -256,6 +386,7 @@ export async function handleAdminUserStatusRequest(
       },
       { merge: true }
     );
+    webmasterRoleCache.delete(targetUid);
 
     // Write audit log
     await firestore.collection("audit_logs").add({
@@ -283,7 +414,7 @@ export async function handleAdminUserStatusRequest(
     });
   } catch (err: any) {
     console.error("[Admin API] Failed to update user status:", err);
-    sendJson(res, { error: err?.message || "Failed to update user status." }, 500);
+    sendAdminError(res, err, "Failed to update user status.");
   }
 }
 
@@ -402,7 +533,14 @@ export async function handleAdminUserDeleteRequest(
       batch.delete(firestore.collection("emailIndex").doc(targetEmail.toLowerCase()));
     }
     if (targetPhone) {
-      batch.delete(firestore.collection("mobileIndex").doc(targetPhone));
+      const clean = targetPhone.replace(/\s+/g, "");
+      const digits = clean.replace(/^\+?91/, "");
+      const phoneKeys = Array.from(
+        new Set([targetPhone, clean, digits, `+91${digits}`, `+91 ${digits}`].filter((p) => Boolean(p) && p.length >= 10))
+      );
+      for (const pk of phoneKeys) {
+        batch.delete(firestore.collection("mobileIndex").doc(pk));
+      }
     }
     batch.delete(userDocRef);
 
@@ -423,6 +561,7 @@ export async function handleAdminUserDeleteRequest(
     });
 
     await batch.commit();
+    webmasterRoleCache.delete(targetUid);
 
     console.log("[Admin API] Permanently deleted user:", { targetUid, callerUid });
 
@@ -434,7 +573,7 @@ export async function handleAdminUserDeleteRequest(
     });
   } catch (err: any) {
     console.error("[Admin API] Failed to delete user:", err);
-    sendJson(res, { error: err?.message || "Failed to delete user." }, 500);
+    sendAdminError(res, err, "Failed to delete user.");
   }
 }
 
@@ -484,7 +623,7 @@ export async function handleAdminStatsRequest(
     });
   } catch (err: any) {
     console.error("[Admin API] Failed to fetch stats:", err);
-    sendJson(res, { error: err?.message || "Failed to fetch stats." }, 500);
+    sendAdminError(res, err, "Failed to fetch stats.");
   }
 }
 
@@ -596,7 +735,7 @@ export async function handleAdminMigrationDryRunRequest(
     sendJson(res, { success: true, report });
   } catch (err: any) {
     console.error("[Admin API] Dry-run error:", err);
-    sendJson(res, { error: err?.message || "Failed to perform migration dry-run." }, 500);
+    sendAdminError(res, err, "Failed to perform migration dry-run.");
   }
 }
 
@@ -792,7 +931,14 @@ export async function handleAdminCleanupUnverifiedRequest(
         batch.delete(firestore.collection("emailIndex").doc(cleanEmail));
       }
       if (cleanPhone) {
-        batch.delete(firestore.collection("mobileIndex").doc(cleanPhone));
+        const cleanP = cleanPhone.replace(/\s+/g, "");
+        const digits = cleanP.replace(/^\+?91/, "");
+        const phoneKeys = Array.from(
+          new Set([cleanPhone, cleanP, digits, `+91${digits}`, `+91 ${digits}`].filter((p) => Boolean(p) && p.length >= 10))
+        );
+        for (const pk of phoneKeys) {
+          batch.delete(firestore.collection("mobileIndex").doc(pk));
+        }
       }
       batch.delete(firestore.collection("accountUidRegistry").doc(uid));
       batch.delete(firestore.collection("pendingRegistrations").doc(uid));
@@ -834,7 +980,7 @@ export async function handleAdminCleanupUnverifiedRequest(
     });
   } catch (err: any) {
     console.error("[Admin API] Cleanup error:", err);
-    sendJson(res, { error: err?.message || "Failed to execute cleanup." }, 500);
+    sendAdminError(res, err, "Failed to execute cleanup.");
   }
 }
 
@@ -855,6 +1001,12 @@ export async function handleAdminSettingsGetRequest(
     return;
   }
 
+  const authResult = await verifyWebmasterToken(req);
+  if (!authResult.valid) {
+    sendJson(res, { error: authResult.error || "Unauthorized" }, authResult.statusCode || 401);
+    return;
+  }
+
   const app = getFirebaseAdminApp();
   if (!app) {
     sendJson(res, { error: "Firestore service unavailable." }, 503);
@@ -871,7 +1023,16 @@ export async function handleAdminSettingsGetRequest(
     sendJson(res, { success: true, settings: snap.data() });
   } catch (err: any) {
     console.warn("[Admin API] Settings fetch error:", err?.message || err);
-    sendJson(res, { error: "Failed to retrieve settings." }, 500);
+    const isQuota = isFirestoreQuotaError(err);
+    sendJson(
+      res,
+      {
+        error: isQuota
+          ? "Firestore daily quota exceeded. Daily quota resets tomorrow; please try again later."
+          : "Failed to retrieve settings.",
+      },
+      isQuota ? 503 : 500
+    );
   }
 }
 
@@ -899,95 +1060,11 @@ export async function handleAdminSettingsUpdateRequest(
     return;
   }
 
-  // 2. Parse body
+  // 2. Parse & validate body via shared isomorphic validator (identical to Cloudflare)
   const body = await parseBody(req);
-  if (!body || typeof body !== "object" || Array.isArray(body)) {
-    sendJson(res, { error: "Malformed payload: Expected JSON object." }, 400);
-    return;
-  }
-
-  // 3. Prevent Privilege Escalation & Unauthorized field injection
-  const forbiddenKeys = [
-    "role",
-    "roles",
-    "uid",
-    "accountUid",
-    "isAdmin",
-    "isWebmaster",
-    "permissions",
-    "password",
-    "salt",
-    "token",
-  ];
-  for (const key of forbiddenKeys) {
-    if (key in body) {
-      delete body[key];
-    }
-  }
-
-  // 4. Validate Structured Data (JSON-LD) if present
-  if (typeof body.structuredDataJson === "string" && body.structuredDataJson.trim().length > 0) {
-    try {
-      JSON.parse(body.structuredDataJson);
-    } catch (parseErr: any) {
-      sendJson(
-        res,
-        {
-          error: `Invalid JSON syntax in structuredDataJson: ${parseErr.message}`,
-        },
-        400
-      );
-      return;
-    }
-  }
-
-  // 5. Sanitize & Validate URLs to prevent script injection (javascript: or data: schemes)
-  const urlFields = [
-    "canonicalUrl",
-    "ogImage",
-    "twitterCardImage",
-    "siteLogo",
-    "favicon",
-    "homepageBanner",
-    "footerLogo",
-    "googleMapUrl",
-    "facebookUrl",
-    "instagramUrl",
-    "telegramUrl",
-    "whatsappUrl",
-    "youtubeUrl",
-    "linkedinUrl",
-    "twitterUrl",
-    "redditUrl",
-    "githubUrl",
-  ];
-
-  for (const field of urlFields) {
-    if (typeof body[field] === "string" && body[field].trim().length > 0) {
-      const val = body[field].trim().toLowerCase();
-      if (val.startsWith("javascript:") || val.startsWith("data:") || val.startsWith("vbscript:")) {
-        sendJson(res, { error: `Disallowed URL protocol in field '${field}'.` }, 400);
-        return;
-      }
-    }
-  }
-
-  // 6. Validate Canonical URL format
-  if (typeof body.canonicalUrl === "string" && body.canonicalUrl.trim().length > 0) {
-    const trimmedCanonical = body.canonicalUrl.trim();
-    if (!trimmedCanonical.startsWith("http://") && !trimmedCanonical.startsWith("https://")) {
-      sendJson(res, { error: "Canonical URL must start with http:// or https://" }, 400);
-      return;
-    }
-  }
-
-  // 7. Enforce string length bounds
-  if (typeof body.metaTitle === "string" && body.metaTitle.length > 200) {
-    sendJson(res, { error: "Meta Title cannot exceed 200 characters." }, 400);
-    return;
-  }
-  if (typeof body.metaDescription === "string" && body.metaDescription.length > 500) {
-    sendJson(res, { error: "Meta Description cannot exceed 500 characters." }, 400);
+  const validation = validateAdminSettingsPayload(body);
+  if (!validation.valid || !validation.sanitized) {
+    sendJson(res, { error: validation.error || "Invalid settings payload." }, 400);
     return;
   }
 
@@ -1002,33 +1079,26 @@ export async function handleAdminSettingsUpdateRequest(
     const nowIso = new Date().toISOString();
 
     const updatePayload = {
-      ...body,
+      ...validation.sanitized,
       updatedAt: nowIso,
       updatedByUid: authResult.uid,
       updatedByEmail: authResult.email,
     };
 
-    // Atomic batch write: settings/site, settings/staticPages sync, and audit_logs
+    // Atomic batch write: settings/site (merge preserves legacy compatibility fields) and audit_logs
     const batch = firestore.batch();
 
     // 1. settings/site
     const siteSettingsRef = firestore.collection("settings").doc("site");
     batch.set(siteSettingsRef, updatePayload, { merge: true });
 
-    // 2. settings/staticPages (keep legal copy in sync)
-    const staticPagesRef = firestore.collection("settings").doc("staticPages");
-    const staticSync: Record<string, any> = { updatedAt: nowIso };
-    if (typeof body.privacyPolicyContent === "string") staticSync.privacy = body.privacyPolicyContent;
-    if (typeof body.termsContent === "string") staticSync.terms = body.termsContent;
-    if (typeof body.dmcaContent === "string") staticSync.dmca = body.dmcaContent;
-    if (typeof body.disclaimerContent === "string") staticSync.disclaimer = body.disclaimerContent;
-    batch.set(staticPagesRef, staticSync, { merge: true });
-
-    // 3. Append tamper-proof audit log
+    // 2. Append tamper-proof audit log
     const auditRef = firestore.collection("audit_logs").doc();
     batch.set(auditRef, {
       action: "Settings Changed",
-      details: "Updated platform settings & SEO configuration via Webmaster API",
+      details: "Updated platform settings & global SEO configuration via Webmaster API",
+      adminUid: authResult.uid || "webmaster",
+      adminEmail: authResult.email || "webmaster@linkcloud.in",
       actorUid: authResult.uid || "webmaster",
       actorEmail: authResult.email || "webmaster@linkcloud.in",
       createdAt: nowIso,
@@ -1044,7 +1114,16 @@ export async function handleAdminSettingsUpdateRequest(
     });
   } catch (err: any) {
     console.error("[Admin API] Failed to save settings:", err);
-    sendJson(res, { error: err?.message || "Failed to persist settings." }, 500);
+    const isQuota = isFirestoreQuotaError(err);
+    sendJson(
+      res,
+      {
+        error: isQuota
+          ? "Firestore daily quota exceeded. Daily quota resets tomorrow; please try again later."
+          : err?.message || "Failed to persist settings.",
+      },
+      isQuota ? 503 : 500
+    );
   }
 }
 
@@ -1221,7 +1300,7 @@ export async function handleAnnouncementsGetRequest(
     sendJson(res, { success: true, announcements });
   } catch (err: any) {
     console.error("[Admin API] Failed to fetch announcements:", err);
-    sendJson(res, { error: "Failed to retrieve announcements." }, 500);
+    sendAdminError(res, err, "Failed to retrieve announcements.");
   }
 }
 
@@ -1267,7 +1346,16 @@ export async function handleAdminAnnouncementsListRequest(
     sendJson(res, { success: true, announcements: items });
   } catch (err: any) {
     console.error("[Admin API] Announcements list error:", err);
-    sendJson(res, { error: "Failed to list announcements." }, 500);
+    const isQuota = isFirestoreQuotaError(err);
+    sendJson(
+      res,
+      {
+        error: isQuota
+          ? "Firestore daily quota exceeded. Daily quota resets tomorrow; please try again later."
+          : "Failed to list announcements.",
+      },
+      isQuota ? 503 : 500
+    );
   }
 }
 
@@ -1336,7 +1424,7 @@ export async function handleAdminAnnouncementCreateRequest(
     });
   } catch (err: any) {
     console.error("[Admin API] Create announcement error:", err);
-    sendJson(res, { error: err?.message || "Failed to create announcement." }, 500);
+    sendAdminError(res, err, "Failed to create announcement.");
   }
 }
 
@@ -1415,7 +1503,7 @@ export async function handleAdminAnnouncementUpdateRequest(
     });
   } catch (err: any) {
     console.error("[Admin API] Update announcement error:", err);
-    sendJson(res, { error: err?.message || "Failed to update announcement." }, 500);
+    sendAdminError(res, err, "Failed to update announcement.");
   }
 }
 
@@ -1480,7 +1568,7 @@ export async function handleAdminAnnouncementDeleteRequest(
     });
   } catch (err: any) {
     console.error("[Admin API] Delete announcement error:", err);
-    sendJson(res, { error: err?.message || "Failed to delete announcement." }, 500);
+    sendAdminError(res, err, "Failed to delete announcement.");
   }
 }
 

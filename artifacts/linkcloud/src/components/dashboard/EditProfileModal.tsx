@@ -279,8 +279,8 @@ export function EditProfileModal({ isOpen, onClose, profile, onSave }: EditProfi
     try {
       const url = await uploadToCloudinary(
         file,
-        settings?.cloudinaryUploadPreset || "linkcloud",
-        settings?.cloudinaryCloudName
+        settings?.cloudinaryUploadPreset || settings?.cloudinarySettings?.uploadPreset,
+        settings?.cloudinaryCloudName || settings?.cloudinarySettings?.cloudName
       );
       setPhotoURL(url);
       toast.success("Profile photo uploaded successfully!");
@@ -295,6 +295,11 @@ export function EditProfileModal({ isOpen, onClose, profile, onSave }: EditProfi
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (saving || uploadingImage) return;
+    if (settings?.profileEditingEnabled === false && profile?.role !== "webmaster") {
+      toast.error("Profile editing is currently paused by the webmaster.");
+      onClose();
+      return;
+    }
 
     setSubmitAttempted(true);
     setNameTouched(true);
@@ -689,7 +694,9 @@ export function EditProfileModal({ isOpen, onClose, profile, onSave }: EditProfi
                   value={selectedDistrict}
                   onChange={(e) => {
                     setSelectedDistrict(e.target.value);
+                    setCity("");
                     setDistrictTouched(true);
+                    setCityTouched(false);
                   }}
                   onBlur={() => setDistrictTouched(true)}
                   disabled={!selectedState}

@@ -4,8 +4,8 @@ import { toast } from "sonner";
 import type { User, ConfirmationResult } from "firebase/auth";
 import type { UserProfile } from "@/lib/types";
 import { validateNewMobile, cleanMobileInput, extract10DigitMobile } from "@/lib/utils";
-import { signInWithMobileOTP, verifyOTP } from "@/lib/auth";
-import { checkDuplicateUser, updateUserProfile } from "@/lib/firestore";
+import { sendPhoneLinkOTP, linkMobileWithOTP } from "@/lib/auth";
+import { updateUserProfile } from "@/lib/firestore";
 
 interface VerifyPhoneModalProps {
   isOpen: boolean;
@@ -150,15 +150,7 @@ export function VerifyPhoneModal({
 
     setLoading(true);
     try {
-      // Check duplicate user in Firestore
-      const duplicates = await checkDuplicateUser("", check.formatted);
-      if (duplicates.phoneExists && current10Digit !== check.raw10) {
-        toast.error("This mobile number is already registered with another account.");
-        setLoading(false);
-        return;
-      }
-
-      const res = await signInWithMobileOTP(check.formatted, "phone-modal-recaptcha");
+      const res = await sendPhoneLinkOTP(check.formatted, "phone-modal-recaptcha");
       setConfirmationResult(res);
       setOtpSent(true);
       setCooldown(60);
@@ -178,7 +170,7 @@ export function VerifyPhoneModal({
 
     setLoading(true);
     try {
-      const res = await signInWithMobileOTP(check.formatted, "phone-modal-recaptcha");
+      const res = await sendPhoneLinkOTP(check.formatted, "phone-modal-recaptcha");
       setConfirmationResult(res);
       setCooldown(60);
       toast.success(`New OTP code sent to +91 ${check.raw10}`);
@@ -203,14 +195,20 @@ export function VerifyPhoneModal({
 
     setLoading(true);
     try {
-      await verifyOTP(confirmationResult, otpCode.trim());
-      if (user) {
+      const linkedUser = await linkMobileWithOTP(confirmationResult, otpCode.trim());
+      const targetUid = linkedUser?.uid || user?.uid;
+      if (targetUid) {
         const check = validateNewMobile(phone, currentPhone);
         const formattedSaved = `+91 ${check.raw10}`;
-        await updateUserProfile(user.uid, {
-          phone: formattedSaved,
-          phoneVerified: true,
-        });
+        await updateUserProfile(
+          targetUid,
+          {
+            phone: formattedSaved,
+            phoneVerified: true,
+          },
+          linkedUser?.email || user?.email || targetUid,
+          targetUid
+        );
       }
 
       if (onSuccess) {
@@ -218,10 +216,21 @@ export function VerifyPhoneModal({
       }
 
       // Single success toast
-      toast.success("Mobile number verified successfully!");
+      toast.success("Mobile number verified and linked successfully!");
       handleClose();
     } catch (err: any) {
-      toast.error(err?.message || "Invalid OTP. Please try again.");
+      const code = err?.code || "";
+      if (code === "auth/credential-already-in-use" || code === "auth/phone-number-already-exists") {
+        toast.error("This mobile number is already linked to another LinkCloud account.");
+      } else if (code === "auth/requires-recent-login") {
+        toast.error("For your security, please sign out and sign in again before changing your linked mobile number.");
+      } else if (code === "auth/code-expired") {
+        toast.error("OTP code expired. Please resend a new code.");
+      } else if (code === "auth/invalid-verification-code") {
+        toast.error("Incorrect 6-digit OTP code. Please check and try again.");
+      } else {
+        toast.error(err?.message || "Invalid OTP. Please try again.");
+      }
     } finally {
       setLoading(false);
     }

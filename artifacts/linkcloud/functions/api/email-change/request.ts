@@ -128,8 +128,7 @@ export async function onRequestPost(context: {
     const origin =
       env.APP_URL ||
       env.VITE_APP_URL ||
-      new URL(request.url).origin ||
-      "https://linkcloud.in";
+      new URL(request.url).origin;
 
     const verificationLink = `${origin}/verify-handler?mode=verifyAndChangeEmail&reqId=${requestId}&uid=${uid}&token=${rawToken}`;
 

@@ -36,8 +36,12 @@ import {
   seedDefaultLocations,
 } from "@/lib/firestore";
 import type { LocationState, LocationDistrict, LocationCity } from "@/lib/types";
+import { useAuth } from "@/contexts/AuthContext";
 
 export default function AdminLocations() {
+  const { user, profile } = useAuth();
+  const actorUid = user?.uid || "";
+  const actorEmail = user?.email || profile?.email || "";
   const [loading, setLoading] = useState(true);
   const [states, setStates] = useState<LocationState[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
@@ -65,6 +69,7 @@ export default function AdminLocations() {
 
   const [editCityItem, setEditCityItem] = useState<LocationCity | null>(null);
   const [editCityName, setEditCityName] = useState("");
+  const [editCityDistrictName, setEditCityDistrictName] = useState("");
 
   // Delete confirmation modal state
   const [deleteTarget, setDeleteTarget] = useState<{
@@ -157,20 +162,20 @@ export default function AdminLocations() {
       return;
     }
     try {
-      await addStateFirestore(newStateName.trim());
+      await addStateFirestore(newStateName.trim(), actorUid, actorEmail);
       toast.success(`State "${newStateName.trim()}" added to Firestore`);
       setNewStateName("");
       setAddStateOpen(false);
       await loadStates();
-    } catch {
-      toast.error("Failed to add state");
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to add state");
     }
   };
 
   const handleToggleState = async (st: LocationState) => {
     try {
       const newStatus = !st.enabled;
-      await toggleStateFirestore(st.id, st.name, newStatus);
+      await toggleStateFirestore(st.id, st.name, newStatus, actorUid, actorEmail);
       toast.success(newStatus ? `State "${st.name}" enabled` : `State "${st.name}" disabled`);
       setStates((prev) => prev.map((item) => (item.id === st.id ? { ...item, enabled: newStatus } : item)));
     } catch {
@@ -180,13 +185,19 @@ export default function AdminLocations() {
 
   const handleSaveEditState = async () => {
     if (!editStateItem || !editStateName.trim()) return;
+    const oldName = editStateItem.name;
+    const nextName = editStateName.trim();
     try {
-      await updateStateFirestore(editStateItem.id, editStateName.trim(), editStateItem.enabled);
-      toast.success(`State updated to "${editStateName.trim()}"`);
+      await updateStateFirestore(editStateItem.id, nextName, editStateItem.enabled, actorUid, actorEmail);
+      toast.success(`State updated to "${nextName}"`);
       setEditStateItem(null);
+      if (expandedState === oldName) {
+        setExpandedState(nextName);
+        await reloadStateDetails(nextName);
+      }
       await loadStates();
-    } catch {
-      toast.error("Failed to update state");
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to update state");
     }
   };
 
@@ -200,20 +211,20 @@ export default function AdminLocations() {
   const handleAddDistrict = async () => {
     if (!addDistrictState || !newDistrictName.trim()) return;
     try {
-      await addDistrictFirestore(addDistrictState, newDistrictName.trim());
+      await addDistrictFirestore(addDistrictState, newDistrictName.trim(), actorUid, actorEmail);
       toast.success(`District "${newDistrictName.trim()}" added to ${addDistrictState}`);
       setNewDistrictName("");
       setAddDistrictState(null);
       await reloadStateDetails(addDistrictState);
-    } catch {
-      toast.error("Failed to add district");
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to add district");
     }
   };
 
   const handleToggleDistrict = async (d: LocationDistrict) => {
     try {
       const newStatus = !d.enabled;
-      await toggleDistrictFirestore(d.id, d.stateName, d.name, newStatus);
+      await toggleDistrictFirestore(d.id, d.stateName, d.name, newStatus, actorUid, actorEmail);
       toast.success(newStatus ? `District "${d.name}" enabled` : `District "${d.name}" disabled`);
       await reloadStateDetails(d.stateName);
     } catch {
@@ -224,13 +235,13 @@ export default function AdminLocations() {
   const handleSaveEditDistrict = async () => {
     if (!editDistrictItem || !editDistrictName.trim()) return;
     try {
-      await updateDistrictFirestore(editDistrictItem.id, editDistrictName.trim(), editDistrictItem.enabled);
+      await updateDistrictFirestore(editDistrictItem.id, editDistrictName.trim(), editDistrictItem.enabled, actorUid, actorEmail);
       toast.success(`District updated to "${editDistrictName.trim()}"`);
       const stateName = editDistrictItem.stateName;
       setEditDistrictItem(null);
       await reloadStateDetails(stateName);
-    } catch {
-      toast.error("Failed to update district");
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to update district");
     }
   };
 
@@ -244,21 +255,21 @@ export default function AdminLocations() {
   const handleAddCity = async () => {
     if (!addCityContext || !newCityName.trim()) return;
     try {
-      await addCityFirestore(addCityContext.stateName, addCityContext.districtName, newCityName.trim());
+      await addCityFirestore(addCityContext.stateName, addCityContext.districtName, newCityName.trim(), actorUid, actorEmail);
       toast.success(`City "${newCityName.trim()}" added to ${addCityContext.stateName}`);
       setNewCityName("");
       const stName = addCityContext.stateName;
       setAddCityContext(null);
       await reloadStateDetails(stName);
-    } catch {
-      toast.error("Failed to add city");
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to add city");
     }
   };
 
   const handleToggleCity = async (c: LocationCity) => {
     try {
       const newStatus = !c.enabled;
-      await toggleCityFirestore(c.id, c.name, newStatus);
+      await toggleCityFirestore(c.id, c.name, newStatus, actorUid, actorEmail);
       toast.success(newStatus ? `City "${c.name}" enabled` : `City "${c.name}" disabled`);
       await reloadStateDetails(c.stateName);
     } catch {
@@ -269,13 +280,20 @@ export default function AdminLocations() {
   const handleSaveEditCity = async () => {
     if (!editCityItem || !editCityName.trim()) return;
     try {
-      await updateCityFirestore(editCityItem.id, editCityName.trim(), editCityItem.enabled);
+      await updateCityFirestore(
+        editCityItem.id,
+        editCityName.trim(),
+        editCityItem.enabled,
+        actorUid,
+        actorEmail,
+        editCityDistrictName
+      );
       toast.success(`City updated to "${editCityName.trim()}"`);
       const stateName = editCityItem.stateName;
       setEditCityItem(null);
       await reloadStateDetails(stateName);
-    } catch {
-      toast.error("Failed to update city");
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to update city");
     }
   };
 
@@ -299,17 +317,17 @@ export default function AdminLocations() {
     try {
       if (deleteTarget.type === "state") {
         const st = deleteTarget.item as LocationState;
-        await deleteStateFirestore(st.id, st.name);
+        await deleteStateFirestore(st.id, st.name, actorUid, actorEmail);
         toast.success(`State "${st.name}" deleted from Firestore`);
         await loadStates();
       } else if (deleteTarget.type === "district") {
         const dist = deleteTarget.item as LocationDistrict;
-        await deleteDistrictFirestore(dist.id, dist.name, dist.stateName);
+        await deleteDistrictFirestore(dist.id, dist.name, dist.stateName, actorUid, actorEmail);
         toast.success(`District "${dist.name}" deleted from Firestore`);
         await reloadStateDetails(dist.stateName);
       } else {
         const city = deleteTarget.item as LocationCity;
-        await deleteCityFirestore(city.id, city.name);
+        await deleteCityFirestore(city.id, city.name, actorUid, actorEmail);
         toast.success(`City "${city.name}" deleted from Firestore`);
         await reloadStateDetails(city.stateName);
       }
@@ -582,7 +600,12 @@ export default function AdminLocations() {
                                   : "bg-blue-500/5 border-blue-500/20 text-blue-700 dark:text-blue-300"
                               }`}
                             >
-                              <span className="font-bold">{c.name}</span>
+                              <span className="font-bold">
+                                {c.name}
+                                {c.districtName ? (
+                                  <span className="font-normal opacity-75"> · {c.districtName}</span>
+                                ) : null}
+                              </span>
                               <div className="flex items-center gap-1 ml-1 border-l border-border pl-1.5">
                                 <button onClick={() => handleToggleCity(c)} className="p-0.5 hover:text-primary">
                                   <Power className="w-3 h-3" />
@@ -591,6 +614,7 @@ export default function AdminLocations() {
                                   onClick={() => {
                                     setEditCityItem(c);
                                     setEditCityName(c.name);
+                                    setEditCityDistrictName(c.districtName || "");
                                   }}
                                   className="p-0.5 hover:text-primary"
                                 >
@@ -745,14 +769,35 @@ export default function AdminLocations() {
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <div className="space-y-2">
-              <label className="text-xs font-semibold text-muted-foreground uppercase">City / Locality Name</label>
-              <input
-                value={newCityName}
-                onChange={(e) => setNewCityName(e.target.value)}
-                placeholder="e.g. Whitefield, Bandra, HSR Layout"
-                className="w-full p-3 bg-muted/30 border border-border rounded-xl text-xs outline-none focus:ring-2 focus:ring-primary"
-              />
+            <div className="space-y-3">
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-muted-foreground uppercase">Parent District (Optional)</label>
+                <select
+                  value={addCityContext.districtName}
+                  onChange={(e) =>
+                    setAddCityContext((prev) =>
+                      prev ? { ...prev, districtName: e.target.value } : null
+                    )
+                  }
+                  className="w-full p-3 bg-muted/30 border border-border rounded-xl text-xs outline-none focus:ring-2 focus:ring-primary"
+                >
+                  <option value="">All Districts in {addCityContext.stateName}</option>
+                  {(districtsMap[addCityContext.stateName] || []).map((d) => (
+                    <option key={d.id} value={d.name}>
+                      {d.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-muted-foreground uppercase">City / Locality Name</label>
+                <input
+                  value={newCityName}
+                  onChange={(e) => setNewCityName(e.target.value)}
+                  placeholder="e.g. Whitefield, Bandra, HSR Layout"
+                  className="w-full p-3 bg-muted/30 border border-border rounded-xl text-xs outline-none focus:ring-2 focus:ring-primary"
+                />
+              </div>
             </div>
             <div className="flex justify-end gap-2 pt-2">
               <button onClick={() => setAddCityContext(null)} className="px-4 py-2 bg-muted text-xs font-bold rounded-xl">
@@ -771,18 +816,35 @@ export default function AdminLocations() {
         <div className="fixed inset-0 bg-background/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-card border border-border rounded-3xl p-6 max-w-md w-full space-y-4 shadow-2xl">
             <div className="flex items-center justify-between border-b border-border pb-3">
-              <h2 className="text-base font-bold">Edit City Name</h2>
+              <h2 className="text-base font-bold">Edit City ({editCityItem.stateName})</h2>
               <button onClick={() => setEditCityItem(null)} className="p-1 hover:bg-muted rounded-lg">
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <div className="space-y-2">
-              <label className="text-xs font-semibold text-muted-foreground uppercase">City Name</label>
-              <input
-                value={editCityName}
-                onChange={(e) => setEditCityName(e.target.value)}
-                className="w-full p-3 bg-muted/30 border border-border rounded-xl text-xs outline-none focus:ring-2 focus:ring-primary"
-              />
+            <div className="space-y-3">
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-muted-foreground uppercase">Parent District (Optional)</label>
+                <select
+                  value={editCityDistrictName}
+                  onChange={(e) => setEditCityDistrictName(e.target.value)}
+                  className="w-full p-3 bg-muted/30 border border-border rounded-xl text-xs outline-none focus:ring-2 focus:ring-primary"
+                >
+                  <option value="">All Districts in {editCityItem.stateName}</option>
+                  {(districtsMap[editCityItem.stateName] || []).map((d) => (
+                    <option key={d.id} value={d.name}>
+                      {d.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-muted-foreground uppercase">City Name</label>
+                <input
+                  value={editCityName}
+                  onChange={(e) => setEditCityName(e.target.value)}
+                  className="w-full p-3 bg-muted/30 border border-border rounded-xl text-xs outline-none focus:ring-2 focus:ring-primary"
+                />
+              </div>
             </div>
             <div className="flex justify-end gap-2 pt-2">
               <button onClick={() => setEditCityItem(null)} className="px-4 py-2 bg-muted text-xs font-bold rounded-xl">

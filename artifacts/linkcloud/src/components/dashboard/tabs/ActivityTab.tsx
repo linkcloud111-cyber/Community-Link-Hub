@@ -73,6 +73,26 @@ export function ActivityTab({ profile, groups, notifications }: ActivityTabProps
     });
   });
 
+  notifications.slice(0, 5).forEach((notif) => {
+    events.push({
+      id: `notif-${notif.id}`,
+      title: notif.title || "Account Notification",
+      desc: notif.message || "Recent system or moderation update",
+      time: notif.createdAt,
+      icon: Clock,
+      color: "text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/60",
+    });
+  });
+
+  const toMillis = (ts: any) => {
+    if (!ts) return 0;
+    if (typeof ts?.toMillis === "function") return ts.toMillis();
+    if (typeof ts?.seconds === "number") return ts.seconds * 1000;
+    const parsed = new Date(ts).getTime();
+    return Number.isFinite(parsed) ? parsed : 0;
+  };
+  events.sort((a, b) => toMillis(b.time) - toMillis(a.time));
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -92,6 +112,11 @@ export function ActivityTab({ profile, groups, notifications }: ActivityTabProps
 
       {/* Timeline Card */}
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 sm:p-6 shadow-sm">
+        {events.length === 0 ? (
+          <div className="text-center py-8 text-xs text-slate-500 dark:text-slate-400">
+            No recent account activity recorded yet.
+          </div>
+        ) : (
         <div className="space-y-6 relative before:absolute before:inset-0 before:left-4 before:h-full before:w-0.5 before:bg-slate-200 dark:before:bg-slate-800">
           {events.map((evt) => {
             const Icon = evt.icon;
@@ -118,6 +143,7 @@ export function ActivityTab({ profile, groups, notifications }: ActivityTabProps
             );
           })}
         </div>
+        )}
       </div>
     </div>
   );

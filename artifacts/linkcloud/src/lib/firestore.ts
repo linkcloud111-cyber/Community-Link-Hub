@@ -3,6 +3,7 @@ import {
   doc,
   getDoc,
   getDocs,
+  getCountFromServer,
   addDoc,
   setDoc,
   updateDoc,
@@ -53,6 +54,13 @@ import {
   DEFAULT_LOCATION_STATES,
   DEFAULT_LOCATION_DISTRICTS,
 } from "./default-taxonomies";
+import {
+  parseAndValidateTags,
+  validateReportPayload,
+  getGroupLimits,
+  MIN_GROUP_DESCRIPTION_LENGTH,
+} from "./group-validation";
+import { DEFAULT_SITE_SETTINGS, normalizeSiteSettings } from "./default-site-settings";
 
 export {
   DEFAULT_CATEGORIES,
@@ -458,69 +466,143 @@ export async function createGroup(
     categoryName: string;
     joinUrl: string;
     description: string;
-    submittedBy: string;
-    submittedByName: string;
+    submittedBy?: string;
+    submittedByName?: string;
   }
 ): Promise<string> {
+  const currentUser = auth?.currentUser;
+  if (!currentUser) {
+    throw new Error("Sign in required. Please log in or create an account to submit a community listing.");
+  }
+
   const isWebmaster = await isCurrentUserWebmaster();
   const siteSettings = await getSiteSettings();
   if (siteSettings?.groupSubmissionEnabled !== true && !isWebmaster) {
     throw new Error("Link submissions are temporarily paused by Webmaster.");
   }
-  if (!auth?.currentUser && siteSettings?.allowPublicSubmissions !== true && !isWebmaster) {
-    throw new Error("Guest link submissions are disabled. Please sign in to submit.");
+
+  const limits = getGroupLimits(siteSettings);
+  const cleanName = (data.name || "").trim();
+  const cleanTagline = (data.tagline || "").trim();
+  const cleanDesc = (data.description || "").trim();
+  const cleanRules = (data.rules || "").trim();
+  const cleanLogo = (data.logoUrl || "").trim();
+
+  if (cleanName.length < 3 || cleanName.length > limits.nameMaxLength) {
+    throw new Error(`Group Name must be between 3 and ${limits.nameMaxLength} characters.`);
+  }
+  if (cleanTagline.length > limits.taglineMaxLength) {
+    throw new Error(`Short Tagline must not exceed ${limits.taglineMaxLength} characters.`);
+  }
+  if (cleanDesc.length < MIN_GROUP_DESCRIPTION_LENGTH) {
+    throw new Error(`Description must be at least ${MIN_GROUP_DESCRIPTION_LENGTH} characters.`);
+  }
+  if (cleanDesc.length > limits.descriptionMaxLength) {
+    throw new Error(`Description must not exceed ${limits.descriptionMaxLength} characters.`);
+  }
+  if (cleanRules.length > limits.rulesMaxLength) {
+    throw new Error(`Rules must not exceed ${limits.rulesMaxLength} characters.`);
+  }
+  if (limits.requireGroupLogo && !cleanLogo) {
+    throw new Error("Group Logo is required by Webmaster settings.");
   }
 
-  const { submittedByName, submittedByEmail, ...publicGroupData } = data;
-  const ref = await addDoc(collection(db, "groups"), {
-    ...publicGroupData,
-    contentType: data.contentType || "General Discussion",
-    logoUrl: data.logoUrl || "",
-    description: data.description,
-    language: data.language || "Hindi",
-    state: data.state || "",
-    district: data.district || "",
-    city: data.city || "",
-    rules: data.rules || "",
-    minimumAge: data.minimumAge || "All Ages",
-    tags: Array.isArray(data.tags) ? data.tags : [],
-    joinUrl: data.joinUrl,
-    submittedBy: data.submittedBy,
-    submitterUid: data.submittedBy,
-    status: data.status || "pending",
-    featured: false,
-    pinned: false,
-    hidden: false,
-    viewsCount: 0,
-    joinCount: 0,
-    reportCount: 0,
-    memberCount: 0,
-    linkStatus: "Active",
-    createdAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
+  const tagResult = parseAndValidateTags(data.tags ?? [], {
+    required: true,
+    maxTags: limits.maxTags,
+  });
+  if (!tagResult.valid) {
+    throw new Error(tagResult.error || "Please enter valid tags.");
+  }
+
+  const idToken = await currentUser.getIdToken();
+  const res = await fetch("/api/groups/submit", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${idToken}`,
+    },
+    body: JSON.stringify({
+      name: cleanName,
+      tagline: cleanTagline,
+      platform: data.platform,
+      categoryId: data.categoryId,
+      categoryName: data.categoryName,
+      contentType: data.contentType || "General Discussion",
+      logoUrl: cleanLogo,
+      description: cleanDesc,
+      language: data.language || "Hindi",
+      state: data.state || "",
+      district: data.district || "",
+      city: data.city || "",
+      rules: cleanRules,
+      minimumAge: data.minimumAge || "All Ages",
+      tags: tagResult.tags,
+      joinUrl: data.joinUrl,
+      status: data.status,
+    }),
   });
 
-  // Store private submitter PII in protected /groupOwnership/{groupId}
-  try {
-    await setDoc(doc(db, "groupOwnership", ref.id), {
-      groupId: ref.id,
-      submittedBy: data.submittedBy,
-      submitterUid: data.submittedBy,
-      ownerUid: data.submittedBy,
-      submittedByName: submittedByName || "",
-      submittedByEmail: submittedByEmail || "",
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-    });
-  } catch (ownErr) {
-    console.warn("Error storing group ownership metadata:", ownErr);
+  const resData: any = await res.json().catch(() => ({}));
+  const createdGroupId = resData?.groupId || resData?.id;
+  if (!res.ok || !createdGroupId) {
+    throw new Error(resData?.error || "Failed to submit community listing. Please try again.");
   }
 
-  return ref.id;
+  invalidateAdminStatsCache();
+  return createdGroupId;
 }
 
 export async function updateGroup(id: string, data: Partial<Group>): Promise<void> {
-  await updateDoc(doc(db, "groups", id), { ...data, updatedAt: serverTimestamp() });
+  const siteSettings = await getSiteSettings().catch(() => null);
+  const limits = getGroupLimits(siteSettings);
+  const updates: Record<string, any> = { ...data };
+
+  if (typeof updates.name === "string") {
+    const cleanName = updates.name.trim();
+    if (cleanName.length < 3 || cleanName.length > limits.nameMaxLength) {
+      throw new Error(`Group Name must be between 3 and ${limits.nameMaxLength} characters.`);
+    }
+    updates.name = cleanName;
+  }
+
+  if (typeof updates.tagline === "string") {
+    const cleanTagline = updates.tagline.trim();
+    if (cleanTagline.length > limits.taglineMaxLength) {
+      throw new Error(`Short Tagline must not exceed ${limits.taglineMaxLength} characters.`);
+    }
+    updates.tagline = cleanTagline;
+  }
+
+  if (typeof updates.description === "string") {
+    const cleanDesc = updates.description.trim();
+    if (cleanDesc.length > limits.descriptionMaxLength) {
+      throw new Error(`Description must not exceed ${limits.descriptionMaxLength} characters.`);
+    }
+    updates.description = cleanDesc;
+  }
+
+  if (typeof updates.rules === "string") {
+    const cleanRules = updates.rules.trim();
+    if (cleanRules.length > limits.rulesMaxLength) {
+      throw new Error(`Rules must not exceed ${limits.rulesMaxLength} characters.`);
+    }
+    updates.rules = cleanRules;
+  }
+
+  if (updates.tags !== undefined) {
+    const tagResult = parseAndValidateTags(updates.tags, {
+      required: false,
+      maxTags: limits.maxTags,
+    });
+    if (!tagResult.valid) {
+      throw new Error(tagResult.error || "Please enter valid tags.");
+    }
+    updates.tags = tagResult.tags;
+  }
+
+  await updateDoc(doc(db, "groups", id), { ...updates, updatedAt: serverTimestamp() });
+  invalidateAdminStatsCache();
 }
 
 export async function deleteGroup(id: string): Promise<void> {
@@ -728,27 +810,19 @@ export async function upsertUserProfile(uid: string, data: Partial<UserProfile>)
   const userRef = await resolveUserDocRef(uid);
   const snap = await getDoc(userRef);
   let finalData: Partial<UserProfile> = { ...data };
-  let finalAccountUid = finalData.accountUid;
   if (snap.exists()) {
     const existing = snap.data();
     // Protect immutable accountUid from being overwritten with null/empty
     if (existing.accountUid && !finalData.accountUid) {
       finalData.accountUid = existing.accountUid;
-      finalAccountUid = existing.accountUid;
     }
   } else if (!finalData.accountUid) {
-    const gen = await generateUniqueAccountUid(uid);
-    finalData.accountUid = gen;
-    finalAccountUid = gen;
+    finalData.accountUid = await generateUniqueAccountUid(uid);
   }
   await setDoc(userRef, { ...finalData, updatedAt: serverTimestamp() }, { merge: true });
-
-  if (finalAccountUid) {
-    await registerIdentityIndexes(uid, finalAccountUid, finalData.email, finalData.phone);
-  }
 }
 
-export async function updateUserProfile(uid: string, data: Partial<UserProfile>, adminEmail = "webmaster@linkcloud.in", adminUid = "webmaster"): Promise<void> {
+export async function updateUserProfile(uid: string, data: Partial<UserProfile>, adminEmail = "webmaster@localhost.invalid", adminUid = "webmaster"): Promise<void> {
   const userRef = await resolveUserDocRef(uid);
   const snap = await getDoc(userRef);
   if (!snap.exists()) {
@@ -774,11 +848,6 @@ export async function updateUserProfile(uid: string, data: Partial<UserProfile>,
   }
 
   await setDoc(userRef, { ...sanitized, updatedAt: serverTimestamp() }, { merge: true });
-
-  const finalAccountUid = sanitized.accountUid || existing.accountUid;
-  if (finalAccountUid) {
-    await registerIdentityIndexes(uid, finalAccountUid, sanitized.email || existing.email, sanitized.phone || existing.phone);
-  }
 
   console.log("[WEBMASTER USERS]", {
     Action: "EDIT_USER_PROFILE",
@@ -837,7 +906,7 @@ export async function getAllUsers(): Promise<UserProfile[]> {
   }
 }
 
-export async function updateUserRole(uid: string, role: UserRole, adminEmail = "webmaster@linkcloud.in", adminUid = "webmaster"): Promise<void> {
+export async function updateUserRole(uid: string, role: UserRole, adminEmail = "webmaster@localhost.invalid", adminUid = "webmaster"): Promise<void> {
   if (uid === adminUid && role !== "webmaster") {
     throw new Error("Self-Protection: You cannot revoke Webmaster authorization on your active account.");
   }
@@ -1124,67 +1193,23 @@ import { hashIdentifier, normalizeEmail, normalizePhone } from "./utils";
 
 // ─── Identity Indexes & Tombstone Records ────────────────────────────────────
 
+/**
+ * @deprecated Identity indexes (/emailIndex, /mobileIndex) are now strictly server-managed.
+ */
 export async function registerIdentityIndexes(
-  firebaseUid: string,
-  accountUid: string,
-  email?: string,
-  phone?: string
+  _firebaseUid: string,
+  _accountUid: string,
+  _email?: string,
+  _phone?: string
 ): Promise<void> {
-  try {
-    if (email) {
-      const normEmail = normalizeEmail(email);
-      if (normEmail) {
-        await setDoc(
-          doc(db, "emailIndex", normEmail),
-          {
-            email: normEmail,
-            uid: firebaseUid,
-            accountUid,
-            status: "active",
-            updatedAt: serverTimestamp(),
-          },
-          { merge: true }
-        );
-      }
-    }
-    if (phone) {
-      const normPhone = normalizePhone(phone);
-      if (normPhone) {
-        await setDoc(
-          doc(db, "mobileIndex", normPhone),
-          {
-            phone: normPhone,
-            uid: firebaseUid,
-            accountUid,
-            status: "active",
-            updatedAt: serverTimestamp(),
-          },
-          { merge: true }
-        );
-      }
-    }
-  } catch (err) {
-    console.warn("Error registering identity indexes:", err);
-  }
+  // No-op: server APIs maintain emailIndex and mobileIndex securely.
 }
 
-export async function removeIdentityIndexes(email?: string, phone?: string): Promise<void> {
-  try {
-    if (email) {
-      const normEmail = normalizeEmail(email);
-      if (normEmail) {
-        await deleteDoc(doc(db, "emailIndex", normEmail)).catch(() => {});
-      }
-    }
-    if (phone) {
-      const normPhone = normalizePhone(phone);
-      if (normPhone) {
-        await deleteDoc(doc(db, "mobileIndex", normPhone)).catch(() => {});
-      }
-    }
-  } catch (err) {
-    console.warn("Error removing identity indexes:", err);
-  }
+/**
+ * @deprecated Identity indexes (/emailIndex, /mobileIndex) are now strictly server-managed.
+ */
+export async function removeIdentityIndexes(_email?: string, _phone?: string): Promise<void> {
+  // No-op: server APIs (/api/admin/users/delete, /api/auth/delete-account) remove indexes securely.
 }
 
 export async function recordDeletedAccountTombstone(data: {
@@ -1430,8 +1455,7 @@ export async function performPermanentUserDeletion(params: {
       }
     }
 
-    // 7. Remove active emailIndex and mobileIndex entries so user can register anew
-    await removeIdentityIndexes(email, phone);
+    // 7. Identity indexes are deleted server-side by syncAuthDeleteBackend (/api/admin/users/delete)
 
     // 8. Record in deletedAccounts tombstone collection (minimal record, no blocking hashes)
     await recordDeletedAccountTombstone({
@@ -1991,15 +2015,53 @@ export async function deleteCategory(id: string): Promise<void> {
 export async function createReport(
   data: Omit<Report, "id" | "createdAt" | "status">
 ): Promise<void> {
-  await addDoc(collection(db, "reports"), {
-    ...data,
-    status: "pending",
-    createdAt: serverTimestamp(),
+  const isSignedIn = Boolean(auth?.currentUser);
+  const validation = validateReportPayload({
+    isSignedIn,
+    reporterName: data.reportedByName,
+    reason: data.reason,
+    details: data.details,
   });
-  try {
-    await updateDoc(doc(db, "groups", data.groupId), { reportCount: increment(1) });
-  } catch {
-    // ignore if group doc doesn't exist
+
+  if (!validation.valid) {
+    const firstMsg =
+      validation.errors.reporterName ||
+      validation.errors.reason ||
+      validation.errors.details ||
+      "Please complete all required report fields.";
+    const err: any = new Error(firstMsg);
+    err.fieldErrors = validation.errors;
+    throw err;
+  }
+
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (auth?.currentUser) {
+    const idToken = await auth.currentUser.getIdToken().catch(() => "");
+    if (idToken) {
+      headers["Authorization"] = `Bearer ${idToken}`;
+    }
+  }
+
+  const res = await fetch("/api/reports/submit", {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      groupId: data.groupId,
+      groupName: data.groupName,
+      reportedByName: validation.cleanData.reporterName,
+      reason: validation.cleanData.reason,
+      details: validation.cleanData.details,
+    }),
+  });
+
+  const resData: any = await res.json().catch(() => ({}));
+  if (!res.ok || !resData?.success) {
+    const err: any = new Error(resData?.error || "Failed to submit report. Please try again.");
+    err.status = res.status;
+    if (resData?.fieldErrors) {
+      err.fieldErrors = resData.fieldErrors;
+    }
+    throw err;
   }
 }
 
@@ -3126,81 +3188,91 @@ export async function deleteNotificationAdmin(id: string): Promise<void> {
   await deleteDoc(doc(db, "notifications", id));
 }
 
-// ─── Static Pages & SEO Settings ────────────────────────────────────────────────
-
-export async function getStaticPages(): Promise<Record<string, string>> {
-  try {
-    const snap = await getDoc(doc(db, "settings", "staticPages"));
-    if (!snap.exists()) return {};
-    return snap.data() as Record<string, string>;
-  } catch {
-    return {};
-  }
-}
-
-export async function updateStaticPage(slug: string, content: string): Promise<void> {
-  await setDoc(
-    doc(db, "settings", "staticPages"),
-    { [slug]: content, updatedAt: serverTimestamp() },
-    { merge: true }
-  );
-}
-
-export async function getSeoSettings(): Promise<any> {
-  try {
-    const snap = await getDoc(doc(db, "settings", "seo"));
-    if (!snap.exists()) {
-      return {
-        metaTitle: "LinkCloud — India's #1 Public Group & Channel Directory",
-        metaDescription: "Discover verified WhatsApp groups, Telegram channels, Discord servers, and Facebook communities.",
-        metaKeywords: "WhatsApp group links, Telegram channels, Discord servers, India communities",
-        canonicalUrl: "https://linkcloud.in",
-        ogImage: "/favicon.svg",
-        twitterCard: "summary_large_image",
-        robotsTxt: "User-agent: *\nAllow: /\nDisallow: /admin/\nSitemap: https://linkcloud.in/sitemap.xml",
-      };
-    }
-    return snap.data();
-  } catch {
-    return {};
-  }
-}
-
-export async function updateSeoSettings(data: any): Promise<void> {
-  await setDoc(
-    doc(db, "settings", "seo"),
-    { ...data, updatedAt: serverTimestamp() },
-    { merge: true }
-  );
-}
+// Legacy settings/staticPages and settings/seo writers removed: managed exclusively via CMS Pages & settings/site API
 
 // ─── Analytics & Comprehensive Admin Stats ───────────────────────────────────
 
-export async function getAdminStats() {
+export interface AdminNavBadgeCounts {
+  pendingGroups: number;
+  pendingReports: number;
+  unreadContacts: number;
+  pendingDeletions: number;
+}
+
+const ADMIN_STATS_CACHE_TTL_MS = 45_000;
+let cachedNavBadges: { data: AdminNavBadgeCounts; expiresAt: number } | null = null;
+let inFlightNavBadges: Promise<AdminNavBadgeCounts> | null = null;
+
+let cachedAdminStats: { data: Awaited<ReturnType<typeof computeAdminStats>>; expiresAt: number } | null = null;
+let inFlightAdminStats: Promise<Awaited<ReturnType<typeof computeAdminStats>>> | null = null;
+
+export function invalidateAdminStatsCache(): void {
+  cachedNavBadges = null;
+  cachedAdminStats = null;
+}
+
+export async function getAdminNavBadgeCounts(forceRefresh = false): Promise<AdminNavBadgeCounts> {
+  const now = Date.now();
+  if (!forceRefresh && cachedNavBadges && cachedNavBadges.expiresAt > now) {
+    return cachedNavBadges.data;
+  }
+  if (!forceRefresh && inFlightNavBadges) {
+    return inFlightNavBadges;
+  }
+
+  const run = (async (): Promise<AdminNavBadgeCounts> => {
+    const [pendingGroupsSnap, pendingReportsSnap, unreadContactsSnap, pendingDeletionsSnap] =
+      await Promise.all([
+        getCountFromServer(query(collection(db, "groups"), where("status", "==", "pending"))).catch(() => null),
+        getCountFromServer(query(collection(db, "reports"), where("status", "==", "pending"))).catch(() => null),
+        getCountFromServer(query(collection(db, "contacts"), where("status", "==", "unread"))).catch(() => null),
+        getCountFromServer(query(collection(db, "deletionRequests"), where("status", "==", "pending"))).catch(() => null),
+      ]);
+
+    const counts: AdminNavBadgeCounts = {
+      pendingGroups: pendingGroupsSnap?.data()?.count ?? 0,
+      pendingReports: pendingReportsSnap?.data()?.count ?? 0,
+      unreadContacts: unreadContactsSnap?.data()?.count ?? 0,
+      pendingDeletions: pendingDeletionsSnap?.data()?.count ?? 0,
+    };
+
+    cachedNavBadges = {
+      data: counts,
+      expiresAt: Date.now() + ADMIN_STATS_CACHE_TTL_MS,
+    };
+    return counts;
+  })().finally(() => {
+    inFlightNavBadges = null;
+  });
+
+  inFlightNavBadges = run;
+  return run;
+}
+
+async function computeAdminStats() {
   const [
     groupsSnap,
-    usersSnap,
-    categoriesSnap,
+    usersCountSnap,
+    categoriesCountSnap,
     reportsSnap,
     contactsSnap,
     complaintsSnap,
-    favoritesSnap,
-    deletionsSnap,
+    favoritesCountSnap,
+    deletionsCountSnap,
     visitorStatsSnap,
   ] = await Promise.all([
     getDocs(collection(db, "groups")),
-    getDocs(collection(db, "users")),
-    getDocs(collection(db, "categories")),
+    getCountFromServer(collection(db, "users")).catch(() => null),
+    getCountFromServer(collection(db, "categories")).catch(() => null),
     getDocs(collection(db, "reports")),
     getDocs(collection(db, "contacts")),
     getDocs(collection(db, "complaints")),
-    getDocs(collection(db, "favorites")),
-    getDocs(collection(db, "deletionRequests")),
+    getCountFromServer(collection(db, "favorites")).catch(() => null),
+    getCountFromServer(query(collection(db, "deletionRequests"), where("status", "==", "pending"))).catch(() => null),
     getDocs(collection(db, "visitor_stats")).catch(() => ({ docs: [] } as any)),
   ]);
 
   const groups = groupsSnap.docs.map((d) => ({ id: d.id, ...d.data() } as Group));
-  const users = usersSnap.docs.map((d) => ({ uid: d.id, ...d.data() } as UserProfile));
   const reports = reportsSnap.docs.map((d) => ({ id: d.id, ...d.data() } as Report));
   const contacts = contactsSnap.docs.map((d) => ({ id: d.id, ...d.data() } as ContactMessage));
   const complaints = complaintsSnap.docs.map((d) => ({ id: d.id, ...d.data() } as Complaint));
@@ -3247,7 +3319,7 @@ export async function getAdminStats() {
   const pendingReports = reports.filter((r) => r.status === "pending").length;
   const unreadContacts = contacts.filter((c) => c.status === "unread").length;
   const pendingComplaints = complaints.filter((c) => c.status === "pending").length;
-  const pendingDeletions = deletionsSnap.docs.filter((d) => d.data().status === "pending").length;
+  const pendingDeletions = deletionsCountSnap?.data()?.count ?? 0;
 
   const realVisitorHits = visitorStatsSnap.docs.reduce(
     (sum: number, d: any) => sum + (Number(d.data()?.count) || 0),
@@ -3255,9 +3327,19 @@ export async function getAdminStats() {
   );
   const totalVisitors = realVisitorHits > 0 ? realVisitorHits : totalViews;
 
+  cachedNavBadges = {
+    data: {
+      pendingGroups: pending,
+      pendingReports,
+      unreadContacts,
+      pendingDeletions,
+    },
+    expiresAt: Date.now() + ADMIN_STATS_CACHE_TTL_MS,
+  };
+
   return {
     totalVisitors,
-    totalUsers: usersSnap.size,
+    totalUsers: usersCountSnap?.data()?.count ?? 0,
     totalGroups: groups.length,
     pendingGroups: pending,
     approvedGroups: approved,
@@ -3266,13 +3348,13 @@ export async function getAdminStats() {
     hiddenGroups: hidden,
     activeLinks,
     inactiveLinks,
-    totalCategories: categoriesSnap.size,
+    totalCategories: categoriesCountSnap?.data()?.count ?? 0,
     totalPlatforms: Object.keys(platformCounts).length,
     totalLanguages: Object.keys(languageCounts).length,
     totalStates: Object.keys(stateCounts).length,
     totalDistricts: Object.keys(districtCounts).length,
     totalCities: Object.keys(cityCounts).length,
-    totalFavorites: favoritesSnap.size,
+    totalFavorites: favoritesCountSnap?.data()?.count ?? 0,
     totalReports: reports.length,
     pendingReports,
     totalComplaints: complaints.length,
@@ -3294,151 +3376,42 @@ export async function getAdminStats() {
   };
 }
 
+export async function getAdminStats(forceRefresh = false) {
+  const now = Date.now();
+  if (!forceRefresh && cachedAdminStats && cachedAdminStats.expiresAt > now) {
+    return cachedAdminStats.data;
+  }
+  if (!forceRefresh && inFlightAdminStats) {
+    return inFlightAdminStats;
+  }
+
+  const run = computeAdminStats()
+    .then((stats) => {
+      cachedAdminStats = {
+        data: stats,
+        expiresAt: Date.now() + ADMIN_STATS_CACHE_TTL_MS,
+      };
+      return stats;
+    })
+    .finally(() => {
+      inFlightAdminStats = null;
+    });
+
+  inFlightAdminStats = run;
+  return run;
+}
+
 // ─── Webmaster Site Settings ───────────────────────────────────────────────────
 
 export async function getSiteSettings(): Promise<SiteSettings> {
-  const defaultSettings: SiteSettings = {
-    // Website Settings
-    siteName: "LinkCloud",
-    siteTagline: "India's Premium WhatsApp & Telegram Community Directory",
-    siteLogo: "",
-    favicon: "",
-    homepageBanner: "",
-    heroTitle: "Discover & Join India's Most Active WhatsApp & Telegram Communities",
-    heroSubtitle: "Verified group links across 36 states & UTs, 50+ categories, and multiple platforms.",
-    heroButtonText: "Explore Groups",
-    heroButtonLink: "/groups",
-    footerLogo: "",
-    footerDescription: "LinkCloud is India's leading verified platform for discovering public WhatsApp groups, Telegram channels, and Discord servers.",
-    copyrightText: "© 2026 LinkCloud Directory Services India. All rights reserved.",
-    websiteTheme: "dark",
-    maintenanceMode: false,
-
-    // Contact Info
-    contactEmail: "support@linkcloud.in",
-    supportEmail: "support@linkcloud.in",
-    supportMobile: "+91 79874 10765",
-    businessAddress: "Raipur, Chhattisgarh, India",
-    officeHours: "Monday – Saturday, 10:00 AM to 6:00 PM IST",
-    googleMapUrl: "",
-
-    // Social Links
-    facebookUrl: "https://facebook.com/linkcloudin",
-    instagramUrl: "https://instagram.com/linkcloudin",
-    telegramUrl: "https://t.me/linkcloudin",
-    whatsappUrl: "https://whatsapp.com/channel/linkcloudin",
-    youtubeUrl: "https://youtube.com/@linkcloudin",
-    linkedinUrl: "https://linkedin.com/company/linkcloudin",
-    twitterUrl: "https://x.com/linkcloudin",
-    redditUrl: "https://reddit.com/r/linkcloudin",
-    githubUrl: "https://github.com/linkcloudin",
-
-    // Homepage Section Management
-    heroSectionEnabled: true,
-    featuredGroupsEnabled: true,
-    latestGroupsEnabled: true,
-    popularGroupsEnabled: true,
-    popularCategoriesEnabled: true,
-    popularPlatformsEnabled: true,
-    statisticsSectionEnabled: true,
-    testimonialsEnabled: true,
-    faqSectionEnabled: true,
-    newsletterSectionEnabled: true,
-    footerEnabled: true,
-    sectionOrder: [
-      "hero",
-      "categories",
-      "platforms",
-      "featured",
-      "latest",
-      "popular",
-      "stats",
-      "testimonials",
-      "faq",
-      "newsletter",
-      "footer"
-    ],
-
-    // About Page
-    aboutTitle: "About LinkCloud India",
-    aboutDescription: "LinkCloud is India's premier community discovery platform built to connect millions of users with authentic, high-quality public groups and channels.",
-    aboutMission: "Empowering Indian citizens to easily find, join, and grow safe educational, career, regional, and social communities.",
-    aboutVision: "Building India's largest and safest directory of public social messaging groups with zero scam or broken links.",
-    aboutUsContent: "LinkCloud is India's leading verified directory for WhatsApp, Telegram, and Discord communities.",
-    aboutFeatures: [
-      { title: "Instant Verification", desc: "Every link is checked to prevent dead or scam groups." },
-      { title: "Regional & Multilingual", desc: "Filter by State, District, City, and 12+ Indian languages." },
-      { title: "Categorized Communities", desc: "Jobs, Study, Crypto, Entertainment, Gaming, Tech, and more." }
-    ],
-
-    // Legal Pages
-    privacyPolicyContent: "LinkCloud respects user privacy. We do not store or inspect private chat content, messages, or member lists.",
-    termsContent: "By using LinkCloud, users agree not to submit illegal, spam, copyrighted, or prohibited group links.",
-    dmcaContent: "To file a copyright takedown request under DMCA, please email support@linkcloud.in with link details.",
-    disclaimerContent: "LinkCloud is a public indexing platform and is not affiliated with WhatsApp, Telegram, Discord, Meta, or Google.",
-
-    // SEO Management
-    metaTitle: "LinkCloud - India's #1 WhatsApp, Telegram & Discord Group Directory",
-    metaDescription: "Discover and join thousands of active WhatsApp groups, Telegram channels, and Discord communities in India.",
-    metaKeywords: "WhatsApp groups, Telegram channels, Discord servers, India group links, study groups, job alerts",
-    canonicalUrl: "https://linkcloud.in",
-    ogImage: "https://linkcloud.in/og-banner.png",
-    ogTitle: "LinkCloud - Join India's Top WhatsApp & Telegram Groups",
-    ogDescription: "Discover verified active groups in Jobs, Education, Crypto, Tech, Movies, and regional communities across India.",
-    twitterCardImage: "https://linkcloud.in/twitter-card.png",
-    twitterCardTitle: "LinkCloud - WhatsApp & Telegram Directory",
-    twitterCardDescription: "Find verified group invite links in India.",
-    robotsTxtContent: "User-agent: *\nAllow: /\nSitemap: https://linkcloud.in/sitemap.xml",
-    sitemapXmlContent: "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">\n  <url>\n    <loc>https://linkcloud.in/</loc>\n    <changefreq>daily</changefreq>\n    <priority>1.0</priority>\n  </url>\n  <url>\n    <loc>https://linkcloud.in/groups</loc>\n    <changefreq>hourly</changefreq>\n    <priority>0.9</priority>\n  </url>\n</urlset>",
-    structuredDataJson: "{\n  \"@context\": \"https://schema.org\",\n  \"@type\": \"WebSite\",\n  \"name\": \"LinkCloud\",\n  \"url\": \"https://linkcloud.in\"\n}",
-
-    // System Settings
-    allowPublicSubmissions: false, // Documented fail-closed safe fallback (requires explicit true from Firestore)
-    groupSubmissionEnabled: false, // Documented fail-closed safe fallback (requires explicit true from Firestore)
-    userRegistrationEnabled: true,
-    googleLoginEnabled: true,
-    emailLoginEnabled: true,
-    mobileOtpLoginEnabled: true,
-    favoritesEnabled: true,
-    reportSystemEnabled: true,
-    complaintSystemEnabled: true,
-    contactFormEnabled: true,
-    notificationsEnabled: true,
-
-    // Filter Management Settings
-    filterSettings: {
-      categoryFilterEnabled: true,
-      platformFilterEnabled: true,
-      contentTypeFilterEnabled: true,
-      languageFilterEnabled: true,
-      stateFilterEnabled: true,
-      districtFilterEnabled: true,
-      cityFilterEnabled: true,
-      linkStatusFilterEnabled: true,
-      featuredFilterEnabled: true,
-      popularFilterEnabled: true,
-      newestFilterEnabled: true,
-      verifiedFilterEnabled: true,
-      approvalStatusFilterEnabled: true,
-    },
-
-    // Cloudinary
-    cloudinaryCloudName: "linkcloud",
-    cloudinaryUploadPreset: "linkcloud",
-  };
-
   try {
     const snap = await getDoc(doc(db, "settings", "site"));
-    if (!snap.exists()) return defaultSettings;
-    return { ...defaultSettings, ...snap.data() } as SiteSettings;
+    if (!snap.exists()) return DEFAULT_SITE_SETTINGS;
+    return normalizeSiteSettings(snap.data() as Partial<SiteSettings>);
   } catch (err) {
     console.warn("Error reading site settings from Firestore:", err);
-    return defaultSettings;
+    return DEFAULT_SITE_SETTINGS;
   }
-}
-
-export async function updateSiteSettings(settings: Partial<SiteSettings>): Promise<void> {
-  await setDoc(doc(db, "settings", "site"), { ...settings, updatedAt: serverTimestamp() }, { merge: true });
 }
 
 // ─── Website-Wide Announcements ───────────────────────────────────────────────
@@ -3586,102 +3559,26 @@ export function subscribeActiveAnnouncements(
   }
 }
 
-export async function createAnnouncement(
-  data: Omit<Announcement, "id">,
-  actorEmail = "webmaster@linkcloud.in",
-  actorUid = "webmaster"
-): Promise<string> {
-  const coll = collection(db, "announcements");
-  const docRef = await addDoc(coll, {
-    ...data,
-    createdAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
-    createdBy: actorUid,
-  });
-
-  await logAuditEvent(
-    "Announcement Created",
-    `Created site-wide announcement: "${data.title}" [${data.type}, ${data.displayMode}, priority ${data.priority}]`,
-    actorEmail,
-    actorUid
-  );
-
-  return docRef.id;
-}
-
-export async function updateAnnouncement(
-  id: string,
-  data: Partial<Announcement>,
-  actorEmail = "webmaster@linkcloud.in",
-  actorUid = "webmaster"
-): Promise<void> {
-  const dRef = doc(db, "announcements", id);
-  await updateDoc(dRef, {
-    ...data,
-    updatedAt: serverTimestamp(),
-    updatedBy: actorUid,
-  });
-
-  await logAuditEvent(
-    "Announcement Updated",
-    `Updated site-wide announcement ID: ${id} (${Object.keys(data).join(", ")})`,
-    actorEmail,
-    actorUid
-  );
-}
-
-export async function deleteAnnouncement(
-  id: string,
-  actorEmail = "webmaster@linkcloud.in",
-  actorUid = "webmaster"
-): Promise<void> {
-  const dRef = doc(db, "announcements", id);
-  await deleteDoc(dRef);
-
-  await logAuditEvent(
-    "Announcement Deleted",
-    `Deleted site-wide announcement ID: ${id}`,
-    actorEmail,
-    actorUid
-  );
-}
-
-export async function toggleAnnouncementEnabled(
-  id: string,
-  enabled: boolean,
-  actorEmail = "webmaster@linkcloud.in",
-  actorUid = "webmaster"
-): Promise<void> {
-  const dRef = doc(db, "announcements", id);
-  await updateDoc(dRef, {
-    enabled,
-    updatedAt: serverTimestamp(),
-    updatedBy: actorUid,
-  });
-
-  await logAuditEvent(
-    enabled ? "Announcement Enabled" : "Announcement Disabled",
-    `${enabled ? "Enabled" : "Disabled"} site-wide announcement ID: ${id}`,
-    actorEmail,
-    actorUid
-  );
-}
+// Announcements mutations are routed exclusively through /api/admin/announcements
 
 // ─── Audit Log Helper ─────────────────────────────────────────────────────────
 
 export async function logAuditEvent(
   action: string,
   details: string,
-  adminEmail: string = "linkcloud111@gmail.com",
-  adminUid: string = "webmaster"
+  adminEmail: string = "",
+  adminUid: string = ""
 ): Promise<void> {
   try {
+    const resolvedUid = adminUid || auth?.currentUser?.uid || "";
+    const resolvedEmail = adminEmail || auth?.currentUser?.email || "";
     await addDoc(collection(db, "audit_logs"), {
       action,
       details,
-      adminEmail,
-      adminUid,
-      actorUid: auth?.currentUser?.uid || adminUid,
+      adminEmail: resolvedEmail,
+      adminUid: resolvedUid,
+      actorEmail: resolvedEmail,
+      actorUid: resolvedUid,
       createdAt: serverTimestamp(),
     });
   } catch (err) {
@@ -3796,29 +3693,14 @@ export async function createUserNotification(
 export async function getFAQs(): Promise<import("./types").FAQItem[]> {
   try {
     const snap = await getDocs(collection(db, "faqs"));
-    const faqs = snap.docs.map((d) => ({ id: d.id, ...d.data() } as import("./types").FAQItem));
+    const faqs = snap.docs
+      .map((d) => ({ id: d.id, ...d.data() } as import("./types").FAQItem))
+      .filter((f) => f.enabled !== false && f.status !== "draft");
     return faqs.sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
   } catch (err) {
     console.warn("Error getting FAQs:", err);
-    return [
-      { id: "1", question: "How do I submit my WhatsApp group to LinkCloud?", answer: "Click 'Submit Group' at the top, select platform, category, state, and paste your group invite link.", category: "General", enabled: true, sortOrder: 1 },
-      { id: "2", question: "Is joining groups on LinkCloud free?", answer: "Yes, joining and discovering public groups on LinkCloud is 100% free forever.", category: "General", enabled: true, sortOrder: 2 },
-      { id: "3", question: "How can I report a broken or inappropriate group link?", answer: "Click the 'Report' button on any group card or group details page.", category: "Safety", enabled: true, sortOrder: 3 },
-    ];
+    return [];
   }
-}
-
-export async function addFAQ(faq: Omit<import("./types").FAQItem, "id">): Promise<string> {
-  const docRef = await addDoc(collection(db, "faqs"), { ...faq, createdAt: serverTimestamp() });
-  return docRef.id;
-}
-
-export async function updateFAQ(id: string, updates: Partial<import("./types").FAQItem>): Promise<void> {
-  await updateDoc(doc(db, "faqs", id), updates);
-}
-
-export async function deleteFAQ(id: string): Promise<void> {
-  await deleteDoc(doc(db, "faqs", id));
 }
 
 // ─── Help Center Management ───────────────────────────────────────────────────
@@ -3826,27 +3708,14 @@ export async function deleteFAQ(id: string): Promise<void> {
 export async function getHelpArticles(): Promise<import("./types").HelpArticle[]> {
   try {
     const snap = await getDocs(collection(db, "help_articles"));
-    return snap.docs.map((d) => ({ id: d.id, ...d.data() } as import("./types").HelpArticle));
+    const articles = snap.docs
+      .map((d) => ({ id: d.id, ...d.data() } as import("./types").HelpArticle))
+      .filter((a) => a.enabled !== false && a.status !== "draft");
+    return articles.sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
   } catch (err) {
     console.warn("Error getting help articles:", err);
-    return [
-      { id: "h1", category: "Account & Login", title: "How to register and verify your profile", content: "You can sign up using Email, Google, or Phone number.", views: 120 },
-      { id: "h2", category: "Group Submissions", title: "Why was my group submission rejected?", content: "Groups may be rejected for dead links, missing rules, or adult content.", views: 240 },
-    ];
+    return [];
   }
-}
-
-export async function addHelpArticle(article: Omit<import("./types").HelpArticle, "id">): Promise<string> {
-  const docRef = await addDoc(collection(db, "help_articles"), { ...article, createdAt: serverTimestamp() });
-  return docRef.id;
-}
-
-export async function updateHelpArticle(id: string, updates: Partial<import("./types").HelpArticle>): Promise<void> {
-  await updateDoc(doc(db, "help_articles", id), updates);
-}
-
-export async function deleteHelpArticle(id: string): Promise<void> {
-  await deleteDoc(doc(db, "help_articles", id));
 }
 
 // ─── Search Analytics ─────────────────────────────────────────────────────────
@@ -3873,18 +3742,9 @@ export async function logSearchQuery(keyword: string, filters?: { category?: str
 }
 
 export async function getSearchAnalytics(): Promise<import("./types").SearchAnalytics[]> {
-  try {
-    const q = query(collection(db, "search_logs"), orderBy("count", "desc"), limit(20));
-    const snap = await getDocs(q);
-    return snap.docs.map((d) => ({ id: d.id, ...d.data() } as import("./types").SearchAnalytics));
-  } catch (err) {
-    console.warn("Error getting search analytics:", err);
-    return [
-      { id: "s1", keyword: "job alerts", count: 48, category: "Jobs", platform: "WhatsApp" },
-      { id: "s2", keyword: "upsc study", count: 35, category: "Education", platform: "Telegram" },
-      { id: "s3", keyword: "crypto india", count: 29, category: "Crypto", platform: "Discord" },
-    ];
-  }
+  const q = query(collection(db, "search_logs"), orderBy("count", "desc"), limit(20));
+  const snap = await getDocs(q);
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() } as import("./types").SearchAnalytics));
 }
 
 // ─── Visitor Traffic Logging ─────────────────────────────────────────────────
@@ -4129,7 +3989,13 @@ export async function getAllLocationStates(includeDisabled = false): Promise<Loc
     const items: LocationState[] = [];
     snap.forEach((d) => {
       const data = d.data();
-      items.push({ id: d.id, ...data } as LocationState);
+      const isEnabled = data.enabled !== false && data.status !== "disabled";
+      items.push({
+        id: d.id,
+        ...data,
+        enabled: isEnabled,
+        status: data.status || (isEnabled ? "active" : "disabled"),
+      } as LocationState);
     });
 
     items.sort((a, b) => {
@@ -4182,11 +4048,18 @@ export async function getDistrictsForStateFirestore(
 
     const items: LocationDistrict[] = [];
     snap.forEach((d) => {
-      items.push({ id: d.id, ...d.data() } as LocationDistrict);
+      const data = d.data();
+      const isEnabled = data.enabled !== false && data.status !== "disabled";
+      items.push({
+        id: d.id,
+        ...data,
+        enabled: isEnabled,
+        status: data.status || (isEnabled ? "active" : "disabled"),
+      } as LocationDistrict);
     });
 
     items.sort((a, b) => a.name.localeCompare(b.name));
-    return includeDisabled ? items : items.filter((d) => d.enabled);
+    return includeDisabled ? items : items.filter((d) => d.enabled !== false && d.status !== "disabled");
   } catch (err) {
     console.warn("Error fetching districts from Firestore:", err);
     const stateObj = INDIA_STATES.find((s) => s.name.toLowerCase().trim() === stateName.toLowerCase().trim());
@@ -4224,10 +4097,17 @@ export async function getCitiesForLocationFirestore(
     const snap = await getDocs(q);
     const items: LocationCity[] = [];
     snap.forEach((d) => {
-      items.push({ id: d.id, ...d.data() } as LocationCity);
+      const data = d.data();
+      const isEnabled = data.enabled !== false && data.status !== "disabled";
+      items.push({
+        id: d.id,
+        ...data,
+        enabled: isEnabled,
+        status: data.status || (isEnabled ? "active" : "disabled"),
+      } as LocationCity);
     });
     items.sort((a, b) => a.name.localeCompare(b.name));
-    return includeDisabled ? items : items.filter((c) => c.enabled);
+    return includeDisabled ? items : items.filter((c) => c.enabled !== false && c.status !== "disabled");
   } catch (err) {
     console.warn("Error fetching cities from Firestore:", err);
     return [];
@@ -4263,23 +4143,33 @@ export async function getGroupsCountForLocation(
 
 export async function addStateFirestore(
   name: string,
-  adminUid = "webmaster",
-  adminEmail = "linkcloud111@gmail.com"
+  adminUid = "",
+  adminEmail = ""
 ): Promise<string> {
+  const resolvedUid = adminUid || auth?.currentUser?.uid || "";
+  const resolvedEmail = adminEmail || auth?.currentUser?.email || "";
   const cleanName = name.trim();
-  const id = cleanName.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+  if (!cleanName) throw new Error("State name is required.");
+  const id = cleanName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
   const docRef = doc(db, "states", id);
+  const existing = await getDoc(docRef);
+  if (existing.exists()) {
+    throw new Error(`State "${cleanName}" already exists.`);
+  }
   await setDoc(docRef, {
     id,
     name: cleanName,
     slug: id,
+    country: "India",
     enabled: true,
+    status: "active",
     displayOrder: 0,
-    createdBy: adminUid,
+    createdBy: resolvedUid,
+    updatedBy: resolvedUid,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
-  await logAuditEvent("Location Updated", `Added State "${cleanName}"`, adminEmail, adminUid);
+  await logAuditEvent("Location Updated", `Added State "${cleanName}"`, resolvedEmail, resolvedUid);
   return id;
 }
 
@@ -4287,20 +4177,23 @@ export async function toggleStateFirestore(
   id: string,
   name: string,
   enabled: boolean,
-  adminUid = "webmaster",
-  adminEmail = "linkcloud111@gmail.com"
+  adminUid = "",
+  adminEmail = ""
 ): Promise<void> {
+  const resolvedUid = adminUid || auth?.currentUser?.uid || "";
+  const resolvedEmail = adminEmail || auth?.currentUser?.email || "";
   const docRef = doc(db, "states", id);
   await updateDoc(docRef, {
     enabled,
-    updatedBy: adminUid,
+    status: enabled ? "active" : "disabled",
+    updatedBy: resolvedUid,
     updatedAt: serverTimestamp(),
   });
   await logAuditEvent(
     "Location Updated",
     `${enabled ? "Enabled" : "Disabled"} State "${name}"`,
-    adminEmail,
-    adminUid
+    resolvedEmail,
+    resolvedUid
   );
 }
 
@@ -4308,32 +4201,61 @@ export async function updateStateFirestore(
   id: string,
   newName: string,
   enabled: boolean,
-  adminUid = "webmaster",
-  adminEmail = "linkcloud111@gmail.com"
+  adminUid = "",
+  adminEmail = ""
 ): Promise<void> {
+  const resolvedUid = adminUid || auth?.currentUser?.uid || "";
+  const resolvedEmail = adminEmail || auth?.currentUser?.email || "";
+  const cleanName = newName.trim();
+  if (!cleanName) throw new Error("State name is required.");
   const docRef = doc(db, "states", id);
+  const existingSnap = await getDoc(docRef);
+  const oldName = existingSnap.exists() ? String(existingSnap.data()?.name || "") : "";
+  const newSlug = cleanName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+
   await updateDoc(docRef, {
-    name: newName.trim(),
+    name: cleanName,
+    slug: newSlug,
     enabled,
-    updatedBy: adminUid,
+    status: enabled ? "active" : "disabled",
+    updatedBy: resolvedUid,
     updatedAt: serverTimestamp(),
   });
+
+  // Cascade stateName update to child districts and cities when renamed
+  if (oldName && oldName !== cleanName) {
+    const [distSnap, citySnap] = await Promise.all([
+      getDocs(query(collection(db, "districts"), where("stateName", "==", oldName))),
+      getDocs(query(collection(db, "cities"), where("stateName", "==", oldName))),
+    ]);
+    const refs = [...distSnap.docs.map((d) => d.ref), ...citySnap.docs.map((c) => c.ref)];
+    for (let i = 0; i < refs.length; i += 400) {
+      const batch = writeBatch(db);
+      for (const ref of refs.slice(i, i + 400)) {
+        batch.update(ref, { stateName: cleanName, updatedBy: resolvedUid, updatedAt: serverTimestamp() });
+      }
+      await batch.commit();
+    }
+  }
+
   await logAuditEvent(
     "Location Updated",
-    `Updated State "${newName}" (enabled: ${enabled})`,
-    adminEmail,
-    adminUid
+    `Updated State "${cleanName}" (enabled: ${enabled})`,
+    resolvedEmail,
+    resolvedUid
   );
 }
 
 export async function deleteStateFirestore(
   id: string,
   name: string,
-  adminUid = "webmaster",
-  adminEmail = "linkcloud111@gmail.com"
+  adminUid = "",
+  adminEmail = ""
 ): Promise<void> {
+  const resolvedUid = adminUid || auth?.currentUser?.uid || "";
+  const resolvedEmail = adminEmail || auth?.currentUser?.email || "";
   await deleteDoc(doc(db, "states", id));
-  await logAuditEvent("Location Updated", `Deleted State "${name}"`, adminEmail, adminUid);
+  await logAuditEvent("Location Updated", `Deleted State "${name}"`, resolvedEmail, resolvedUid);
 }
 
 // ─── DISTRICT CRUD ───
@@ -4341,27 +4263,41 @@ export async function deleteStateFirestore(
 export async function addDistrictFirestore(
   stateName: string,
   name: string,
-  adminUid = "webmaster",
-  adminEmail = "linkcloud111@gmail.com"
+  adminUid = "",
+  adminEmail = ""
 ): Promise<string> {
+  const resolvedUid = adminUid || auth?.currentUser?.uid || "";
+  const resolvedEmail = adminEmail || auth?.currentUser?.email || "";
   const cleanName = name.trim();
-  const id = `${stateName}-${cleanName}`.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+  const cleanState = stateName.trim();
+  if (!cleanState || !cleanName) throw new Error("State and District name are required.");
+  const id = `${cleanState}-${cleanName}`.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
   const docRef = doc(db, "districts", id);
+  const existing = await getDoc(docRef);
+  if (existing.exists()) {
+    throw new Error(`District "${cleanName}" already exists in "${cleanState}".`);
+  }
+  const slug = cleanName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  const stateId = cleanState.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
   await setDoc(docRef, {
     id,
-    stateName,
+    stateId,
+    stateName: cleanState,
     name: cleanName,
-    slug: cleanName.toLowerCase().replace(/[^a-z0-9]+/g, "-"),
+    slug,
+    country: "India",
     enabled: true,
-    createdBy: adminUid,
+    status: "active",
+    createdBy: resolvedUid,
+    updatedBy: resolvedUid,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
   await logAuditEvent(
     "Location Updated",
-    `Added District "${cleanName}" in State "${stateName}"`,
-    adminEmail,
-    adminUid
+    `Added District "${cleanName}" in State "${cleanState}"`,
+    resolvedEmail,
+    resolvedUid
   );
   return id;
 }
@@ -4371,20 +4307,23 @@ export async function toggleDistrictFirestore(
   stateName: string,
   name: string,
   enabled: boolean,
-  adminUid = "webmaster",
-  adminEmail = "linkcloud111@gmail.com"
+  adminUid = "",
+  adminEmail = ""
 ): Promise<void> {
+  const resolvedUid = adminUid || auth?.currentUser?.uid || "";
+  const resolvedEmail = adminEmail || auth?.currentUser?.email || "";
   const docRef = doc(db, "districts", id);
   await updateDoc(docRef, {
     enabled,
-    updatedBy: adminUid,
+    status: enabled ? "active" : "disabled",
+    updatedBy: resolvedUid,
     updatedAt: serverTimestamp(),
   });
   await logAuditEvent(
     "Location Updated",
     `${enabled ? "Enabled" : "Disabled"} District "${name}" in "${stateName}"`,
-    adminEmail,
-    adminUid
+    resolvedEmail,
+    resolvedUid
   );
 }
 
@@ -4392,21 +4331,47 @@ export async function updateDistrictFirestore(
   id: string,
   newName: string,
   enabled: boolean,
-  adminUid = "webmaster",
-  adminEmail = "linkcloud111@gmail.com"
+  adminUid = "",
+  adminEmail = ""
 ): Promise<void> {
+  const resolvedUid = adminUid || auth?.currentUser?.uid || "";
+  const resolvedEmail = adminEmail || auth?.currentUser?.email || "";
+  const cleanName = newName.trim();
+  if (!cleanName) throw new Error("District name is required.");
   const docRef = doc(db, "districts", id);
+  const existingSnap = await getDoc(docRef);
+  const oldName = existingSnap.exists() ? String(existingSnap.data()?.name || "") : "";
+  const stateName = existingSnap.exists() ? String(existingSnap.data()?.stateName || "") : "";
+  const newSlug = cleanName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+
   await updateDoc(docRef, {
-    name: newName.trim(),
+    name: cleanName,
+    slug: newSlug,
     enabled,
-    updatedBy: adminUid,
+    status: enabled ? "active" : "disabled",
+    updatedBy: resolvedUid,
     updatedAt: serverTimestamp(),
   });
+
+  // Cascade districtName update to child cities when renamed
+  if (oldName && oldName !== cleanName && stateName) {
+    const citySnap = await getDocs(
+      query(collection(db, "cities"), where("stateName", "==", stateName), where("districtName", "==", oldName))
+    );
+    for (let i = 0; i < citySnap.docs.length; i += 400) {
+      const batch = writeBatch(db);
+      for (const d of citySnap.docs.slice(i, i + 400)) {
+        batch.update(d.ref, { districtName: cleanName, updatedBy: resolvedUid, updatedAt: serverTimestamp() });
+      }
+      await batch.commit();
+    }
+  }
+
   await logAuditEvent(
     "Location Updated",
-    `Updated District "${newName}"`,
-    adminEmail,
-    adminUid
+    `Updated District "${cleanName}"`,
+    resolvedEmail,
+    resolvedUid
   );
 }
 
@@ -4414,15 +4379,17 @@ export async function deleteDistrictFirestore(
   id: string,
   name: string,
   stateName: string,
-  adminUid = "webmaster",
-  adminEmail = "linkcloud111@gmail.com"
+  adminUid = "",
+  adminEmail = ""
 ): Promise<void> {
+  const resolvedUid = adminUid || auth?.currentUser?.uid || "";
+  const resolvedEmail = adminEmail || auth?.currentUser?.email || "";
   await deleteDoc(doc(db, "districts", id));
   await logAuditEvent(
     "Location Updated",
     `Deleted District "${name}" from "${stateName}"`,
-    adminEmail,
-    adminUid
+    resolvedEmail,
+    resolvedUid
   );
 }
 
@@ -4432,28 +4399,50 @@ export async function addCityFirestore(
   stateName: string,
   districtName: string,
   name: string,
-  adminUid = "webmaster",
-  adminEmail = "linkcloud111@gmail.com"
+  adminUid = "",
+  adminEmail = ""
 ): Promise<string> {
+  const resolvedUid = adminUid || auth?.currentUser?.uid || "";
+  const resolvedEmail = adminEmail || auth?.currentUser?.email || "";
   const cleanName = name.trim();
-  const id = `${stateName}-${districtName || "all"}-${cleanName}`.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+  const cleanState = stateName.trim();
+  const cleanDistrict = (districtName || "").trim();
+  if (!cleanState || !cleanName) throw new Error("State and City name are required.");
+  const id = `${cleanState}-${cleanDistrict || "all"}-${cleanName}`
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
   const docRef = doc(db, "cities", id);
+  const existing = await getDoc(docRef);
+  if (existing.exists()) {
+    throw new Error(`City "${cleanName}" already exists in "${cleanDistrict || cleanState}".`);
+  }
+  const slug = cleanName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  const stateId = cleanState.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  const districtId = cleanDistrict
+    ? `${cleanState}-${cleanDistrict}`.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")
+    : "";
   await setDoc(docRef, {
     id,
-    stateName,
-    districtName: districtName || "",
+    stateId,
+    stateName: cleanState,
+    districtId,
+    districtName: cleanDistrict,
     name: cleanName,
-    slug: cleanName.toLowerCase().replace(/[^a-z0-9]+/g, "-"),
+    slug,
+    country: "India",
     enabled: true,
-    createdBy: adminUid,
+    status: "active",
+    createdBy: resolvedUid,
+    updatedBy: resolvedUid,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
   await logAuditEvent(
     "Location Updated",
-    `Added City "${cleanName}" in "${stateName}"`,
-    adminEmail,
-    adminUid
+    `Added City "${cleanName}" in "${cleanDistrict ? `${cleanDistrict}, ` : ""}${cleanState}"`,
+    resolvedEmail,
+    resolvedUid
   );
   return id;
 }
@@ -4462,20 +4451,23 @@ export async function toggleCityFirestore(
   id: string,
   name: string,
   enabled: boolean,
-  adminUid = "webmaster",
-  adminEmail = "linkcloud111@gmail.com"
+  adminUid = "",
+  adminEmail = ""
 ): Promise<void> {
+  const resolvedUid = adminUid || auth?.currentUser?.uid || "";
+  const resolvedEmail = adminEmail || auth?.currentUser?.email || "";
   const docRef = doc(db, "cities", id);
   await updateDoc(docRef, {
     enabled,
-    updatedBy: adminUid,
+    status: enabled ? "active" : "disabled",
+    updatedBy: resolvedUid,
     updatedAt: serverTimestamp(),
   });
   await logAuditEvent(
     "Location Updated",
     `${enabled ? "Enabled" : "Disabled"} City "${name}"`,
-    adminEmail,
-    adminUid
+    resolvedEmail,
+    resolvedUid
   );
 }
 
@@ -4483,32 +4475,46 @@ export async function updateCityFirestore(
   id: string,
   newName: string,
   enabled: boolean,
-  adminUid = "webmaster",
-  adminEmail = "linkcloud111@gmail.com"
+  adminUid = "",
+  adminEmail = "",
+  districtName?: string
 ): Promise<void> {
+  const resolvedUid = adminUid || auth?.currentUser?.uid || "";
+  const resolvedEmail = adminEmail || auth?.currentUser?.email || "";
+  const cleanName = newName.trim();
+  if (!cleanName) throw new Error("City name is required.");
   const docRef = doc(db, "cities", id);
-  await updateDoc(docRef, {
-    name: newName.trim(),
+  const newSlug = cleanName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  const updates: Record<string, any> = {
+    name: cleanName,
+    slug: newSlug,
     enabled,
-    updatedBy: adminUid,
+    status: enabled ? "active" : "disabled",
+    updatedBy: resolvedUid,
     updatedAt: serverTimestamp(),
-  });
+  };
+  if (districtName !== undefined) {
+    updates.districtName = districtName.trim();
+  }
+  await updateDoc(docRef, updates);
   await logAuditEvent(
     "Location Updated",
-    `Updated City "${newName}"`,
-    adminEmail,
-    adminUid
+    `Updated City "${cleanName}"`,
+    resolvedEmail,
+    resolvedUid
   );
 }
 
 export async function deleteCityFirestore(
   id: string,
   name: string,
-  adminUid = "webmaster",
-  adminEmail = "linkcloud111@gmail.com"
+  adminUid = "",
+  adminEmail = ""
 ): Promise<void> {
+  const resolvedUid = adminUid || auth?.currentUser?.uid || "";
+  const resolvedEmail = adminEmail || auth?.currentUser?.email || "";
   await deleteDoc(doc(db, "cities", id));
-  await logAuditEvent("Location Updated", `Deleted City "${name}"`, adminEmail, adminUid);
+  await logAuditEvent("Location Updated", `Deleted City "${name}"`, resolvedEmail, resolvedUid);
 }
 
 

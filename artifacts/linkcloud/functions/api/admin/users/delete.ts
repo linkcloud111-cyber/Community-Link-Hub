@@ -26,7 +26,7 @@ export async function onRequestPost(context: {
   }
 
   const callerUid = auth.uid!;
-  const callerEmail = auth.email || "webmaster@linkcloud.in";
+  const callerEmail = auth.email || "webmaster@localhost.invalid";
 
   let body: any = {};
   try {
@@ -119,7 +119,16 @@ export async function onRequestPost(context: {
     await firestoreDeleteDoc(`emailIndex/${targetEmail.toLowerCase()}`, env);
   }
   if (targetPhone) {
-    await firestoreDeleteDoc(`mobileIndex/${targetPhone}`, env);
+    const digits = targetPhone.replace(/\D/g, "").slice(-10);
+    const phoneKeys = Array.from(
+      new Set([
+        targetPhone,
+        ...(digits.length === 10 ? [`+91${digits}`, `+91 ${digits}`, digits] : []),
+      ])
+    );
+    for (const pk of phoneKeys) {
+      await firestoreDeleteDoc(`mobileIndex/${encodeURIComponent(pk)}`, env).catch(() => {});
+    }
   }
 
   // 4. Write audit log

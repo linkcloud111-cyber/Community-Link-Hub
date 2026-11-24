@@ -28,10 +28,14 @@ import {
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useSiteSettings } from "@/contexts/SiteSettingsContext";
+import { usePublishedExplorePages } from "@/lib/cms-client";
+import { CMS_PAGE_LABELS } from "@/lib/cms-schema";
 
 export default function Navbar() {
   const { theme, setTheme } = useTheme();
   const { settings, effectiveTheme } = useSiteSettings();
+  const { pages: explorePages, loading: exploreLoading, error: exploreError } =
+    usePublishedExplorePages();
   const { user, isWebmaster, profile } = useAuth();
   const [location, setLocation] = useLocation();
   const [mounted, setMounted] = useState(false);
@@ -59,13 +63,25 @@ export default function Navbar() {
     setMobileMenuOpen(false);
   };
 
+  const canSubmitGroup = Boolean(
+    isWebmaster || settings?.groupSubmissionEnabled === true
+  );
+
+  const cmsNavLinks =
+    exploreLoading || exploreError
+      ? [{ href: "/about", label: "About" }]
+      : explorePages
+          .filter((p) => p.navVisible === true)
+          .map((p) => ({
+            href: p.route,
+            label: p.slug === "about" ? "About" : p.title || CMS_PAGE_LABELS[p.slug],
+          }));
+
   const navLinks = [
     { href: "/", label: "Home" },
     { href: "/groups", label: "Directory" },
-    ...(((settings?.groupSubmissionEnabled !== false && (settings?.allowPublicSubmissions !== false || user || isWebmaster)) || isWebmaster)
-      ? [{ href: "/submit", label: "Submit Group" }]
-      : []),
-    { href: "/about", label: "About" },
+    ...(canSubmitGroup ? [{ href: "/submit", label: "Submit Group" }] : []),
+    ...cmsNavLinks,
     ...(settings?.contactFormEnabled !== false ? [{ href: "/contact", label: "Contact" }] : []),
   ];
 
@@ -160,7 +176,7 @@ export default function Navbar() {
 
             {user ? (
               <>
-                {(settings?.groupSubmissionEnabled !== false || isWebmaster) && (
+                {(settings?.groupSubmissionEnabled === true || isWebmaster) && (
                   <Link
                     href="/submit"
                     className="flex items-center gap-1.5 px-4 py-2 bg-primary text-primary-foreground text-sm font-semibold rounded-xl hover:bg-primary/90 transition-colors shadow-lg shadow-primary/20"
@@ -335,24 +351,28 @@ export default function Navbar() {
                               >
                                 <LayoutDashboard className="w-4 h-4 text-primary" /> Dashboard
                               </button>
-                              <button
-                                onClick={() => navigateAndClose("/submit")}
-                                className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm hover:bg-primary/10 hover:text-primary transition-colors text-left"
-                              >
-                                <Plus className="w-4 h-4" /> Submit Group
-                              </button>
+                              {(settings?.groupSubmissionEnabled === true || isWebmaster) && (
+                                <button
+                                  onClick={() => navigateAndClose("/submit")}
+                                  className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm hover:bg-primary/10 hover:text-primary transition-colors text-left"
+                                >
+                                  <Plus className="w-4 h-4" /> Submit Group
+                                </button>
+                              )}
                               <button
                                 onClick={() => navigateAndClose("/dashboard?tab=my-groups")}
                                 className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm hover:bg-primary/10 hover:text-primary transition-colors text-left"
                               >
                                 <LayoutGrid className="w-4 h-4" /> My Groups
                               </button>
-                              <button
-                                onClick={() => navigateAndClose("/dashboard?tab=favorites")}
-                                className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm hover:bg-primary/10 hover:text-primary transition-colors text-left"
-                              >
-                                <Heart className="w-4 h-4" /> Favorites
-                              </button>
+                              {settings?.favoritesEnabled !== false && (
+                                <button
+                                  onClick={() => navigateAndClose("/dashboard?tab=favorites")}
+                                  className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm hover:bg-primary/10 hover:text-primary transition-colors text-left"
+                                >
+                                  <Heart className="w-4 h-4" /> Favorites
+                                </button>
+                              )}
                               <button
                                 onClick={() => navigateAndClose("/dashboard?tab=notifications")}
                                 className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm hover:bg-primary/10 hover:text-primary transition-colors text-left"
@@ -401,14 +421,6 @@ export default function Navbar() {
                 >
                   Log in
                 </Link>
-                {((settings?.groupSubmissionEnabled !== false && settings?.allowPublicSubmissions !== false) || isWebmaster) && (
-                  <Link
-                    href="/submit"
-                    className="flex items-center gap-1.5 px-4 py-2 text-sm font-semibold bg-primary text-primary-foreground hover:bg-primary/90 rounded-xl transition-colors shadow-lg shadow-primary/20"
-                  >
-                    <Plus className="w-4 h-4" /> Submit Group
-                  </Link>
-                )}
               </div>
             )}
           </div>
@@ -584,24 +596,28 @@ export default function Navbar() {
                       >
                         Dashboard
                       </button>
-                      <button
-                        onClick={() => navigateAndClose("/submit")}
-                        className="w-full text-left block px-4 py-3 text-sm font-medium rounded-xl hover:bg-muted"
-                      >
-                        Submit Group
-                      </button>
+                      {(settings?.groupSubmissionEnabled === true || isWebmaster) && (
+                        <button
+                          onClick={() => navigateAndClose("/submit")}
+                          className="w-full text-left block px-4 py-3 text-sm font-medium rounded-xl hover:bg-muted"
+                        >
+                          Submit Group
+                        </button>
+                      )}
                       <button
                         onClick={() => navigateAndClose("/dashboard?tab=my-groups")}
                         className="w-full text-left block px-4 py-3 text-sm font-medium rounded-xl hover:bg-muted"
                       >
                         My Groups
                       </button>
-                      <button
-                        onClick={() => navigateAndClose("/dashboard?tab=favorites")}
-                        className="w-full text-left block px-4 py-3 text-sm font-medium rounded-xl hover:bg-muted"
-                      >
-                        Favorites
-                      </button>
+                      {settings?.favoritesEnabled !== false && (
+                        <button
+                          onClick={() => navigateAndClose("/dashboard?tab=favorites")}
+                          className="w-full text-left block px-4 py-3 text-sm font-medium rounded-xl hover:bg-muted"
+                        >
+                          Favorites
+                        </button>
+                      )}
                       <button
                         onClick={() => navigateAndClose("/dashboard?tab=notifications")}
                         className="w-full text-left block px-4 py-3 text-sm font-medium rounded-xl hover:bg-muted"
@@ -638,12 +654,14 @@ export default function Navbar() {
                 >
                   Log in
                 </Link>
-                <Link
-                  href="/register"
-                  className="block text-center px-4 py-3 bg-primary text-primary-foreground font-medium rounded-xl"
-                >
-                  Sign up
-                </Link>
+                {settings?.userRegistrationEnabled !== false && (
+                  <Link
+                    href="/register"
+                    className="block text-center px-4 py-3 bg-primary text-primary-foreground font-medium rounded-xl"
+                  >
+                    Sign up
+                  </Link>
+                )}
               </div>
             )}
           </div>

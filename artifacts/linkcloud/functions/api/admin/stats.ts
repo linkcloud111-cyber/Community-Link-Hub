@@ -1,6 +1,6 @@
 import { jsonResponse, type Env } from "../email-change/_common";
 import { firestoreGetDoc } from "../email-change/_firestore";
-import { requireWebmasterAuth } from "./_admin-common";
+import { handleAdminFirestoreError, requireWebmasterAuth } from "./_admin-common";
 
 export async function onRequestOptions(): Promise<Response> {
   return new Response(null, {
@@ -24,13 +24,17 @@ export async function onRequestGet(context: {
     return auth.response!;
   }
 
-  const userSequence = await firestoreGetDoc("counters/userSequence", env);
+  try {
+    const userSequence = await firestoreGetDoc("counters/userSequence", env);
 
-  return jsonResponse({
-    success: true,
-    stats: {
-      userSequence: userSequence || { currentNumber: 100, prefix: "linkcloud" },
-    },
-    timestamp: new Date().toISOString(),
-  });
+    return jsonResponse({
+      success: true,
+      stats: {
+        userSequence: userSequence || { currentNumber: 100, prefix: "linkcloud" },
+      },
+      timestamp: new Date().toISOString(),
+    });
+  } catch (err: any) {
+    return handleAdminFirestoreError(err, "Failed to load admin stats");
+  }
 }

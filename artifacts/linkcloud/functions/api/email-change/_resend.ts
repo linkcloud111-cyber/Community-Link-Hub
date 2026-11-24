@@ -23,7 +23,7 @@ export async function sendEmailViaResend({
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      from: "LinkCloud Security <verify@linkcloud.in>",
+      from: env.RESEND_FROM_EMAIL || "LinkCloud Security <noreply@resend.dev>",
       to: [to],
       subject,
       html,

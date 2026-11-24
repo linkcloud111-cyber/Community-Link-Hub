@@ -12,6 +12,7 @@ import {
   Check,
 } from "lucide-react";
 import { toast } from "sonner";
+import { useSiteSettings } from "@/contexts/SiteSettingsContext";
 import type { UserProfile } from "@/lib/types";
 
 interface DashboardHeaderProps {
@@ -31,6 +32,8 @@ export function DashboardHeader({
   onLogout,
   isWebmaster = false,
 }: DashboardHeaderProps) {
+  const { settings } = useSiteSettings();
+  const canEditProfile = Boolean(isWebmaster || settings?.profileEditingEnabled !== false);
   const [copiedUid, setCopiedUid] = useState(false);
 
   const displayName = profile?.displayName || "User";
@@ -103,14 +106,16 @@ export function DashboardHeader({
                 getInitials(displayName)
               )}
             </div>
-            <button
-              onClick={onEditProfile}
-              className="absolute -bottom-1 -right-1 min-w-[40px] min-h-[40px] sm:min-w-[44px] sm:min-h-[44px] flex items-center justify-center bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs shadow-md transition"
-              title="Edit Profile"
-              aria-label="Edit Profile Photo"
-            >
-              <User className="w-4 h-4" />
-            </button>
+            {canEditProfile && (
+              <button
+                onClick={onEditProfile}
+                className="absolute -bottom-1 -right-1 min-w-[40px] min-h-[40px] sm:min-w-[44px] sm:min-h-[44px] flex items-center justify-center bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs shadow-md transition"
+                title="Edit Profile"
+                aria-label="Edit Profile Photo"
+              >
+                <User className="w-4 h-4" />
+              </button>
+            )}
           </div>
 
           {/* User Details */}
@@ -189,14 +194,16 @@ export function DashboardHeader({
 
         {/* Right Side: Action Buttons */}
         <div className="flex items-center gap-2.5 self-stretch sm:self-auto justify-end border-t lg:border-t-0 pt-3 lg:pt-0 border-slate-100 dark:border-slate-800">
-          <button
-            id="dash-edit-profile-btn"
-            onClick={onEditProfile}
-            className="flex-1 sm:flex-initial min-h-[44px] inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-semibold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 hover:bg-purple-50 hover:text-purple-700 dark:hover:bg-purple-950/50 dark:hover:text-purple-300 border border-slate-200 dark:border-slate-700 transition"
-          >
-            <Edit3 className="w-4 h-4 text-purple-600 dark:text-purple-400" />
-            <span>Edit Profile</span>
-          </button>
+          {canEditProfile && (
+            <button
+              id="dash-edit-profile-btn"
+              onClick={onEditProfile}
+              className="flex-1 sm:flex-initial min-h-[44px] inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-semibold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 hover:bg-purple-50 hover:text-purple-700 dark:hover:bg-purple-950/50 dark:hover:text-purple-300 border border-slate-200 dark:border-slate-700 transition"
+            >
+              <Edit3 className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+              <span>Edit Profile</span>
+            </button>
+          )}
 
           <button
             id="dash-logout-btn"

@@ -36,16 +36,90 @@ function adminApiPlugin(): Plugin {
         handleAuthProvisionGoogleUser,
         handleAuthProvisionPhoneUser,
         handleAuthCheckRegistration,
+        handleAuthMobilePasswordLogin,
+        handleAuthDeleteAccount,
       } = await server.ssrLoadModule('/src/server/auth-api.ts');
+      const {
+        handleGroupSubmitRequest,
+        handleReportSubmitRequest,
+      } = await server.ssrLoadModule('/src/server/groups-reports-api.ts');
       const {
         handleTelemetryVisitorHit,
         handleTelemetrySearchQuery,
       } = await server.ssrLoadModule('/src/server/telemetry-api.ts');
+      const {
+        handlePublicCmsPagesGetRequest,
+        handlePublicFaqsGetRequest,
+        handlePublicHelpArticlesGetRequest,
+        handleAdminCmsPagesGetRequest,
+        handleAdminCmsDraftSaveRequest,
+        handleAdminCmsPublishRequest,
+        handleAdminCmsUnpublishRequest,
+        handleAdminCmsDeleteRequest,
+        handleAdminCmsVersionsRequest,
+        handleAdminCmsRestoreRequest,
+        handleAdminCmsSeedRequest,
+        handleAdminCmsRefreshRequest,
+        handleAdminFaqsRequest,
+        handleAdminHelpArticlesRequest,
+      } = await server.ssrLoadModule('/src/server/cms-api.ts');
+      const {
+        handleDynamicRobotsRequest,
+        handleDynamicSitemapRequest,
+      } = await server.ssrLoadModule('/src/server/seo-endpoints.ts');
 
       server.middlewares.use((req, res, next) => {
         const url = req.url?.split('?')[0];
+        if (url === '/robots.txt') {
+          return handleDynamicRobotsRequest(req, res);
+        }
+        if (url === '/sitemap.xml') {
+          return handleDynamicSitemapRequest(req, res);
+        }
         if (url === '/api/announcements') {
           return handleAnnouncementsGetRequest(req, res);
+        }
+        if (url === '/api/cms/pages') {
+          return handlePublicCmsPagesGetRequest(req, res);
+        }
+        if (url === '/api/faqs') {
+          return handlePublicFaqsGetRequest(req, res);
+        }
+        if (url === '/api/help-articles') {
+          return handlePublicHelpArticlesGetRequest(req, res);
+        }
+        if (url === '/api/admin/cms/pages') {
+          return handleAdminCmsPagesGetRequest(req, res);
+        }
+        if (url === '/api/admin/cms/draft') {
+          return handleAdminCmsDraftSaveRequest(req, res);
+        }
+        if (url === '/api/admin/cms/publish') {
+          return handleAdminCmsPublishRequest(req, res);
+        }
+        if (url === '/api/admin/cms/unpublish') {
+          return handleAdminCmsUnpublishRequest(req, res);
+        }
+        if (url === '/api/admin/cms/page') {
+          return handleAdminCmsDeleteRequest(req, res);
+        }
+        if (url === '/api/admin/cms/versions') {
+          return handleAdminCmsVersionsRequest(req, res);
+        }
+        if (url === '/api/admin/cms/restore') {
+          return handleAdminCmsRestoreRequest(req, res);
+        }
+        if (url === '/api/admin/cms/seed') {
+          return handleAdminCmsSeedRequest(req, res);
+        }
+        if (url === '/api/admin/cms/refresh') {
+          return handleAdminCmsRefreshRequest(req, res);
+        }
+        if (url === '/api/admin/faqs') {
+          return handleAdminFaqsRequest(req, res);
+        }
+        if (url === '/api/admin/help-articles') {
+          return handleAdminHelpArticlesRequest(req, res);
         }
         if (url === '/api/admin/announcements') {
           if (req.method === 'GET') {
@@ -85,6 +159,12 @@ function adminApiPlugin(): Plugin {
         if (url === '/api/auth/check-registration') {
           return handleAuthCheckRegistration(req, res);
         }
+        if (url === '/api/auth/mobile-password-login') {
+          return handleAuthMobilePasswordLogin(req, res);
+        }
+        if (url === '/api/auth/delete-account') {
+          return handleAuthDeleteAccount(req, res);
+        }
         if (url === '/api/auth/provision-user') {
           return handleAuthProvisionUser(req, res);
         }
@@ -93,6 +173,12 @@ function adminApiPlugin(): Plugin {
         }
         if (url === '/api/auth/provision-phone-user') {
           return handleAuthProvisionPhoneUser(req, res);
+        }
+        if (url === '/api/groups/submit') {
+          return handleGroupSubmitRequest(req, res);
+        }
+        if (url === '/api/reports/submit') {
+          return handleReportSubmitRequest(req, res);
         }
         if (url === '/api/email-change/request') {
           return handleDevEmailChangeRequest(req, res);
@@ -160,6 +246,9 @@ export default defineConfig(async ({ command }) => ({
     dedupe: ['react', 'react-dom'],
   },
   root: path.resolve(import.meta.dirname),
+  optimizeDeps: {
+    include: ['recharts', 'lucide-react', 'wouter', 'sonner', 'framer-motion'],
+  },
   build: {
     outDir: path.resolve(import.meta.dirname, 'dist'),
     emptyOutDir: true,

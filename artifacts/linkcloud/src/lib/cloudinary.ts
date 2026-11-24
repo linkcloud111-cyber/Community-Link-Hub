@@ -53,30 +53,32 @@ export async function uploadToCloudinary(
     throw new Error(validation.error || "Invalid file");
   }
 
-  const cloudName = customCloudName || import.meta.env.VITE_CLOUDINARY_CLOUD_NAME || "linkcloud";
-  const uploadPreset = customPreset || import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET || "linkcloud";
+  const cloudName = (customCloudName || import.meta.env.VITE_CLOUDINARY_CLOUD_NAME || "").trim();
+  const uploadPreset = (customPreset || import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET || "").trim();
 
-  try {
-    const formData = new FormData();
-    formData.append("file", file);
-    formData.append("upload_preset", uploadPreset);
+  if (cloudName && uploadPreset) {
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("upload_preset", uploadPreset);
 
-    const res = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, {
-      method: "POST",
-      body: formData,
-    });
+      const res = await fetch(`https://api.cloudinary.com/v1_1/${encodeURIComponent(cloudName)}/image/upload`, {
+        method: "POST",
+        body: formData,
+      });
 
-    if (res.ok) {
-      const data = await res.json();
-      if (data.secure_url) {
-        return getOptimizedCloudinaryUrl(data.secure_url);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.secure_url) {
+          return getOptimizedCloudinaryUrl(data.secure_url);
+        }
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        console.warn("[Cloudinary] Upload response error, falling back to Firebase Storage:", res.status, errData);
       }
-    } else {
-      const errData = await res.json().catch(() => ({}));
-      console.warn("[Cloudinary] Upload response error:", res.status, errData);
+    } catch (err) {
+      console.warn("[Cloudinary] Upload failed, falling back to Firebase Storage:", err);
     }
-  } catch (err) {
-    console.warn("[Cloudinary] Upload failed, falling back to Firebase Storage:", err);
   }
 
   // Firebase Storage Fallback

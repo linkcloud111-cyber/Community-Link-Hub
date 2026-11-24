@@ -1,8 +1,11 @@
 export interface Env {
   RESEND_API_KEY?: string;
+  RESEND_FROM_EMAIL?: string;
   FIREBASE_SERVICE_ACCOUNT_KEY?: string;
   FIREBASE_PROJECT_ID?: string;
   VITE_FIREBASE_PROJECT_ID?: string;
+  FIREBASE_WEB_API_KEY?: string;
+  VITE_FIREBASE_API_KEY?: string;
   APP_URL?: string;
   VITE_APP_URL?: string;
   CRON_SECRET?: string;

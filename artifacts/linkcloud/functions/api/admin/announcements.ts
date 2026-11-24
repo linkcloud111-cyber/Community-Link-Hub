@@ -159,7 +159,7 @@ export async function onRequestPost(context: {
         action: "Announcement Created",
         details: `Created site-wide announcement: "${docData.title}" [${docData.type}, ${docData.displayMode}, priority ${docData.priority}]`,
         actorUid: auth.uid || "webmaster",
-        actorEmail: auth.email || "webmaster@linkcloud.in",
+        actorEmail: auth.email || "webmaster@localhost.invalid",
         createdAt: nowIso,
         timestamp: nowIso,
       },

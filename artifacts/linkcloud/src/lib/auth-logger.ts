@@ -220,7 +220,7 @@ export function extractAuthErrorCode(error: unknown): string | null {
 
 /**
  * Writes a sanitized, credential-free authentication event record to the dedicated
- * `auth_logs` and `auth_event_logs` Firestore collections. Non-blocking and fail-safe.
+ * authoritative `auth_event_logs` Firestore collection. Non-blocking and fail-safe.
  */
 export async function logAuthEvent(params: {
   event: string;
@@ -277,10 +277,7 @@ export async function logAuthEvent(params: {
       timestampIso: new Date().toISOString(),
     };
 
-    await Promise.all([
-      addDoc(collection(db, "auth_logs"), record),
-      addDoc(collection(db, "auth_event_logs"), record),
-    ]);
+    await addDoc(collection(db, "auth_event_logs"), record);
   } catch (logErr) {
     // Non-fatal: logging must never interrupt authentication flows
     console.warn("[AUTH LOGGER] Notice:", logErr);

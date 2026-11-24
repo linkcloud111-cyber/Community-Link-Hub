@@ -26,7 +26,7 @@ export async function onRequestPost(context: {
   }
 
   const callerUid = auth.uid!;
-  const callerEmail = auth.email || "webmaster@linkcloud.in";
+  const callerEmail = auth.email || "webmaster@localhost.invalid";
 
   let body: any = {};
   try {

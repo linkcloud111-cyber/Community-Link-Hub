@@ -100,7 +100,8 @@ export default function ComplaintPage() {
   };
 
   if (settings?.complaintSystemEnabled === false) {
-    const supportEmail = settings?.supportEmail || settings?.contactEmail || "support@linkcloud.in";
+    const rawSupport = (settings?.supportEmail || settings?.contactEmail || "").trim();
+    const supportEmail = settings?.showSupportEmail !== false ? rawSupport : "";
     return (
       <div className="max-w-2xl mx-auto py-16 px-4 text-center space-y-5">
         <div className="w-16 h-16 rounded-2xl bg-amber-500/10 text-amber-500 flex items-center justify-center mx-auto border border-amber-500/20 shadow-lg">
@@ -110,16 +111,21 @@ export default function ComplaintPage() {
           Grievance Desk Currently Offline
         </h1>
         <p className="text-sm text-muted-foreground max-w-md mx-auto leading-relaxed">
-          The public grievance desk form is temporarily paused. If you have an urgent grievance or DMCA notice, please email our compliance team directly at:
+          The public grievance desk form is temporarily paused.
+          {supportEmail
+            ? " If you have an urgent grievance or DMCA notice, please email our compliance team directly at:"
+            : " Please check back later once the grievance desk reopens."}
         </p>
-        <div className="pt-2">
-          <a
-            href={`mailto:${supportEmail}`}
-            className="px-6 py-2.5 bg-primary text-primary-foreground font-semibold text-sm rounded-xl hover:bg-primary/90 transition inline-flex items-center gap-2 shadow-md"
-          >
-            <Mail className="w-4 h-4" /> {supportEmail}
-          </a>
-        </div>
+        {supportEmail && (
+          <div className="pt-2">
+            <a
+              href={`mailto:${supportEmail}`}
+              className="px-6 py-2.5 bg-primary text-primary-foreground font-semibold text-sm rounded-xl hover:bg-primary/90 transition inline-flex items-center gap-2 shadow-md"
+            >
+              <Mail className="w-4 h-4" /> {supportEmail}
+            </a>
+          </div>
+        )}
       </div>
     );
   }

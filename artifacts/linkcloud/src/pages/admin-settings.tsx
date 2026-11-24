@@ -2,23 +2,26 @@ import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import {
   getSiteSettings,
-  updateSiteSettings,
-  getFAQs,
-  addFAQ,
-  updateFAQ,
-  deleteFAQ,
   getAuditLogs,
   getSearchAnalytics,
-  logAuditEvent,
-  getHelpArticles,
-  addHelpArticle,
-  deleteHelpArticle,
   getAnnouncements,
-  createAnnouncement,
-  updateAnnouncement,
-  deleteAnnouncement,
-  toggleAnnouncementEnabled,
 } from "@/lib/firestore";
+import {
+  DEFAULT_FILTER_SETTINGS,
+  DEFAULT_SITE_SETTINGS,
+  normalizeSiteSettings,
+} from "@/lib/default-site-settings";
+import {
+  adminCreateFaq,
+  adminCreateHelpArticle,
+  adminDeleteFaq,
+  adminDeleteHelpArticle,
+  adminFetchCmsOverview,
+  adminListFaqs,
+  adminListHelpArticles,
+  adminUpdateFaq,
+  adminUpdateHelpArticle,
+} from "@/lib/cms-client";
 import type {
   SiteSettings,
   FAQItem,
@@ -28,12 +31,16 @@ import type {
   Announcement,
   AnnouncementType,
   AnnouncementDisplayMode,
+  CmsPageAdminOverview,
 } from "@/lib/types";
 import { clearSiteSettingsCache } from "@/lib/page-meta";
+import { validateAdminSettingsPayload } from "@/lib/settings-validation";
 import { getAuthEventLogs, type AuthEventLogRecord, changePassword, sendPasswordResetLink } from "@/lib/auth";
 import { validatePasswordStrength } from "@/lib/utils";
 import AdminNav from "@/components/admin-nav";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import CmsPagesManager from "@/components/cms/CmsPagesManager";
+import CmsPageEditorModal from "@/components/cms/CmsPageEditorModal";
 import { useAuth } from "@/contexts/AuthContext";
 import AnnouncementBanner, {
   isSafeActionUrl,
@@ -102,7 +109,7 @@ type SettingsTab =
   | "cloudinary";
 
 export default function AdminSettings() {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const [location] = useLocation();
 
   const getInitialTab = (): SettingsTab => {
@@ -127,92 +134,8 @@ export default function AdminSettings() {
     }
   }, [location]);
 
-  // Site Settings State
-  const [settings, setSettings] = useState<SiteSettings>({
-    siteName: "LinkCloud",
-    siteTagline: "India's Premium WhatsApp & Telegram Community Directory",
-    siteLogo: "",
-    favicon: "",
-    homepageBanner: "",
-    heroTitle: "Discover & Join India's Most Active WhatsApp & Telegram Communities",
-    heroSubtitle: "Verified group links across 36 states & UTs, 50+ categories, and multiple platforms.",
-    heroButtonText: "Explore Groups",
-    heroButtonLink: "/groups",
-    footerLogo: "",
-    footerDescription: "LinkCloud is India's leading verified platform for discovering public WhatsApp groups, Telegram channels, and Discord servers.",
-    copyrightText: "© 2026 LinkCloud Directory Services India. All rights reserved.",
-    websiteTheme: "dark",
-    maintenanceMode: false,
-
-    contactEmail: "support@linkcloud.in",
-    supportEmail: "support@linkcloud.in",
-    supportMobile: "+91 79874 10765",
-    businessAddress: "Raipur, Chhattisgarh, India",
-    officeHours: "Monday – Saturday, 10:00 AM to 6:00 PM IST",
-    googleMapUrl: "",
-
-    facebookUrl: "https://facebook.com/linkcloudin",
-    instagramUrl: "https://instagram.com/linkcloudin",
-    telegramUrl: "https://t.me/linkcloudin",
-    whatsappUrl: "https://whatsapp.com/channel/linkcloudin",
-    youtubeUrl: "https://youtube.com/@linkcloudin",
-    linkedinUrl: "https://linkedin.com/company/linkcloudin",
-    twitterUrl: "https://x.com/linkcloudin",
-    redditUrl: "https://reddit.com/r/linkcloudin",
-    githubUrl: "https://github.com/linkcloudin",
-
-    heroSectionEnabled: true,
-    featuredGroupsEnabled: true,
-    latestGroupsEnabled: true,
-    popularGroupsEnabled: true,
-    popularCategoriesEnabled: true,
-    popularPlatformsEnabled: true,
-    statisticsSectionEnabled: true,
-    testimonialsEnabled: true,
-    faqSectionEnabled: true,
-    newsletterSectionEnabled: true,
-    footerEnabled: true,
-
-    aboutTitle: "About LinkCloud India",
-    aboutDescription: "LinkCloud is India's premier community discovery platform built to connect millions of users with authentic, high-quality public groups.",
-    aboutMission: "Empowering Indian citizens to easily find, join, and grow safe educational, career, regional, and social communities.",
-    aboutVision: "Building India's largest and safest directory of public social messaging groups with zero scam or broken links.",
-    aboutUsContent: "LinkCloud is India's leading verified directory for WhatsApp, Telegram, and Discord communities.",
-
-    privacyPolicyContent: "LinkCloud respects user privacy. We do not store or inspect private chat content, messages, or member lists.",
-    termsContent: "By using LinkCloud, users agree not to submit illegal, spam, copyrighted, or prohibited group links.",
-    dmcaContent: "To file a copyright takedown request under DMCA, please email support@linkcloud.in with link details.",
-    disclaimerContent: "LinkCloud is a public indexing platform and is not affiliated with WhatsApp, Telegram, Discord, Meta, or Google.",
-
-    metaTitle: "LinkCloud - India's #1 WhatsApp, Telegram & Discord Group Directory",
-    metaDescription: "Discover and join thousands of active WhatsApp groups, Telegram channels, and Discord communities in India.",
-    metaKeywords: "WhatsApp groups, Telegram channels, Discord servers, India group links, study groups, job alerts",
-    canonicalUrl: "https://linkcloud.in",
-    ogImage: "https://linkcloud.in/og-banner.png",
-    ogTitle: "LinkCloud - Join India's Top WhatsApp & Telegram Groups",
-    ogDescription: "Discover verified active groups in Jobs, Education, Crypto, Tech, Movies, and regional communities across India.",
-    twitterCardImage: "https://linkcloud.in/twitter-card.png",
-    twitterCardTitle: "LinkCloud - WhatsApp & Telegram Directory",
-    twitterCardDescription: "Find verified group invite links in India.",
-    robotsTxtContent: "User-agent: *\nAllow: /\nSitemap: https://linkcloud.in/sitemap.xml",
-    sitemapXmlContent: "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">\n  <url>\n    <loc>https://linkcloud.in/</loc>\n    <changefreq>daily</changefreq>\n    <priority>1.0</priority>\n  </url>\n  <url>\n    <loc>https://linkcloud.in/groups</loc>\n    <changefreq>hourly</changefreq>\n    <priority>0.9</priority>\n  </url>\n</urlset>",
-    structuredDataJson: "{\n  \"@context\": \"https://schema.org\",\n  \"@type\": \"WebSite\",\n  \"name\": \"LinkCloud\",\n  \"url\": \"https://linkcloud.in\"\n}",
-
-    allowPublicSubmissions: true,
-    groupSubmissionEnabled: true,
-    userRegistrationEnabled: true,
-    googleLoginEnabled: true,
-    emailLoginEnabled: true,
-    mobileOtpLoginEnabled: true,
-    favoritesEnabled: true,
-    reportSystemEnabled: true,
-    complaintSystemEnabled: true,
-    contactFormEnabled: true,
-    notificationsEnabled: true,
-
-    cloudinaryCloudName: "linkcloud",
-    cloudinaryUploadPreset: "linkcloud_unsigned",
-  });
+  // Site Settings State (canonical schema from default-site-settings.ts)
+  const [settings, setSettings] = useState<SiteSettings>(DEFAULT_SITE_SETTINGS);
 
   // Additional Data Collections
   const [faqs, setFaqs] = useState<FAQItem[]>([]);
@@ -220,6 +143,8 @@ export default function AdminSettings() {
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [authEventLogs, setAuthEventLogs] = useState<AuthEventLogRecord[]>([]);
   const [searchAnalytics, setSearchAnalytics] = useState<SearchAnalytics[]>([]);
+  const [analyticsLoading, setAnalyticsLoading] = useState<boolean>(true);
+  const [analyticsError, setAnalyticsError] = useState<string | null>(null);
 
   // Announcements State
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
@@ -293,9 +218,13 @@ export default function AdminSettings() {
 
   const handleSendWebmasterPasswordReset = async () => {
     if (resetEmailCooldown > 0) return;
+    const email = (user?.email || profile?.email || "").trim();
+    if (!email) {
+      toast.error("No verified Webmaster email is attached to the current session.");
+      return;
+    }
     setSendingResetEmail(true);
     try {
-      const email = user?.email || "linkcloud111@gmail.com";
       await sendPasswordResetLink(email);
       setResetEmailCooldown(60);
       toast.success(`Password reset email dispatched to ${email}`);
@@ -306,105 +235,255 @@ export default function AdminSettings() {
     }
   };
 
+  // CMS Overview & Editor Modal State
+  const [cmsPages, setCmsPages] = useState<CmsPageAdminOverview[]>([]);
+  const [cmsLoading, setCmsLoading] = useState(false);
+  const [editingCmsPage, setEditingCmsPage] = useState<CmsPageAdminOverview | null>(null);
+
   // FAQ Modal / Input
   const [faqModalOpen, setFaqModalOpen] = useState(false);
   const [editingFaq, setEditingFaq] = useState<FAQItem | null>(null);
-  const [faqForm, setFaqForm] = useState({ question: "", answer: "", category: "General", sortOrder: 1, enabled: true });
+  const [faqPreviewMode, setFaqPreviewMode] = useState(false);
+  const [faqForm, setFaqForm] = useState<{
+    question: string;
+    answer: string;
+    category: string;
+    sortOrder: number;
+    enabled: boolean;
+    status: "draft" | "published";
+  }>({ question: "", answer: "", category: "General", sortOrder: 1, enabled: true, status: "published" });
 
   // Help Article Modal
   const [articleModalOpen, setArticleModalOpen] = useState(false);
-  const [articleForm, setArticleForm] = useState({ title: "", category: "General", content: "", views: 0 });
+  const [editingArticle, setEditingArticle] = useState<HelpArticle | null>(null);
+  const [articlePreviewMode, setArticlePreviewMode] = useState(false);
+  const [articleForm, setArticleForm] = useState<{
+    title: string;
+    category: string;
+    content: string;
+    steps: string[];
+    enabled: boolean;
+    sortOrder: number;
+    status: "draft" | "published";
+    views: number;
+  }>({
+    title: "",
+    category: "General",
+    content: "",
+    steps: [],
+    enabled: true,
+    sortOrder: 1,
+    status: "published",
+    views: 0,
+  });
+
+  const refreshCmsAndContent = async () => {
+    if (!user) return;
+    setCmsLoading(true);
+    try {
+      const [cmsRes, faqRes, helpRes, logsRes] = await Promise.all([
+        adminFetchCmsOverview(user),
+        adminListFaqs(user),
+        adminListHelpArticles(user),
+        getAuditLogs(30),
+      ]);
+      if (Array.isArray(cmsRes?.pages)) setCmsPages(cmsRes.pages);
+      setFaqs(faqRes);
+      setHelpArticles(helpRes);
+      setAuditLogs(logsRes);
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to refresh CMS data from server");
+    } finally {
+      setCmsLoading(false);
+    }
+  };
+
+  const loadSearchAnalytics = async () => {
+    setAnalyticsLoading(true);
+    setAnalyticsError(null);
+    try {
+      const searchData = await getSearchAnalytics();
+      setSearchAnalytics(Array.isArray(searchData) ? searchData : []);
+    } catch (err: any) {
+      setSearchAnalytics([]);
+      setAnalyticsError(err?.message || "Failed to load search analytics from Firestore.");
+    } finally {
+      setAnalyticsLoading(false);
+    }
+  };
 
   useEffect(() => {
-    Promise.all([
+    Promise.allSettled([
       getSiteSettings(),
-      getFAQs(),
-      getHelpArticles(),
       getAuditLogs(30),
       getSearchAnalytics(),
       getAnnouncements(false),
       getAuthEventLogs(40),
     ])
-      .then(([siteData, faqData, articleData, auditData, searchData, annData, authLogsData]) => {
-        if (siteData) setSettings((prev) => ({ ...prev, ...siteData }));
-        if (faqData) setFaqs(faqData);
-        if (articleData) setHelpArticles(articleData);
-        if (auditData) setAuditLogs(auditData);
-        if (searchData) setSearchAnalytics(searchData);
-        if (annData) setAnnouncements(annData);
-        if (authLogsData) setAuthEventLogs(authLogsData);
+      .then(([siteRes, auditRes, searchRes, annRes, authLogsRes]) => {
+        if (siteRes.status === "fulfilled" && siteRes.value) {
+          setSettings(normalizeSiteSettings(siteRes.value));
+        } else if (siteRes.status === "rejected") {
+          toast.error("Failed to sync webmaster settings");
+        }
+        if (auditRes.status === "fulfilled" && auditRes.value) {
+          setAuditLogs(auditRes.value);
+        }
+        if (searchRes.status === "fulfilled") {
+          setSearchAnalytics(Array.isArray(searchRes.value) ? searchRes.value : []);
+          setAnalyticsError(null);
+        } else {
+          setSearchAnalytics([]);
+          setAnalyticsError(
+            searchRes.reason?.message || "Failed to load search analytics from Firestore."
+          );
+        }
+        if (annRes.status === "fulfilled" && annRes.value) {
+          setAnnouncements(annRes.value);
+        }
+        if (authLogsRes.status === "fulfilled" && authLogsRes.value) {
+          setAuthEventLogs(authLogsRes.value);
+        }
       })
-      .catch((err) => {
-        console.error(err);
-        toast.error("Failed to sync webmaster settings from Firestore");
-      })
-      .finally(() => setLoading(false));
+      .finally(() => {
+        setLoading(false);
+        setAnalyticsLoading(false);
+      });
   }, []);
+
+  useEffect(() => {
+    if (!user) return;
+    setCmsLoading(true);
+    Promise.all([
+      adminFetchCmsOverview(user),
+      adminListFaqs(user),
+      adminListHelpArticles(user),
+    ])
+      .then(([cmsRes, faqRes, helpRes]) => {
+        if (Array.isArray(cmsRes?.pages)) setCmsPages(cmsRes.pages);
+        setFaqs(faqRes);
+        setHelpArticles(helpRes);
+      })
+      .catch((err: any) => {
+        toast.error(err?.message || "Failed to load CMS content from server API");
+      })
+      .finally(() => setCmsLoading(false));
+  }, [user]);
+
+  const isSiteSettingsTab = [
+    "general",
+    "homepage",
+    "contactSocial",
+    "seo",
+    "system",
+    "filters",
+    "cloudinary",
+  ].includes(tab);
 
   const handleSaveSettings = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
+    if (!user) {
+      toast.error("Webmaster authentication session missing. Please sign in again.");
+      return;
+    }
+    const candidatePayload = {
+      ...settings,
+      logoUrl: settings.siteLogo || settings.logoUrl || "",
+      faviconUrl: settings.favicon || settings.faviconUrl || "",
+      cloudinarySettings: {
+        ...(settings.cloudinarySettings || {}),
+        cloudName: settings.cloudinaryCloudName || settings.cloudinarySettings?.cloudName || "",
+        uploadPreset: settings.cloudinaryUploadPreset || settings.cloudinarySettings?.uploadPreset || "",
+      },
+    };
+
+    const validation = validateAdminSettingsPayload(candidatePayload);
+    if (!validation.valid || !validation.sanitized) {
+      toast.error(validation.error || "Please fix invalid settings before saving.");
+      return;
+    }
+
     setSaving(true);
     try {
-      let savedViaApi = false;
-      if (user) {
-        try {
-          const idToken = await user.getIdToken();
-          const res = await fetch("/api/admin/settings", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${idToken}`,
-            },
-            body: JSON.stringify(settings),
-          });
-          if (res.ok) {
-            savedViaApi = true;
-          }
-        } catch {
-          // fallback to client-side Firestore write
-        }
-      }
+      const idToken = await user.getIdToken();
+      const res = await fetch("/api/admin/settings", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify(validation.sanitized),
+      });
 
-      if (!savedViaApi) {
-        await updateSiteSettings(settings);
-        await logAuditEvent(
-          "Settings Changed",
-          `Updated webmaster configuration section (${tab})`,
-          user?.email || "webmaster@linkcloud.in",
-          user?.uid || "webmaster"
-        );
+      const payload = await res.json().catch(() => null);
+      if (!res.ok) {
+        throw new Error(payload?.error || `Server rejected settings update (${res.status}).`);
       }
 
       clearSiteSettingsCache();
-      toast.success("Webmaster configuration saved successfully");
-      // Refresh audit logs
+      toast.success("Webmaster global settings saved successfully");
       const updatedLogs = await getAuditLogs(30);
       setAuditLogs(updatedLogs);
-    } catch {
-      toast.error("Failed to save settings");
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to save settings via Webmaster API");
     } finally {
       setSaving(false);
     }
   };
 
-  // FAQ Handlers
+  // FAQ Handlers (Server-Authorized, Duplicate-Checked)
   const handleSaveFaq = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
       if (editingFaq) {
-        await updateFAQ(editingFaq.id, faqForm);
+        await adminUpdateFaq(user, { id: editingFaq.id, ...faqForm });
         toast.success("FAQ item updated");
       } else {
-        await addFAQ(faqForm);
+        await adminCreateFaq(user, faqForm);
         toast.success("New FAQ item created");
       }
       setFaqModalOpen(false);
       setEditingFaq(null);
-      setFaqForm({ question: "", answer: "", category: "General", sortOrder: faqs.length + 1, enabled: true });
-      const freshFaqs = await getFAQs();
-      setFaqs(freshFaqs);
-    } catch {
-      toast.error("Failed to save FAQ");
+      setFaqPreviewMode(false);
+      setFaqForm({
+        question: "",
+        answer: "",
+        category: "General",
+        sortOrder: faqs.length + 1,
+        enabled: true,
+        status: "published",
+      });
+      await refreshCmsAndContent();
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to save FAQ");
+    }
+  };
+
+  const handleToggleFaqEnabled = async (faq: FAQItem) => {
+    try {
+      await adminUpdateFaq(user, { id: faq.id, enabled: faq.enabled === false });
+      toast.success(`FAQ ${faq.enabled === false ? "enabled" : "disabled"}`);
+      await refreshCmsAndContent();
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to update FAQ status");
+    }
+  };
+
+  const handleMoveFaq = async (index: number, dir: -1 | 1) => {
+    const target = index + dir;
+    if (target < 0 || target >= faqs.length) return;
+    const reordered = [...faqs];
+    const [item] = reordered.splice(index, 1);
+    reordered.splice(target, 0, item);
+    const payload = reordered.map((f, idx) => ({ id: f.id, sortOrder: idx + 1 }));
+    setFaqs(reordered.map((f, idx) => ({ ...f, sortOrder: idx + 1 })));
+    try {
+      await adminUpdateFaq(user, { reorder: payload });
+      toast.success("FAQ display order saved");
+      await refreshCmsAndContent();
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to reorder FAQs");
+      await refreshCmsAndContent();
     }
   };
 
@@ -414,18 +493,86 @@ export default function AdminSettings() {
     setDeleteConfirm({ id, type: "faq" });
   };
 
-  // Help Article Handlers
+  // Help Article Handlers (Server-Authorized Full CRUD)
+  const handleOpenCreateArticle = () => {
+    setEditingArticle(null);
+    setArticlePreviewMode(false);
+    setArticleForm({
+      title: "",
+      category: "General",
+      content: "",
+      steps: [],
+      enabled: true,
+      sortOrder: helpArticles.length + 1,
+      status: "published",
+      views: 0,
+    });
+    setArticleModalOpen(true);
+  };
+
+  const handleOpenEditArticle = (art: HelpArticle) => {
+    setEditingArticle(art);
+    setArticlePreviewMode(false);
+    setArticleForm({
+      title: art.title,
+      category: art.category || "General",
+      content: art.content,
+      steps: Array.isArray(art.steps) ? art.steps : [],
+      enabled: art.enabled !== false,
+      sortOrder: art.sortOrder ?? 1,
+      status: art.status === "draft" ? "draft" : "published",
+      views: art.views || 0,
+    });
+    setArticleModalOpen(true);
+  };
+
   const handleSaveArticle = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await addHelpArticle(articleForm);
-      toast.success("Help article created");
+      if (editingArticle) {
+        await adminUpdateHelpArticle(user, { id: editingArticle.id, ...articleForm });
+        toast.success("Help article updated");
+      } else {
+        await adminCreateHelpArticle(user, articleForm);
+        toast.success("Help article created");
+      }
       setArticleModalOpen(false);
-      setArticleForm({ title: "", category: "General", content: "", views: 0 });
-      const freshArticles = await getHelpArticles();
-      setHelpArticles(freshArticles);
-    } catch {
-      toast.error("Failed to create article");
+      setEditingArticle(null);
+      setArticlePreviewMode(false);
+      await refreshCmsAndContent();
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to save help article");
+    }
+  };
+
+  const handleToggleArticleEnabled = async (art: HelpArticle) => {
+    try {
+      await adminUpdateHelpArticle(user, {
+        id: art.id,
+        enabled: art.enabled === false,
+      });
+      toast.success(`Help article ${art.enabled === false ? "enabled" : "disabled"}`);
+      await refreshCmsAndContent();
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to update help article status");
+    }
+  };
+
+  const handleMoveArticle = async (index: number, dir: -1 | 1) => {
+    const target = index + dir;
+    if (target < 0 || target >= helpArticles.length) return;
+    const reordered = [...helpArticles];
+    const [item] = reordered.splice(index, 1);
+    reordered.splice(target, 0, item);
+    const payload = reordered.map((a, idx) => ({ id: a.id, sortOrder: idx + 1 }));
+    setHelpArticles(reordered.map((a, idx) => ({ ...a, sortOrder: idx + 1 })));
+    try {
+      await adminUpdateHelpArticle(user, { reorder: payload });
+      toast.success("Help article order saved");
+      await refreshCmsAndContent();
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to reorder help articles");
+      await refreshCmsAndContent();
     }
   };
 
@@ -499,47 +646,29 @@ export default function AdminSettings() {
       }
     }
 
+    if (!user) {
+      toast.error("Webmaster authentication session missing. Please sign in again.");
+      return;
+    }
+
     setAnnouncementSaving(true);
     try {
-      let savedViaApi = false;
-      if (user) {
-        try {
-          const idToken = await user.getIdToken();
-          const payload = {
-            ...(editingAnnouncement ? { id: editingAnnouncement.id } : {}),
-            ...announcementForm,
-          };
-          const res = await fetch("/api/admin/announcements", {
-            method: editingAnnouncement ? "PUT" : "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${idToken}`,
-            },
-            body: JSON.stringify(payload),
-          });
-          if (res.ok) {
-            savedViaApi = true;
-          }
-        } catch {
-          // fallback to client-side Firestore
-        }
-      }
-
-      if (!savedViaApi) {
-        if (editingAnnouncement) {
-          await updateAnnouncement(
-            editingAnnouncement.id,
-            announcementForm,
-            user?.email || "webmaster@linkcloud.in",
-            user?.uid || "webmaster"
-          );
-        } else {
-          await createAnnouncement(
-            announcementForm,
-            user?.email || "webmaster@linkcloud.in",
-            user?.uid || "webmaster"
-          );
-        }
+      const idToken = await user.getIdToken();
+      const payload = {
+        ...(editingAnnouncement ? { id: editingAnnouncement.id } : {}),
+        ...announcementForm,
+      };
+      const res = await fetch("/api/admin/announcements", {
+        method: editingAnnouncement ? "PUT" : "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify(payload),
+      });
+      const result = await res.json().catch(() => null);
+      if (!res.ok) {
+        throw new Error(result?.error || `Failed to save announcement (${res.status}).`);
       }
 
       toast.success(editingAnnouncement ? "Announcement updated successfully" : "Announcement created successfully");
@@ -556,39 +685,33 @@ export default function AdminSettings() {
   };
 
   const handleToggleAnnouncement = async (item: Announcement) => {
+    if (!user) {
+      toast.error("Webmaster authentication session missing. Please sign in again.");
+      return;
+    }
     const newEnabled = !item.enabled;
     setAnnouncements((prev) =>
       prev.map((a) => (a.id === item.id ? { ...a, enabled: newEnabled } : a))
     );
     try {
-      let savedViaApi = false;
-      if (user) {
-        try {
-          const idToken = await user.getIdToken();
-          const res = await fetch("/api/admin/announcements", {
-            method: "PUT",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${idToken}`,
-            },
-            body: JSON.stringify({ ...item, enabled: newEnabled }),
-          });
-          if (res.ok) savedViaApi = true;
-        } catch {}
-      }
-      if (!savedViaApi) {
-        await toggleAnnouncementEnabled(
-          item.id,
-          newEnabled,
-          user?.email || "webmaster@linkcloud.in",
-          user?.uid || "webmaster"
-        );
+      const idToken = await user.getIdToken();
+      const res = await fetch("/api/admin/announcements", {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({ ...item, enabled: newEnabled }),
+      });
+      const result = await res.json().catch(() => null);
+      if (!res.ok) {
+        throw new Error(result?.error || `Failed to update announcement status (${res.status}).`);
       }
       toast.success(`Announcement ${newEnabled ? "enabled" : "disabled"}`);
-    } catch {
-      toast.error("Failed to update announcement status");
-      const fresh = await getAnnouncements(false);
-      setAnnouncements(fresh);
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to update announcement status");
+      const fresh = await getAnnouncements(false).catch(() => null);
+      if (fresh) setAnnouncements(fresh);
     }
   };
 
@@ -601,38 +724,32 @@ export default function AdminSettings() {
     const { id, type } = deleteConfirm;
     try {
       if (type === "faq") {
-        await deleteFAQ(id);
+        await adminDeleteFaq(user, id);
         toast.success("FAQ deleted");
-        setFaqs(faqs.filter((f) => f.id !== id));
+        await refreshCmsAndContent();
       } else if (type === "article") {
-        await deleteHelpArticle(id);
+        await adminDeleteHelpArticle(user, id);
         toast.success("Help article deleted");
-        setHelpArticles(helpArticles.filter((a) => a.id !== id));
+        await refreshCmsAndContent();
       } else if (type === "announcement") {
-        let deletedViaApi = false;
-        if (user) {
-          try {
-            const idToken = await user.getIdToken();
-            const res = await fetch(`/api/admin/announcements?id=${id}`, {
-              method: "DELETE",
-              headers: { Authorization: `Bearer ${idToken}` },
-            });
-            if (res.ok) deletedViaApi = true;
-          } catch {}
+        if (!user) {
+          throw new Error("Webmaster authentication session missing. Please sign in again.");
         }
-        if (!deletedViaApi) {
-          await deleteAnnouncement(
-            id,
-            user?.email || "webmaster@linkcloud.in",
-            user?.uid || "webmaster"
-          );
+        const idToken = await user.getIdToken();
+        const res = await fetch(`/api/admin/announcements?id=${encodeURIComponent(id)}`, {
+          method: "DELETE",
+          headers: { Authorization: `Bearer ${idToken}` },
+        });
+        const result = await res.json().catch(() => null);
+        if (!res.ok) {
+          throw new Error(result?.error || `Failed to delete announcement (${res.status}).`);
         }
         toast.success("Announcement deleted");
-        setAnnouncements(announcements.filter((a) => a.id !== id));
+        setAnnouncements((prev) => prev.filter((a) => a.id !== id));
       }
       setDeleteConfirm(null);
-    } catch {
-      toast.error(`Failed to delete ${type}`);
+    } catch (err: any) {
+      toast.error(err?.message || `Failed to delete ${type}`);
     }
   };
 
@@ -648,17 +765,20 @@ export default function AdminSettings() {
             <Settings className="w-8 h-8 text-primary animate-spin-slow" /> Webmaster Control & Settings
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Full platform settings, Homepage sections, Legal docs, SEO tags, System toggles & Audit logs.
+            Platform configuration, Homepage layout, Public CMS pages, Global SEO defaults, System toggles &amp; Audit logs.
           </p>
         </div>
-        <button
-          onClick={() => handleSaveSettings()}
-          disabled={saving}
-          className="px-6 py-2.5 bg-primary text-primary-foreground font-bold text-xs rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-primary/20 hover:bg-primary/90 transition-all self-start sm:self-auto"
-        >
-          {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-          Save All Settings
-        </button>
+        {isSiteSettingsTab && (
+          <button
+            type="button"
+            onClick={() => handleSaveSettings()}
+            disabled={saving}
+            className="px-6 py-2.5 bg-primary text-primary-foreground font-bold text-xs rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-primary/20 hover:bg-primary/90 transition-all self-start sm:self-auto"
+          >
+            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+            Save Global Settings
+          </button>
+        )}
       </div>
 
       {/* Admin Nav */}
@@ -687,8 +807,10 @@ export default function AdminSettings() {
           <Loader2 className="w-8 h-8 animate-spin text-primary" />
         </div>
       ) : (
-        <form onSubmit={handleSaveSettings} className="space-y-6">
-          {/* TAB 1: GENERAL BRANDING */}
+        <>
+          {isSiteSettingsTab && (
+            <form onSubmit={handleSaveSettings} className="space-y-6">
+              {/* TAB 1: GENERAL BRANDING */}
           {tab === "general" && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="bg-card border border-border rounded-3xl p-6 space-y-4 shadow-sm">
@@ -731,7 +853,7 @@ export default function AdminSettings() {
                   <input
                     value={settings.favicon || ""}
                     onChange={(e) => setSettings((s) => ({ ...s, favicon: e.target.value }))}
-                    placeholder="https://linkcloud.in/favicon.ico"
+                    placeholder="https://yourdomain.com/favicon.ico"
                     className={inputClass}
                   />
                 </div>
@@ -869,868 +991,441 @@ export default function AdminSettings() {
                   onToggle={() => setSettings((s) => ({ ...s, statisticsSectionEnabled: !s.statisticsSectionEnabled }))}
                 />
                 <ToggleCard
-                  title="Community Testimonials"
-                  description="User reviews and success feedback"
-                  enabled={settings.testimonialsEnabled}
-                  onToggle={() => setSettings((s) => ({ ...s, testimonialsEnabled: !s.testimonialsEnabled }))}
-                />
-                <ToggleCard
                   title="Homepage FAQ Accordion"
                   description="Quick answer drawer for common visitor questions"
                   enabled={settings.faqSectionEnabled}
                   onToggle={() => setSettings((s) => ({ ...s, faqSectionEnabled: !s.faqSectionEnabled }))}
                 />
                 <ToggleCard
-                  title="Newsletter Subscription"
-                  description="Email capture form for weekly group drops"
-                  enabled={settings.newsletterSectionEnabled}
-                  onToggle={() => setSettings((s) => ({ ...s, newsletterSectionEnabled: !s.newsletterSectionEnabled }))}
+                  title="Global Site Footer"
+                  description="Show footer links, socials, and copyright bar"
+                  enabled={settings.footerEnabled !== false}
+                  onToggle={() => setSettings((s) => ({ ...s, footerEnabled: s.footerEnabled === false }))}
                 />
               </div>
             </div>
           )}
 
-          {/* TAB 2.5: WEBSITE-WIDE ANNOUNCEMENT SYSTEM */}
-          {tab === "announcements" && (
+
+          {tab === "contactSocial" && (
             <div className="space-y-6">
-              <div className="bg-card border border-border rounded-3xl p-6 shadow-sm">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-border pb-4">
-                  <div>
-                    <h2 className="font-bold text-base flex items-center gap-2">
-                      <Megaphone className="w-5 h-5 text-primary" /> Website-Wide Announcements & Banners
-                    </h2>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Broadcast global updates, news, maintenance notices, and call-to-actions across the entire platform.
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={handleOpenCreateAnnouncement}
-                    className="px-4 py-2 bg-primary text-primary-foreground font-bold text-xs rounded-xl flex items-center gap-1.5 shadow-sm hover:bg-primary/90 transition-all self-start sm:self-auto"
-                  >
-                    <Plus className="w-4 h-4" /> New Announcement
-                  </button>
-                </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="bg-card border border-border rounded-3xl p-6 space-y-4 shadow-sm">
+                  <h2 className="font-bold text-base border-b border-border pb-3 flex items-center gap-2">
+                    <Phone className="w-5 h-5 text-primary" /> Website Contact Details &amp; Address
+                  </h2>
 
-                {/* Announcement Cards List */}
-                <div className="mt-6 space-y-4">
-                  {announcements.length === 0 ? (
-                    <div className="text-center py-12 border border-dashed border-border rounded-2xl bg-muted/20">
-                      <Megaphone className="w-10 h-10 text-muted-foreground mx-auto mb-3 opacity-40" />
-                      <p className="text-sm font-semibold text-foreground">No announcements configured yet</p>
-                      <p className="text-xs text-muted-foreground max-w-sm mx-auto mt-1 mb-4">
-                        Add your first announcement to display a real-time banner or scrolling ticker across LinkCloud.
-                      </p>
-                      <button
-                        type="button"
-                        onClick={handleOpenCreateAnnouncement}
-                        className="px-4 py-2 bg-primary text-primary-foreground text-xs font-bold rounded-xl shadow-sm hover:bg-primary/90 transition-all"
-                      >
-                        Create First Announcement
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-1 gap-4">
-                      {announcements.map((item) => {
-                        const now = Date.now();
-                        const isScheduled = item.startAt && new Date(item.startAt).getTime() > now;
-                        const isExpired = item.endAt && new Date(item.endAt).getTime() < now;
-                        const theme = ANNOUNCEMENT_THEMES[item.type] || ANNOUNCEMENT_THEMES.announcement;
-
-                        return (
-                          <div
-                            key={item.id}
-                            className={`border rounded-2xl p-4 sm:p-5 bg-card/60 hover:border-primary/40 transition-all space-y-3 ${
-                              !item.enabled ? "opacity-60 bg-muted/20 border-border" : "border-border shadow-sm"
-                            }`}
-                          >
-                            <div className="flex flex-wrap items-center justify-between gap-2">
-                              <div className="flex flex-wrap items-center gap-2">
-                                {/* Type Badge */}
-                                <span
-                                  className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${theme.badgeBg}`}
-                                >
-                                  {item.type}
-                                </span>
-
-                                {/* Display Mode */}
-                                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-muted text-muted-foreground border border-border">
-                                  {item.displayMode === "ticker" || (item.displayMode as string) === "scrolling" ? "Ticker (Marquee)" : "Banner (Static)"}
-                                </span>
-
-                                {/* Priority */}
-                                <span className="px-2 py-0.5 rounded-md text-[10px] font-mono bg-muted/60 text-muted-foreground">
-                                  Priority: {item.priority ?? 10}
-                                </span>
-
-                                {/* Status */}
-                                {!item.enabled ? (
-                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-muted text-muted-foreground">
-                                    Disabled
-                                  </span>
-                                ) : isScheduled ? (
-                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-500/10 text-blue-500 border border-blue-500/20">
-                                    Scheduled
-                                  </span>
-                                ) : isExpired ? (
-                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-500/10 text-rose-500 border border-rose-500/20">
-                                    Expired
-                                  </span>
-                                ) : (
-                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">
-                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                                    Active Now
-                                  </span>
-                                )}
-                              </div>
-
-                              {/* Controls */}
-                              <div className="flex items-center gap-2 ml-auto">
-                                <button
-                                  type="button"
-                                  onClick={() => handleToggleAnnouncement(item)}
-                                  className={`px-3 py-1 rounded-lg text-xs font-bold transition-all border ${
-                                    item.enabled
-                                      ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/30 hover:bg-emerald-500/20"
-                                      : "bg-muted text-muted-foreground border-border hover:bg-muted/80"
-                                  }`}
-                                  title={item.enabled ? "Click to Disable" : "Click to Enable"}
-                                >
-                                  {item.enabled ? "Enabled" : "Disabled"}
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => handleOpenEditAnnouncement(item)}
-                                  className="p-1.5 rounded-lg bg-muted text-muted-foreground hover:text-foreground hover:bg-muted/80 transition-all"
-                                  title="Edit Announcement"
-                                >
-                                  <Edit2 className="w-4 h-4" />
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => handleDeleteAnnouncement(item)}
-                                  className="p-1.5 rounded-lg bg-destructive/10 text-destructive hover:bg-destructive/20 transition-all"
-                                  title="Delete Announcement"
-                                >
-                                  <Trash2 className="w-4 h-4" />
-                                </button>
-                              </div>
-                            </div>
-
-                            {/* Title & Message */}
-                            <div>
-                              <h3 className="font-bold text-sm text-foreground">{item.title}</h3>
-                              <p className="text-xs text-muted-foreground mt-1 line-clamp-2 leading-relaxed">
-                                {item.message}
-                              </p>
-                            </div>
-
-                            {/* Schedule & Action Metadata */}
-                            <div className="flex flex-wrap items-center gap-x-6 gap-y-2 pt-2 border-t border-border/40 text-[11px] text-muted-foreground">
-                              <div className="flex items-center gap-1.5">
-                                <Calendar className="w-3.5 h-3.5 text-primary" />
-                                {item.startAt || item.endAt ? (
-                                  <span>
-                                    {item.startAt ? `From ${new Date(item.startAt).toLocaleString()}` : "Immediate start"}
-                                    {item.endAt ? ` until ${new Date(item.endAt).toLocaleString()}` : " (No end date)"}
-                                  </span>
-                                ) : (
-                                  <span>Always active (No schedule limits)</span>
-                                )}
-                              </div>
-
-                              {item.actionUrl && (
-                                <div className="flex items-center gap-1.5">
-                                  <ExternalLink className="w-3.5 h-3.5 text-primary" />
-                                  <span className="font-mono truncate max-w-xs">
-                                    {item.actionLabel || "Action"}: {item.actionUrl}
-                                  </span>
-                                </div>
-                              )}
-
-                              <div>
-                                {item.dismissible !== false ? (
-                                  <span className="text-emerald-500 font-medium">✓ Dismissible by visitors</span>
-                                ) : (
-                                  <span className="text-amber-500 font-medium">⚠ Sticky (Non-dismissible)</span>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* TAB: WEBMASTER SECURITY & CHANGE PASSWORD */}
-          {tab === "security" && (
-            <div className="space-y-6 max-w-4xl">
-              {/* 1. Webmaster Identity & Privileged Authority Card */}
-              <div className="bg-card border border-border rounded-3xl p-6 shadow-sm space-y-4">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-border pb-4">
-                  <div className="flex items-center gap-3">
-                    <div className="w-12 h-12 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary">
-                      <ShieldCheck className="w-6 h-6" />
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className={labelClass}>Official Contact Email</label>
+                      <input
+                        type="email"
+                        value={settings.officialContactEmail || ""}
+                        onChange={(e) => setSettings((s) => ({ ...s, officialContactEmail: e.target.value }))}
+                        placeholder="contact@yourdomain.com (blank if unused)"
+                        className={inputClass}
+                      />
                     </div>
                     <div>
-                      <h2 className="font-extrabold text-base text-foreground flex items-center gap-2">
-                        Canonical Webmaster Authority
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
-                          Root Access Active
-                        </span>
-                      </h2>
-                      <p className="text-xs text-muted-foreground mt-0.5">
-                        Verified Webmaster identity enforced at Firestore and server-side authentication boundaries.
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        navigator.clipboard.writeText("OXGYTyWBcdYNcHkWyXPbOvVlV2h1");
-                        setCopiedUid(true);
-                        toast.success("Webmaster UID copied to clipboard");
-                        setTimeout(() => setCopiedUid(false), 2000);
-                      }}
-                      className="px-3 py-1.5 bg-muted/60 hover:bg-muted text-foreground text-xs font-semibold rounded-xl border border-border flex items-center gap-1.5 transition"
-                    >
-                      {copiedUid ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
-                      <span>Copy Webmaster UID</span>
-                    </button>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
-                  <div className="p-3.5 rounded-2xl bg-muted/30 border border-border">
-                    <span className="text-[11px] font-medium text-muted-foreground block">Webmaster UID</span>
-                    <span className="font-mono text-xs font-bold text-foreground block mt-1 select-all truncate">
-                      OXGYTyWBcdYNcHkWyXPbOvVlV2h1
-                    </span>
-                  </div>
-                  <div className="p-3.5 rounded-2xl bg-muted/30 border border-border">
-                    <span className="text-[11px] font-medium text-muted-foreground block">Authorized Email</span>
-                    <span className="font-mono text-xs font-bold text-foreground block mt-1 select-all truncate">
-                      linkcloud111@gmail.com
-                    </span>
-                  </div>
-                  <div className="p-3.5 rounded-2xl bg-muted/30 border border-border">
-                    <span className="text-[11px] font-medium text-muted-foreground block">Authorized Mobile</span>
-                    <span className="font-mono text-xs font-bold text-foreground block mt-1 select-all truncate">
-                      +91 79874 10765
-                    </span>
-                  </div>
-                </div>
-
-                <div className="p-4 rounded-2xl bg-primary/5 border border-primary/10 text-xs text-muted-foreground space-y-1">
-                  <p className="font-semibold text-foreground flex items-center gap-1.5">
-                    <Lock className="w-3.5 h-3.5 text-primary" /> Security & Role Immutability Policy
-                  </p>
-                  <p className="leading-relaxed">
-                    LinkCloud enforces a strict zero-admin role hierarchy. The <code className="text-primary font-mono">webmaster</code> role is the only privileged role. Direct writes to <code className="text-primary font-mono">/webmaster</code> are permanently disabled in Firestore rules (<code className="text-primary font-mono">allow write: if false</code>), and user documents disallow role or status elevation.
-                  </p>
-                </div>
-              </div>
-
-              {/* 2. Change Webmaster Password Form */}
-              <div className="bg-card border border-border rounded-3xl p-6 shadow-sm space-y-5">
-                <div className="border-b border-border pb-3 flex items-center justify-between">
-                  <div>
-                    <h2 className="font-bold text-base flex items-center gap-2">
-                      <KeyRound className="w-5 h-5 text-amber-500" /> Change Webmaster Password
-                    </h2>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      Update the password used for email authentication at <code className="font-mono text-foreground">/webmaster/login</code>.
-                    </p>
-                  </div>
-                </div>
-
-                <div className="space-y-4 max-w-lg">
-                  <div>
-                    <label className={labelClass}>Current Password</label>
-                    <div className="relative">
+                      <label className={labelClass}>Support Email</label>
                       <input
-                        type={showCurrentWebmasterPass ? "text" : "password"}
-                        value={currentWebmasterPass}
-                        onChange={(e) => setCurrentWebmasterPass(e.target.value)}
-                        placeholder="Enter current webmaster password"
+                        type="email"
+                        value={settings.supportEmail || ""}
+                        onChange={(e) => setSettings((s) => ({ ...s, supportEmail: e.target.value }))}
+                        placeholder="support@yourdomain.com (blank if unused)"
                         className={inputClass}
-                        autoComplete="current-password"
                       />
-                      <button
-                        type="button"
-                        onClick={() => setShowCurrentWebmasterPass(!showCurrentWebmasterPass)}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground p-1"
-                        tabIndex={-1}
-                      >
-                        {showCurrentWebmasterPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                      </button>
                     </div>
                   </div>
 
-                  <div>
-                    <label className={labelClass}>New Password</label>
-                    <div className="relative">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className={labelClass}>Phone / Support Mobile</label>
                       <input
-                        type={showNewWebmasterPass ? "text" : "password"}
-                        value={newWebmasterPass}
-                        onChange={(e) => setNewWebmasterPass(e.target.value)}
-                        placeholder="Enter robust new password (min. 8 characters)"
+                        value={settings.supportMobile || ""}
+                        onChange={(e) => setSettings((s) => ({ ...s, supportMobile: e.target.value }))}
+                        placeholder="e.g. +91 98765 43210 (blank if unused)"
                         className={inputClass}
-                        autoComplete="new-password"
                       />
-                      <button
-                        type="button"
-                        onClick={() => setShowNewWebmasterPass(!showNewWebmasterPass)}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground p-1"
-                        tabIndex={-1}
-                      >
-                        {showNewWebmasterPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                      </button>
                     </div>
-                    {newWebmasterPass && (
-                      <div className="mt-2 space-y-1">
-                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 text-[11px]">
-                          <span className={`flex items-center gap-1 ${newWebmasterPass.length >= 8 ? "text-emerald-500 font-semibold" : "text-muted-foreground"}`}>
-                            {newWebmasterPass.length >= 8 ? "✓" : "○"} 8+ characters
-                          </span>
-                          <span className={`flex items-center gap-1 ${/[A-Z]/.test(newWebmasterPass) ? "text-emerald-500 font-semibold" : "text-muted-foreground"}`}>
-                            {/[A-Z]/.test(newWebmasterPass) ? "✓" : "○"} Uppercase
-                          </span>
-                          <span className={`flex items-center gap-1 ${/[a-z]/.test(newWebmasterPass) ? "text-emerald-500 font-semibold" : "text-muted-foreground"}`}>
-                            {/[a-z]/.test(newWebmasterPass) ? "✓" : "○"} Lowercase
-                          </span>
-                          <span className={`flex items-center gap-1 ${/[0-9!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?]/.test(newWebmasterPass) ? "text-emerald-500 font-semibold" : "text-muted-foreground"}`}>
-                            {/[0-9!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?]/.test(newWebmasterPass) ? "✓" : "○"} Number/Symbol
-                          </span>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  <div>
-                    <label className={labelClass}>Confirm New Password</label>
-                    <div className="relative">
+                    <div>
+                      <label className={labelClass}>WhatsApp Contact Number</label>
                       <input
-                        type={showConfirmWebmasterPass ? "text" : "password"}
-                        value={confirmWebmasterPass}
-                        onChange={(e) => setConfirmWebmasterPass(e.target.value)}
-                        placeholder="Re-enter new password to confirm"
+                        value={settings.whatsappContactNumber || ""}
+                        onChange={(e) => setSettings((s) => ({ ...s, whatsappContactNumber: e.target.value }))}
+                        placeholder="e.g. +91 98765 43210 (blank if unused)"
                         className={inputClass}
-                        autoComplete="new-password"
                       />
-                      <button
-                        type="button"
-                        onClick={() => setShowConfirmWebmasterPass(!showConfirmWebmasterPass)}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground p-1"
-                        tabIndex={-1}
-                      >
-                        {showConfirmWebmasterPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                      </button>
                     </div>
-                    {confirmWebmasterPass && newWebmasterPass !== confirmWebmasterPass && (
-                      <p className="text-[11px] text-destructive font-semibold mt-1">
-                        Passwords do not match.
-                      </p>
-                    )}
                   </div>
 
-                  <div className="pt-2">
-                    <button
-                      type="button"
-                      onClick={handleChangeWebmasterPassword}
-                      disabled={updatingWebmasterPass || !currentWebmasterPass || !newWebmasterPass || newWebmasterPass !== confirmWebmasterPass}
-                      className="px-6 py-2.5 bg-primary text-primary-foreground font-bold text-xs rounded-xl flex items-center justify-center gap-2 shadow-sm hover:bg-primary/90 transition-all disabled:opacity-50"
-                    >
-                      {updatingWebmasterPass ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                      Update Webmaster Password
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              {/* 3. Password Reset Email Flow */}
-              <div className="bg-card border border-border rounded-3xl p-6 shadow-sm space-y-4">
-                <div className="border-b border-border pb-3 flex items-center justify-between">
-                  <div>
-                    <h2 className="font-bold text-base flex items-center gap-2">
-                      <Mail className="w-5 h-5 text-blue-500" /> Webmaster Password Reset Link
-                    </h2>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      Send a secure password recovery link to the canonical Webmaster email address.
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-2xl bg-muted/30 border border-border">
-                  <div>
-                    <p className="text-xs font-bold text-foreground">
-                      Recipient: <span className="font-mono text-primary">linkcloud111@gmail.com</span>
-                    </p>
-                    <p className="text-[11px] text-muted-foreground mt-0.5">
-                      LinkCloud uses Firebase Authentication secure email action handlers (<code className="font-mono">/verify-handler?mode=resetPassword</code>).
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={handleSendWebmasterPasswordReset}
-                    disabled={sendingResetEmail || resetEmailCooldown > 0}
-                    className="px-5 py-2.5 bg-secondary text-secondary-foreground font-bold text-xs rounded-xl hover:bg-secondary/80 transition flex items-center gap-2 flex-shrink-0 disabled:opacity-60"
-                  >
-                    {sendingResetEmail ? (
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    ) : (
-                      <Mail className="w-3.5 h-3.5" />
-                    )}
-                    {resetEmailCooldown > 0 ? `Resend in ${resetEmailCooldown}s` : "Dispatch Password Reset Link"}
-                  </button>
-                </div>
-              </div>
-
-              {/* 4. Authentication Audit & Security Logs */}
-              <div className="bg-card border border-border rounded-3xl p-6 shadow-sm space-y-4">
-                <div className="border-b border-border pb-3 flex items-center justify-between">
-                  <div>
-                    <h2 className="font-bold text-base flex items-center gap-2">
-                      <History className="w-5 h-5 text-emerald-500" /> Recent Webmaster Authentication Events
-                    </h2>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      Tamper-proof security audit log recording login attempts, OTP events, and credential updates.
-                    </p>
-                  </div>
-                  <span className="text-[11px] font-mono text-muted-foreground">
-                    Collection: /auth_event_logs
-                  </span>
-                </div>
-
-                <div className="overflow-x-auto">
-                  <table className="w-full text-xs text-left">
-                    <thead className="bg-muted/50 text-muted-foreground uppercase font-bold text-[10px]">
-                      <tr>
-                        <th className="p-3 rounded-l-xl">Event</th>
-                        <th className="p-3">Method</th>
-                        <th className="p-3">Outcome</th>
-                        <th className="p-3">Actor / Target</th>
-                        <th className="p-3 rounded-r-xl">Timestamp</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-border">
-                      {authEventLogs.slice(0, 10).map((log, idx) => (
-                        <tr key={idx} className="hover:bg-muted/20">
-                          <td className="p-3 font-semibold text-foreground flex items-center gap-2">
-                            <span className={`w-2 h-2 rounded-full ${log.outcome === "success" ? "bg-emerald-500" : "bg-destructive"}`} />
-                            {log.event}
-                          </td>
-                          <td className="p-3 font-mono text-muted-foreground">{log.method}</td>
-                          <td className="p-3">
-                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                              log.outcome === "success"
-                                ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
-                                : "bg-destructive/10 text-destructive"
-                            }`}>
-                              {log.outcome}
-                            </span>
-                          </td>
-                          <td className="p-3 font-mono text-muted-foreground truncate max-w-[180px]">
-                            {log.maskedIdentifier || log.uid || "N/A"}
-                          </td>
-                          <td className="p-3 text-muted-foreground whitespace-nowrap">
-                            {log.timestampIso ? new Date(log.timestampIso).toLocaleString("en-IN") : "Just now"}
-                          </td>
-                        </tr>
-                      ))}
-                      {authEventLogs.length === 0 && (
-                        <tr>
-                          <td colSpan={5} className="p-6 text-center text-muted-foreground">
-                            No security authentication logs recorded yet.
-                          </td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* TAB 3: ABOUT & HELP ARTICLES */}
-          {tab === "aboutHelp" && (
-            <div className="space-y-6">
-              <div className="bg-card border border-border rounded-3xl p-6 space-y-4 shadow-sm max-w-3xl">
-                <h2 className="font-bold text-base border-b border-border pb-3 flex items-center gap-2">
-                  <Info className="w-5 h-5 text-blue-500" /> About Us Page Copy
-                </h2>
-
-                <div>
-                  <label className={labelClass}>Page Header Title</label>
-                  <input
-                    value={settings.aboutTitle || ""}
-                    onChange={(e) => setSettings((s) => ({ ...s, aboutTitle: e.target.value }))}
-                    className={inputClass}
-                  />
-                </div>
-
-                <div>
-                  <label className={labelClass}>Main Description</label>
-                  <textarea
-                    value={settings.aboutDescription || ""}
-                    onChange={(e) => setSettings((s) => ({ ...s, aboutDescription: e.target.value }))}
-                    className="w-full h-24 p-3 bg-muted/30 border border-border rounded-xl text-xs font-mono outline-none"
-                  />
-                </div>
-
-                <div>
-                  <label className={labelClass}>Our Mission Statement</label>
-                  <textarea
-                    value={settings.aboutMission || ""}
-                    onChange={(e) => setSettings((s) => ({ ...s, aboutMission: e.target.value }))}
-                    className="w-full h-20 p-3 bg-muted/30 border border-border rounded-xl text-xs font-mono outline-none"
-                  />
-                </div>
-
-                <div>
-                  <label className={labelClass}>Our Vision Statement</label>
-                  <textarea
-                    value={settings.aboutVision || ""}
-                    onChange={(e) => setSettings((s) => ({ ...s, aboutVision: e.target.value }))}
-                    className="w-full h-20 p-3 bg-muted/30 border border-border rounded-xl text-xs font-mono outline-none"
-                  />
-                </div>
-              </div>
-
-              {/* Help Center Articles */}
-              <div className="bg-card border border-border rounded-3xl p-6 space-y-4 shadow-sm">
-                <div className="flex items-center justify-between border-b border-border pb-3">
-                  <div>
-                    <h2 className="font-bold text-base flex items-center gap-2">
-                      <HelpCircle className="w-5 h-5 text-emerald-500" /> Help Center Articles
-                    </h2>
-                    <p className="text-xs text-muted-foreground">Articles shown in Help Center (/help)</p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setArticleModalOpen(true)}
-                    className="px-3.5 py-1.5 bg-primary text-primary-foreground font-bold text-xs rounded-xl flex items-center gap-1.5"
-                  >
-                    <Plus className="w-4 h-4" /> Add Article
-                  </button>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  {helpArticles.map((article) => (
-                    <div key={article.id} className="p-4 bg-muted/20 border border-border rounded-2xl flex justify-between items-start">
-                      <div>
-                        <span className="text-[10px] font-bold text-primary uppercase tracking-wider">{article.category}</span>
-                        <h3 className="font-bold text-sm text-foreground">{article.title}</h3>
-                        <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{article.content}</p>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteArticle(article.id)}
-                        className="text-muted-foreground hover:text-destructive p-1"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className={labelClass}>Official Website URL</label>
+                      <input
+                        value={settings.officialWebsiteUrl || ""}
+                        onChange={(e) => setSettings((s) => ({ ...s, officialWebsiteUrl: e.target.value }))}
+                        placeholder="https://yourdomain.com"
+                        className={inputClass}
+                      />
                     </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
+                    <div>
+                      <label className={labelClass}>Office Working Hours</label>
+                      <input
+                        value={settings.officeHours || ""}
+                        onChange={(e) => setSettings((s) => ({ ...s, officeHours: e.target.value }))}
+                        placeholder="e.g. Mon – Sat, 10 AM to 6 PM IST"
+                        className={inputClass}
+                      />
+                    </div>
+                  </div>
 
-          {/* TAB 4: FAQ MANAGEMENT */}
-          {tab === "faq" && (
-            <div className="bg-card border border-border rounded-3xl p-6 space-y-4 shadow-sm">
-              <div className="flex items-center justify-between border-b border-border pb-3">
-                <div>
-                  <h2 className="font-bold text-base flex items-center gap-2">
-                    <HelpCircle className="w-5 h-5 text-primary" /> FAQ Management
+                  <div>
+                    <label className={labelClass}>Street / Office Address</label>
+                    <textarea
+                      value={settings.businessAddress || ""}
+                      onChange={(e) => setSettings((s) => ({ ...s, businessAddress: e.target.value }))}
+                      placeholder="Building, street, or office suite (leave blank if unused)"
+                      className="w-full h-16 p-3 bg-muted/30 border border-border rounded-xl text-xs font-mono outline-none"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                    <div>
+                      <label className={labelClass}>City</label>
+                      <input
+                        value={settings.city || ""}
+                        onChange={(e) => setSettings((s) => ({ ...s, city: e.target.value }))}
+                        placeholder="City"
+                        className={inputClass}
+                      />
+                    </div>
+                    <div>
+                      <label className={labelClass}>District</label>
+                      <input
+                        value={settings.district || ""}
+                        onChange={(e) => setSettings((s) => ({ ...s, district: e.target.value }))}
+                        placeholder="District"
+                        className={inputClass}
+                      />
+                    </div>
+                    <div>
+                      <label className={labelClass}>State</label>
+                      <input
+                        value={settings.state || ""}
+                        onChange={(e) => setSettings((s) => ({ ...s, state: e.target.value }))}
+                        placeholder="State"
+                        className={inputClass}
+                      />
+                    </div>
+                    <div>
+                      <label className={labelClass}>PIN / Postal Code</label>
+                      <input
+                        value={settings.pinCode || ""}
+                        onChange={(e) => setSettings((s) => ({ ...s, pinCode: e.target.value }))}
+                        placeholder="e.g. 110001"
+                        maxLength={12}
+                        className={inputClass}
+                      />
+                    </div>
+                    <div className="col-span-2 sm:col-span-2">
+                      <label className={labelClass}>Country</label>
+                      <input
+                        value={settings.country ?? ""}
+                        onChange={(e) => setSettings((s) => ({ ...s, country: e.target.value }))}
+                        placeholder="India"
+                        className={inputClass}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Social Media Channels */}
+                <div className="bg-card border border-border rounded-3xl p-6 space-y-3 shadow-sm">
+                  <h2 className="font-bold text-base border-b border-border pb-3 flex items-center gap-2">
+                    <Share2 className="w-5 h-5 text-blue-500" /> Official Social Handles &amp; Channels
                   </h2>
-                  <p className="text-xs text-muted-foreground">
-                    Add, edit, enable, and sort frequently asked questions across the directory.
+
+                  <SocialInput label="WhatsApp Channel URL" value={settings.whatsappUrl} onChange={(val) => setSettings((s) => ({ ...s, whatsappUrl: val }))} />
+                  <SocialInput label="Telegram Channel URL" value={settings.telegramUrl} onChange={(val) => setSettings((s) => ({ ...s, telegramUrl: val }))} />
+                  <SocialInput label="YouTube Channel URL" value={settings.youtubeUrl} onChange={(val) => setSettings((s) => ({ ...s, youtubeUrl: val }))} />
+                  <SocialInput label="Instagram Page URL" value={settings.instagramUrl} onChange={(val) => setSettings((s) => ({ ...s, instagramUrl: val }))} />
+                  <SocialInput label="Facebook Page URL" value={settings.facebookUrl} onChange={(val) => setSettings((s) => ({ ...s, facebookUrl: val }))} />
+                  <SocialInput label="LinkedIn Page URL" value={settings.linkedinUrl} onChange={(val) => setSettings((s) => ({ ...s, linkedinUrl: val }))} />
+                  <SocialInput label="X (Twitter) Profile URL" value={settings.twitterUrl} onChange={(val) => setSettings((s) => ({ ...s, twitterUrl: val }))} />
+                  <SocialInput label="Reddit Subreddit URL" value={settings.redditUrl} onChange={(val) => setSettings((s) => ({ ...s, redditUrl: val }))} />
+                  <SocialInput label="GitHub Repository URL" value={settings.githubUrl} onChange={(val) => setSettings((s) => ({ ...s, githubUrl: val }))} />
+                </div>
+              </div>
+
+              {/* 8 Contact Visibility Switches */}
+              <div className="bg-card border border-border rounded-3xl p-6 space-y-4 shadow-sm">
+                <div className="border-b border-border pb-3">
+                  <h2 className="font-bold text-base flex items-center gap-2">
+                    <Eye className="w-5 h-5 text-primary" /> Contact Information Visibility Switches
+                  </h2>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Control individually where and which public contact details appear across the website without deleting saved values.
                   </p>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setEditingFaq(null);
-                    setFaqForm({ question: "", answer: "", category: "General", sortOrder: faqs.length + 1, enabled: true });
-                    setFaqModalOpen(true);
-                  }}
-                  className="px-4 py-2 bg-primary text-primary-foreground font-bold text-xs rounded-xl flex items-center gap-2 shadow-sm"
-                >
-                  <Plus className="w-4 h-4" /> Add FAQ Item
-                </button>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                  <ToggleCard
+                    title="Complete Contact Section"
+                    description="Master switch for public contact info blocks"
+                    enabled={settings.showCompleteContactSection !== false}
+                    onToggle={() =>
+                      setSettings((s) => ({
+                        ...s,
+                        showCompleteContactSection: s.showCompleteContactSection === false,
+                      }))
+                    }
+                  />
+                  <ToggleCard
+                    title="Show on Contact Page"
+                    description="Display contact cards on /contact"
+                    enabled={settings.showContactOnContactPage !== false}
+                    onToggle={() =>
+                      setSettings((s) => ({
+                        ...s,
+                        showContactOnContactPage: s.showContactOnContactPage === false,
+                      }))
+                    }
+                  />
+                  <ToggleCard
+                    title="Show in Site Footer"
+                    description="Display contact details in footer brand bar"
+                    enabled={settings.showContactInFooter !== false}
+                    onToggle={() =>
+                      setSettings((s) => ({
+                        ...s,
+                        showContactInFooter: s.showContactInFooter === false,
+                      }))
+                    }
+                  />
+                  <ToggleCard
+                    title="Show Contact Email"
+                    description="Reveal official contact email publicly"
+                    enabled={settings.showContactEmail !== false}
+                    onToggle={() =>
+                      setSettings((s) => ({
+                        ...s,
+                        showContactEmail: s.showContactEmail === false,
+                      }))
+                    }
+                  />
+                  <ToggleCard
+                    title="Show Support Email"
+                    description="Reveal support email publicly"
+                    enabled={settings.showSupportEmail !== false}
+                    onToggle={() =>
+                      setSettings((s) => ({
+                        ...s,
+                        showSupportEmail: s.showSupportEmail === false,
+                      }))
+                    }
+                  />
+                  <ToggleCard
+                    title="Show Phone Number"
+                    description="Reveal support mobile helpline"
+                    enabled={settings.showPhoneNumber !== false}
+                    onToggle={() =>
+                      setSettings((s) => ({
+                        ...s,
+                        showPhoneNumber: s.showPhoneNumber === false,
+                      }))
+                    }
+                  />
+                  <ToggleCard
+                    title="Show WhatsApp Contact"
+                    description="Reveal WhatsApp support number"
+                    enabled={settings.showWhatsAppContact !== false}
+                    onToggle={() =>
+                      setSettings((s) => ({
+                        ...s,
+                        showWhatsAppContact: s.showWhatsAppContact === false,
+                      }))
+                    }
+                  />
+                  <ToggleCard
+                    title="Show Office Address"
+                    description="Reveal formatted address & location"
+                    enabled={settings.showAddress !== false}
+                    onToggle={() =>
+                      setSettings((s) => ({
+                        ...s,
+                        showAddress: s.showAddress === false,
+                      }))
+                    }
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
+
+
+          {/* TAB 7: GLOBAL SEO MANAGEMENT */}
+          {tab === "seo" && (
+            <div className="space-y-6">
+              <div className="bg-muted/20 border border-border rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="space-y-1">
+                  <p className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                    <Globe className="w-4 h-4 text-primary" /> Global Website SEO Defaults vs. Per-Page CMS SEO
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Configure sitewide defaults, canonical domain origin, social fallback tags, and global WebSite JSON-LD here. To edit per-page SEO &amp; <code className="font-mono">noindex</code> for individual public pages, use the dedicated CMS tabs.
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setTab("aboutHelp")}
+                    className="px-3 py-1.5 rounded-xl bg-card border border-border hover:border-primary/40 text-xs font-bold text-foreground transition"
+                  >
+                    About / Help / FAQ SEO
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setTab("legal")}
+                    className="px-3 py-1.5 rounded-xl bg-card border border-border hover:border-primary/40 text-xs font-bold text-foreground transition"
+                  >
+                    Legal Pages SEO
+                  </button>
+                </div>
               </div>
 
-              <div className="space-y-3">
-                {faqs.map((f, i) => (
-                  <div key={f.id} className="p-4 bg-muted/20 border border-border rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                    <div className="space-y-1 flex-1">
-                      <div className="flex items-center gap-2">
-                        <span className="text-[10px] font-extrabold bg-primary/10 text-primary px-2 py-0.5 rounded-full">
-                          #{f.sortOrder || i + 1}
-                        </span>
-                        <span className="text-[10px] font-bold text-muted-foreground uppercase">{f.category}</span>
-                        {!f.enabled && (
-                          <span className="text-[10px] bg-rose-500/10 text-rose-500 px-2 py-0.5 rounded-full font-bold">
-                            Disabled
-                          </span>
-                        )}
-                      </div>
-                      <h3 className="font-bold text-sm text-foreground">{f.question}</h3>
-                      <p className="text-xs text-muted-foreground">{f.answer}</p>
-                    </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="bg-card border border-border rounded-3xl p-6 space-y-4 shadow-sm">
+                  <h2 className="font-bold text-base border-b border-border pb-3 flex items-center gap-2">
+                    <Search className="w-5 h-5 text-primary" /> Global Meta Tags &amp; Open Graph Defaults
+                  </h2>
 
-                    <div className="flex items-center gap-2 self-end sm:self-auto">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setEditingFaq(f);
-                          setFaqForm({
-                            question: f.question,
-                            answer: f.answer,
-                            category: f.category || "General",
-                            sortOrder: f.sortOrder || i + 1,
-                            enabled: f.enabled !== false,
-                          });
-                          setFaqModalOpen(true);
-                        }}
-                        className="p-2 rounded-xl bg-muted hover:bg-muted/80 text-foreground transition-colors"
-                      >
-                        <Edit2 className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteFaq(f.id)}
-                        className="p-2 rounded-xl bg-destructive/10 text-destructive hover:bg-destructive/20 transition-colors"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+                  <div>
+                    <label className={labelClass}>Website Default Meta Title</label>
+                    <input
+                      value={settings.metaTitle || ""}
+                      onChange={(e) => setSettings((s) => ({ ...s, metaTitle: e.target.value }))}
+                      maxLength={200}
+                      className={inputClass}
+                    />
+                  </div>
+
+                  <div>
+                    <label className={labelClass}>Website Default Meta Description</label>
+                    <textarea
+                      value={settings.metaDescription || ""}
+                      onChange={(e) => setSettings((s) => ({ ...s, metaDescription: e.target.value }))}
+                      maxLength={500}
+                      className="w-full h-24 p-3 bg-muted/30 border border-border rounded-xl text-xs font-mono outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className={labelClass}>Meta Keywords (comma separated)</label>
+                    <input
+                      value={settings.metaKeywords || ""}
+                      onChange={(e) => setSettings((s) => ({ ...s, metaKeywords: e.target.value }))}
+                      maxLength={500}
+                      className={inputClass}
+                    />
+                  </div>
+
+                  <div>
+                    <label className={labelClass}>Canonical URL Base (Origin)</label>
+                    <input
+                      value={settings.canonicalUrl || ""}
+                      onChange={(e) => setSettings((s) => ({ ...s, canonicalUrl: e.target.value }))}
+                      placeholder="https://yourdomain.com"
+                      className={inputClass}
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-border/50">
+                    <div>
+                      <label className={labelClass}>Default Open Graph Title</label>
+                      <input
+                        value={settings.ogTitle || ""}
+                        onChange={(e) => setSettings((s) => ({ ...s, ogTitle: e.target.value }))}
+                        maxLength={200}
+                        placeholder="Homepage / fallback og:title"
+                        className={inputClass}
+                      />
+                    </div>
+                    <div>
+                      <label className={labelClass}>Default Twitter Card Title</label>
+                      <input
+                        value={settings.twitterCardTitle || ""}
+                        onChange={(e) => setSettings((s) => ({ ...s, twitterCardTitle: e.target.value }))}
+                        maxLength={200}
+                        placeholder="Fallback twitter:title"
+                        className={inputClass}
+                      />
                     </div>
                   </div>
-                ))}
-              </div>
-            </div>
-          )}
 
-          {/* TAB 5: CONTACT & SOCIAL LINKS */}
-          {tab === "contactSocial" && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="bg-card border border-border rounded-3xl p-6 space-y-4 shadow-sm">
-                <h2 className="font-bold text-base border-b border-border pb-3 flex items-center gap-2">
-                  <Phone className="w-5 h-5 text-primary" /> Contact Details & Office Info
-                </h2>
+                  <div>
+                    <label className={labelClass}>Default Open Graph Description</label>
+                    <textarea
+                      value={settings.ogDescription || ""}
+                      onChange={(e) => setSettings((s) => ({ ...s, ogDescription: e.target.value }))}
+                      maxLength={500}
+                      placeholder="Fallback og:description when a route does not specify one"
+                      className="w-full h-16 p-3 bg-muted/30 border border-border rounded-xl text-xs font-mono outline-none"
+                    />
+                  </div>
 
-                <div>
-                  <label className={labelClass}>Support Email</label>
-                  <input
-                    type="email"
-                    value={settings.supportEmail || ""}
-                    onChange={(e) => setSettings((s) => ({ ...s, supportEmail: e.target.value }))}
-                    className={inputClass}
-                  />
+                  <div>
+                    <label className={labelClass}>Default Twitter Card Description</label>
+                    <textarea
+                      value={settings.twitterCardDescription || ""}
+                      onChange={(e) => setSettings((s) => ({ ...s, twitterCardDescription: e.target.value }))}
+                      maxLength={500}
+                      placeholder="Fallback twitter:description"
+                      className="w-full h-16 p-3 bg-muted/30 border border-border rounded-xl text-xs font-mono outline-none"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className={labelClass}>Open Graph Banner Image URL</label>
+                      <input
+                        value={settings.ogImage || ""}
+                        onChange={(e) => setSettings((s) => ({ ...s, ogImage: e.target.value }))}
+                        placeholder="https://... or /og-banner.png"
+                        className={inputClass}
+                      />
+                    </div>
+                    <div>
+                      <label className={labelClass}>Twitter Card Image URL</label>
+                      <input
+                        value={settings.twitterCardImage || ""}
+                        onChange={(e) => setSettings((s) => ({ ...s, twitterCardImage: e.target.value }))}
+                        placeholder="https://... or /twitter-card.png"
+                        className={inputClass}
+                      />
+                    </div>
+                  </div>
                 </div>
 
-                <div>
-                  <label className={labelClass}>Support Mobile Helpline</label>
-                  <input
-                    value={settings.supportMobile || ""}
-                    onChange={(e) => setSettings((s) => ({ ...s, supportMobile: e.target.value }))}
-                    className={inputClass}
-                  />
-                </div>
+                {/* Robots.txt & Sitemap.xml Templates & Schema Markup */}
+                <div className="bg-card border border-border rounded-3xl p-6 space-y-4 shadow-sm">
+                  <h2 className="font-bold text-base border-b border-border pb-3 flex items-center gap-2">
+                    <Code2 className="w-5 h-5 text-emerald-500" /> Global Schema Markup &amp; Static Crawler Info
+                  </h2>
 
-                <div>
-                  <label className={labelClass}>Business Physical Address</label>
-                  <textarea
-                    value={settings.businessAddress || ""}
-                    onChange={(e) => setSettings((s) => ({ ...s, businessAddress: e.target.value }))}
-                    className="w-full h-20 p-3 bg-muted/30 border border-border rounded-xl text-xs font-mono outline-none"
-                  />
-                </div>
+                  <p className="text-[11px] text-muted-foreground bg-muted/30 p-3 rounded-xl border border-border leading-relaxed">
+                    Global JSON-LD updates the live runtime <code className="font-mono text-foreground">&lt;head&gt;</code> structured data tag immediately. Live dynamic <code className="font-mono text-foreground">/robots.txt</code> and <code className="font-mono text-foreground">/sitemap.xml</code> routes automatically reflect your Canonical Origin, indexing switch, and published public CMS/group pages.
+                  </p>
 
-                <div>
-                  <label className={labelClass}>Office Working Hours</label>
-                  <input
-                    value={settings.officeHours || ""}
-                    onChange={(e) => setSettings((s) => ({ ...s, officeHours: e.target.value }))}
-                    className={inputClass}
-                  />
-                </div>
-
-                <div>
-                  <label className={labelClass}>Google Maps Embed URL</label>
-                  <input
-                    value={settings.googleMapUrl || ""}
-                    onChange={(e) => setSettings((s) => ({ ...s, googleMapUrl: e.target.value }))}
-                    className={inputClass}
-                  />
-                </div>
-              </div>
-
-              {/* Social Media Channels */}
-              <div className="bg-card border border-border rounded-3xl p-6 space-y-3 shadow-sm">
-                <h2 className="font-bold text-base border-b border-border pb-3 flex items-center gap-2">
-                  <Share2 className="w-5 h-5 text-blue-500" /> Official Social Handles & Channels
-                </h2>
-
-                <SocialInput label="WhatsApp Channel URL" value={settings.whatsappUrl} onChange={(val) => setSettings((s) => ({ ...s, whatsappUrl: val }))} />
-                <SocialInput label="Telegram Channel URL" value={settings.telegramUrl} onChange={(val) => setSettings((s) => ({ ...s, telegramUrl: val }))} />
-                <SocialInput label="YouTube Channel URL" value={settings.youtubeUrl} onChange={(val) => setSettings((s) => ({ ...s, youtubeUrl: val }))} />
-                <SocialInput label="Instagram Page URL" value={settings.instagramUrl} onChange={(val) => setSettings((s) => ({ ...s, instagramUrl: val }))} />
-                <SocialInput label="Facebook Page URL" value={settings.facebookUrl} onChange={(val) => setSettings((s) => ({ ...s, facebookUrl: val }))} />
-                <SocialInput label="LinkedIn Page URL" value={settings.linkedinUrl} onChange={(val) => setSettings((s) => ({ ...s, linkedinUrl: val }))} />
-                <SocialInput label="X (Twitter) Profile URL" value={settings.twitterUrl} onChange={(val) => setSettings((s) => ({ ...s, twitterUrl: val }))} />
-                <SocialInput label="Reddit Subreddit URL" value={settings.redditUrl} onChange={(val) => setSettings((s) => ({ ...s, redditUrl: val }))} />
-                <SocialInput label="GitHub Repository URL" value={settings.githubUrl} onChange={(val) => setSettings((s) => ({ ...s, githubUrl: val }))} />
-              </div>
-            </div>
-          )}
-
-          {/* TAB 6: LEGAL PAGES */}
-          {tab === "legal" && (
-            <div className="bg-card border border-border rounded-3xl p-6 space-y-5 shadow-sm">
-              <h2 className="font-bold text-base border-b border-border pb-3 flex items-center gap-2">
-                <FileText className="w-5 h-5 text-primary" /> Static Legal Pages Copy
-              </h2>
-
-              <div>
-                <label className={labelClass}>Privacy Policy Content</label>
-                <textarea
-                  value={settings.privacyPolicyContent || ""}
-                  onChange={(e) => setSettings((s) => ({ ...s, privacyPolicyContent: e.target.value }))}
-                  className="w-full h-36 p-3 bg-muted/30 border border-border rounded-xl text-xs font-mono outline-none"
-                />
-              </div>
-
-              <div>
-                <label className={labelClass}>Terms of Service Content</label>
-                <textarea
-                  value={settings.termsContent || ""}
-                  onChange={(e) => setSettings((s) => ({ ...s, termsContent: e.target.value }))}
-                  className="w-full h-36 p-3 bg-muted/30 border border-border rounded-xl text-xs font-mono outline-none"
-                />
-              </div>
-
-              <div>
-                <label className={labelClass}>DMCA Copyright Policy Content</label>
-                <textarea
-                  value={settings.dmcaContent || ""}
-                  onChange={(e) => setSettings((s) => ({ ...s, dmcaContent: e.target.value }))}
-                  className="w-full h-36 p-3 bg-muted/30 border border-border rounded-xl text-xs font-mono outline-none"
-                />
-              </div>
-
-              <div>
-                <label className={labelClass}>General Legal Disclaimer</label>
-                <textarea
-                  value={settings.disclaimerContent || ""}
-                  onChange={(e) => setSettings((s) => ({ ...s, disclaimerContent: e.target.value }))}
-                  className="w-full h-28 p-3 bg-muted/30 border border-border rounded-xl text-xs font-mono outline-none"
-                />
-              </div>
-            </div>
-          )}
-
-          {/* TAB 7: SEO MANAGEMENT */}
-          {tab === "seo" && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="bg-card border border-border rounded-3xl p-6 space-y-4 shadow-sm">
-                <h2 className="font-bold text-base border-b border-border pb-3 flex items-center gap-2">
-                  <Search className="w-5 h-5 text-primary" /> Meta Tags & Open Graph
-                </h2>
-
-                <div>
-                  <label className={labelClass}>Website Default Meta Title</label>
-                  <input
-                    value={settings.metaTitle || ""}
-                    onChange={(e) => setSettings((s) => ({ ...s, metaTitle: e.target.value }))}
-                    className={inputClass}
-                  />
-                </div>
-
-                <div>
-                  <label className={labelClass}>Website Default Meta Description</label>
-                  <textarea
-                    value={settings.metaDescription || ""}
-                    onChange={(e) => setSettings((s) => ({ ...s, metaDescription: e.target.value }))}
-                    className="w-full h-24 p-3 bg-muted/30 border border-border rounded-xl text-xs font-mono outline-none"
-                  />
-                </div>
-
-                <div>
-                  <label className={labelClass}>Meta Keywords (comma separated)</label>
-                  <input
-                    value={settings.metaKeywords || ""}
-                    onChange={(e) => setSettings((s) => ({ ...s, metaKeywords: e.target.value }))}
-                    className={inputClass}
-                  />
-                </div>
-
-                <div>
-                  <label className={labelClass}>Canonical URL Base</label>
-                  <input
-                    value={settings.canonicalUrl || ""}
-                    onChange={(e) => setSettings((s) => ({ ...s, canonicalUrl: e.target.value }))}
-                    className={inputClass}
-                  />
-                </div>
-
-                <div>
-                  <label className={labelClass}>Open Graph Banner Image URL</label>
-                  <input
-                    value={settings.ogImage || ""}
-                    onChange={(e) => setSettings((s) => ({ ...s, ogImage: e.target.value }))}
-                    className={inputClass}
-                  />
-                </div>
-
-                <div>
-                  <label className={labelClass}>Twitter Card Image URL</label>
-                  <input
-                    value={settings.twitterCardImage || ""}
-                    onChange={(e) => setSettings((s) => ({ ...s, twitterCardImage: e.target.value }))}
-                    className={inputClass}
-                  />
-                </div>
-              </div>
-
-              {/* Robots.txt & Sitemap.xml */}
-              <div className="bg-card border border-border rounded-3xl p-6 space-y-4 shadow-sm">
-                <h2 className="font-bold text-base border-b border-border pb-3 flex items-center gap-2">
-                  <Code2 className="w-5 h-5 text-emerald-500" /> Crawlers & Schema Markup
-                </h2>
-
-                <div>
-                  <label className={labelClass}>robots.txt Content</label>
-                  <textarea
-                    value={settings.robotsTxtContent || ""}
-                    onChange={(e) => setSettings((s) => ({ ...s, robotsTxtContent: e.target.value }))}
-                    className="w-full h-28 p-3 bg-muted/30 border border-border rounded-xl text-xs font-mono outline-none"
-                  />
-                </div>
-
-                <div>
-                  <label className={labelClass}>sitemap.xml Template</label>
-                  <textarea
-                    value={settings.sitemapXmlContent || ""}
-                    onChange={(e) => setSettings((s) => ({ ...s, sitemapXmlContent: e.target.value }))}
-                    className="w-full h-32 p-3 bg-muted/30 border border-border rounded-xl text-xs font-mono outline-none"
-                  />
-                </div>
-
-                <div>
-                  <label className={labelClass}>Structured Data (JSON-LD Schema)</label>
-                  <textarea
-                    value={settings.structuredDataJson || ""}
-                    onChange={(e) => setSettings((s) => ({ ...s, structuredDataJson: e.target.value }))}
-                    className="w-full h-28 p-3 bg-muted/30 border border-border rounded-xl text-xs font-mono outline-none"
-                  />
+                  <div>
+                    <label className={labelClass}>Global WebSite Structured Data (JSON-LD)</label>
+                    <textarea
+                      value={settings.structuredDataJson || ""}
+                      onChange={(e) => setSettings((s) => ({ ...s, structuredDataJson: e.target.value }))}
+                      className="w-full h-44 p-3 bg-muted/30 border border-border rounded-xl text-xs font-mono outline-none"
+                    />
+                  </div>
                 </div>
               </div>
             </div>
@@ -1776,24 +1471,25 @@ export default function AdminSettings() {
                 <ToggleCard
                   title="Group Link Submissions"
                   description="Master platform switch to enable or pause community submissions"
-                  enabled={settings.groupSubmissionEnabled !== false}
+                  enabled={settings.groupSubmissionEnabled === true}
                   onToggle={() =>
                     setSettings((s) => ({
                       ...s,
-                      groupSubmissionEnabled: s.groupSubmissionEnabled === false ? true : false,
+                      groupSubmissionEnabled: s.groupSubmissionEnabled !== true,
                     }))
                   }
                 />
                 <ToggleCard
-                  title="Guest & Public Submissions"
-                  description="Allow unregistered visitors to submit links without signing in"
-                  enabled={settings.allowPublicSubmissions !== false}
-                  onToggle={() =>
+                  title="Guest & Public Submissions (Disabled)"
+                  description="Sign-in is permanently required to submit communities; anonymous guest submissions cannot be enabled."
+                  enabled={false}
+                  onToggle={() => {
+                    toast.info("Sign-in is required for all community submissions by security policy.");
                     setSettings((s) => ({
                       ...s,
-                      allowPublicSubmissions: s.allowPublicSubmissions === false ? true : false,
-                    }))
-                  }
+                      allowPublicSubmissions: false,
+                    }));
+                  }}
                 />
                 <ToggleCard
                   title="Bookmark & Favorites"
@@ -1818,6 +1514,76 @@ export default function AdminSettings() {
                   description="Enable public webmaster contact page"
                   enabled={settings.contactFormEnabled}
                   onToggle={() => setSettings((s) => ({ ...s, contactFormEnabled: !s.contactFormEnabled }))}
+                />
+                <ToggleCard
+                  title="Website Announcements Banner"
+                  description="Show active global announcements banner across the site"
+                  enabled={settings.announcementsEnabled !== false}
+                  onToggle={() =>
+                    setSettings((s) => ({
+                      ...s,
+                      announcementsEnabled: s.announcementsEnabled === false,
+                    }))
+                  }
+                />
+                <ToggleCard
+                  title="Global Directory Search"
+                  description="Enable search bars on homepage and community directory"
+                  enabled={settings.searchEnabled !== false}
+                  onToggle={() =>
+                    setSettings((s) => ({
+                      ...s,
+                      searchEnabled: s.searchEnabled === false,
+                    }))
+                  }
+                />
+                <ToggleCard
+                  title="Public Group Directory"
+                  description="Allow public visitors to browse approved communities"
+                  enabled={settings.publicDirectoryEnabled !== false}
+                  onToggle={() =>
+                    setSettings((s) => ({
+                      ...s,
+                      publicDirectoryEnabled: s.publicDirectoryEnabled === false,
+                    }))
+                  }
+                />
+                <ToggleCard
+                  title="Member Profile Editing"
+                  description="Allow signed-in members to edit profile details and avatar"
+                  enabled={settings.profileEditingEnabled !== false}
+                  onToggle={() =>
+                    setSettings((s) => ({
+                      ...s,
+                      profileEditingEnabled: s.profileEditingEnabled === false,
+                    }))
+                  }
+                />
+                <ToggleCard
+                  title="Auto-Approve Submitted Groups"
+                  description="Publish new member group submissions immediately without pending queue review"
+                  enabled={settings.autoApproveGroups === true}
+                  onToggle={() =>
+                    setSettings((s) => {
+                      const nextAuto = s.autoApproveGroups !== true;
+                      return {
+                        ...s,
+                        autoApproveGroups: nextAuto,
+                        requireApproval: !nextAuto,
+                      };
+                    })
+                  }
+                />
+                <ToggleCard
+                  title="Require Group Logo Image"
+                  description="Require submitting a community logo image URL or upload before acceptance"
+                  enabled={settings.requireGroupLogo === true}
+                  onToggle={() =>
+                    setSettings((s) => ({
+                      ...s,
+                      requireGroupLogo: s.requireGroupLogo !== true,
+                    }))
+                  }
                 />
                 <ToggleCard
                   title="Maintenance Mode"
@@ -1845,6 +1611,99 @@ export default function AdminSettings() {
                   </div>
                 )}
               </div>
+
+              <div className="pt-4 border-t border-border space-y-4">
+                <div>
+                  <h3 className="font-bold text-sm text-foreground">
+                    Community Submission Field Limits
+                  </h3>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Authoritative limits enforced across Submit, Edit, and API validation.
+                  </p>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  <div>
+                    <label className={labelClass}>Group Name Max Length (30–150)</label>
+                    <input
+                      type="number"
+                      min={30}
+                      max={150}
+                      value={settings.groupNameMaxLength ?? 100}
+                      onChange={(e) =>
+                        setSettings((s) => ({
+                          ...s,
+                          groupNameMaxLength: Number(e.target.value) || 100,
+                        }))
+                      }
+                      className={inputClass}
+                    />
+                  </div>
+                  <div>
+                    <label className={labelClass}>Group Tagline Max Length (30–200)</label>
+                    <input
+                      type="number"
+                      min={30}
+                      max={200}
+                      value={settings.groupTaglineMaxLength ?? 120}
+                      onChange={(e) =>
+                        setSettings((s) => ({
+                          ...s,
+                          groupTaglineMaxLength: Number(e.target.value) || 120,
+                        }))
+                      }
+                      className={inputClass}
+                    />
+                  </div>
+                  <div>
+                    <label className={labelClass}>Description Max Length (100–2000)</label>
+                    <input
+                      type="number"
+                      min={100}
+                      max={2000}
+                      value={settings.groupDescriptionMaxLength ?? 500}
+                      onChange={(e) =>
+                        setSettings((s) => ({
+                          ...s,
+                          groupDescriptionMaxLength: Number(e.target.value) || 500,
+                        }))
+                      }
+                      className={inputClass}
+                    />
+                  </div>
+                  <div>
+                    <label className={labelClass}>Rules Max Length (100–2000)</label>
+                    <input
+                      type="number"
+                      min={100}
+                      max={2000}
+                      value={settings.groupRulesMaxLength ?? 1000}
+                      onChange={(e) =>
+                        setSettings((s) => ({
+                          ...s,
+                          groupRulesMaxLength: Number(e.target.value) || 1000,
+                        }))
+                      }
+                      className={inputClass}
+                    />
+                  </div>
+                  <div>
+                    <label className={labelClass}>Max Tags Per Group (1–25)</label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={25}
+                      value={settings.maxTagsPerGroup ?? 10}
+                      onChange={(e) =>
+                        setSettings((s) => ({
+                          ...s,
+                          maxTagsPerGroup: Number(e.target.value) || 10,
+                        }))
+                      }
+                      className={inputClass}
+                    />
+                  </div>
+                </div>
+              </div>
             </div>
           )}
 
@@ -1869,21 +1728,8 @@ export default function AdminSettings() {
                     setSettings((s) => ({
                       ...s,
                       filterSettings: {
-                        ...(s.filterSettings || {
-                          categoryFilterEnabled: true,
-                          platformFilterEnabled: true,
-                          contentTypeFilterEnabled: true,
-                          languageFilterEnabled: true,
-                          stateFilterEnabled: true,
-                          districtFilterEnabled: true,
-                          cityFilterEnabled: true,
-                          linkStatusFilterEnabled: true,
-                          featuredFilterEnabled: true,
-                          popularFilterEnabled: true,
-                          newestFilterEnabled: true,
-                          verifiedFilterEnabled: true,
-                          approvalStatusFilterEnabled: true,
-                        }),
+                        ...DEFAULT_FILTER_SETTINGS,
+                        ...(s.filterSettings || {}),
                         categoryFilterEnabled: !(s.filterSettings?.categoryFilterEnabled ?? true),
                       },
                     }))
@@ -1897,21 +1743,8 @@ export default function AdminSettings() {
                     setSettings((s) => ({
                       ...s,
                       filterSettings: {
-                        ...(s.filterSettings || {
-                          categoryFilterEnabled: true,
-                          platformFilterEnabled: true,
-                          contentTypeFilterEnabled: true,
-                          languageFilterEnabled: true,
-                          stateFilterEnabled: true,
-                          districtFilterEnabled: true,
-                          cityFilterEnabled: true,
-                          linkStatusFilterEnabled: true,
-                          featuredFilterEnabled: true,
-                          popularFilterEnabled: true,
-                          newestFilterEnabled: true,
-                          verifiedFilterEnabled: true,
-                          approvalStatusFilterEnabled: true,
-                        }),
+                        ...DEFAULT_FILTER_SETTINGS,
+                        ...(s.filterSettings || {}),
                         platformFilterEnabled: !(s.filterSettings?.platformFilterEnabled ?? true),
                       },
                     }))
@@ -1925,21 +1758,8 @@ export default function AdminSettings() {
                     setSettings((s) => ({
                       ...s,
                       filterSettings: {
-                        ...(s.filterSettings || {
-                          categoryFilterEnabled: true,
-                          platformFilterEnabled: true,
-                          contentTypeFilterEnabled: true,
-                          languageFilterEnabled: true,
-                          stateFilterEnabled: true,
-                          districtFilterEnabled: true,
-                          cityFilterEnabled: true,
-                          linkStatusFilterEnabled: true,
-                          featuredFilterEnabled: true,
-                          popularFilterEnabled: true,
-                          newestFilterEnabled: true,
-                          verifiedFilterEnabled: true,
-                          approvalStatusFilterEnabled: true,
-                        }),
+                        ...DEFAULT_FILTER_SETTINGS,
+                        ...(s.filterSettings || {}),
                         contentTypeFilterEnabled: !(s.filterSettings?.contentTypeFilterEnabled ?? true),
                       },
                     }))
@@ -1953,21 +1773,8 @@ export default function AdminSettings() {
                     setSettings((s) => ({
                       ...s,
                       filterSettings: {
-                        ...(s.filterSettings || {
-                          categoryFilterEnabled: true,
-                          platformFilterEnabled: true,
-                          contentTypeFilterEnabled: true,
-                          languageFilterEnabled: true,
-                          stateFilterEnabled: true,
-                          districtFilterEnabled: true,
-                          cityFilterEnabled: true,
-                          linkStatusFilterEnabled: true,
-                          featuredFilterEnabled: true,
-                          popularFilterEnabled: true,
-                          newestFilterEnabled: true,
-                          verifiedFilterEnabled: true,
-                          approvalStatusFilterEnabled: true,
-                        }),
+                        ...DEFAULT_FILTER_SETTINGS,
+                        ...(s.filterSettings || {}),
                         languageFilterEnabled: !(s.filterSettings?.languageFilterEnabled ?? true),
                       },
                     }))
@@ -1981,21 +1788,8 @@ export default function AdminSettings() {
                     setSettings((s) => ({
                       ...s,
                       filterSettings: {
-                        ...(s.filterSettings || {
-                          categoryFilterEnabled: true,
-                          platformFilterEnabled: true,
-                          contentTypeFilterEnabled: true,
-                          languageFilterEnabled: true,
-                          stateFilterEnabled: true,
-                          districtFilterEnabled: true,
-                          cityFilterEnabled: true,
-                          linkStatusFilterEnabled: true,
-                          featuredFilterEnabled: true,
-                          popularFilterEnabled: true,
-                          newestFilterEnabled: true,
-                          verifiedFilterEnabled: true,
-                          approvalStatusFilterEnabled: true,
-                        }),
+                        ...DEFAULT_FILTER_SETTINGS,
+                        ...(s.filterSettings || {}),
                         stateFilterEnabled: !(s.filterSettings?.stateFilterEnabled ?? true),
                       },
                     }))
@@ -2009,21 +1803,8 @@ export default function AdminSettings() {
                     setSettings((s) => ({
                       ...s,
                       filterSettings: {
-                        ...(s.filterSettings || {
-                          categoryFilterEnabled: true,
-                          platformFilterEnabled: true,
-                          contentTypeFilterEnabled: true,
-                          languageFilterEnabled: true,
-                          stateFilterEnabled: true,
-                          districtFilterEnabled: true,
-                          cityFilterEnabled: true,
-                          linkStatusFilterEnabled: true,
-                          featuredFilterEnabled: true,
-                          popularFilterEnabled: true,
-                          newestFilterEnabled: true,
-                          verifiedFilterEnabled: true,
-                          approvalStatusFilterEnabled: true,
-                        }),
+                        ...DEFAULT_FILTER_SETTINGS,
+                        ...(s.filterSettings || {}),
                         districtFilterEnabled: !(s.filterSettings?.districtFilterEnabled ?? true),
                       },
                     }))
@@ -2037,21 +1818,8 @@ export default function AdminSettings() {
                     setSettings((s) => ({
                       ...s,
                       filterSettings: {
-                        ...(s.filterSettings || {
-                          categoryFilterEnabled: true,
-                          platformFilterEnabled: true,
-                          contentTypeFilterEnabled: true,
-                          languageFilterEnabled: true,
-                          stateFilterEnabled: true,
-                          districtFilterEnabled: true,
-                          cityFilterEnabled: true,
-                          linkStatusFilterEnabled: true,
-                          featuredFilterEnabled: true,
-                          popularFilterEnabled: true,
-                          newestFilterEnabled: true,
-                          verifiedFilterEnabled: true,
-                          approvalStatusFilterEnabled: true,
-                        }),
+                        ...DEFAULT_FILTER_SETTINGS,
+                        ...(s.filterSettings || {}),
                         cityFilterEnabled: !(s.filterSettings?.cityFilterEnabled ?? true),
                       },
                     }))
@@ -2065,21 +1833,8 @@ export default function AdminSettings() {
                     setSettings((s) => ({
                       ...s,
                       filterSettings: {
-                        ...(s.filterSettings || {
-                          categoryFilterEnabled: true,
-                          platformFilterEnabled: true,
-                          contentTypeFilterEnabled: true,
-                          languageFilterEnabled: true,
-                          stateFilterEnabled: true,
-                          districtFilterEnabled: true,
-                          cityFilterEnabled: true,
-                          linkStatusFilterEnabled: true,
-                          featuredFilterEnabled: true,
-                          popularFilterEnabled: true,
-                          newestFilterEnabled: true,
-                          verifiedFilterEnabled: true,
-                          approvalStatusFilterEnabled: true,
-                        }),
+                        ...DEFAULT_FILTER_SETTINGS,
+                        ...(s.filterSettings || {}),
                         linkStatusFilterEnabled: !(s.filterSettings?.linkStatusFilterEnabled ?? true),
                       },
                     }))
@@ -2093,21 +1848,8 @@ export default function AdminSettings() {
                     setSettings((s) => ({
                       ...s,
                       filterSettings: {
-                        ...(s.filterSettings || {
-                          categoryFilterEnabled: true,
-                          platformFilterEnabled: true,
-                          contentTypeFilterEnabled: true,
-                          languageFilterEnabled: true,
-                          stateFilterEnabled: true,
-                          districtFilterEnabled: true,
-                          cityFilterEnabled: true,
-                          linkStatusFilterEnabled: true,
-                          featuredFilterEnabled: true,
-                          popularFilterEnabled: true,
-                          newestFilterEnabled: true,
-                          verifiedFilterEnabled: true,
-                          approvalStatusFilterEnabled: true,
-                        }),
+                        ...DEFAULT_FILTER_SETTINGS,
+                        ...(s.filterSettings || {}),
                         featuredFilterEnabled: !(s.filterSettings?.featuredFilterEnabled ?? true),
                       },
                     }))
@@ -2121,21 +1863,8 @@ export default function AdminSettings() {
                     setSettings((s) => ({
                       ...s,
                       filterSettings: {
-                        ...(s.filterSettings || {
-                          categoryFilterEnabled: true,
-                          platformFilterEnabled: true,
-                          contentTypeFilterEnabled: true,
-                          languageFilterEnabled: true,
-                          stateFilterEnabled: true,
-                          districtFilterEnabled: true,
-                          cityFilterEnabled: true,
-                          linkStatusFilterEnabled: true,
-                          featuredFilterEnabled: true,
-                          popularFilterEnabled: true,
-                          newestFilterEnabled: true,
-                          verifiedFilterEnabled: true,
-                          approvalStatusFilterEnabled: true,
-                        }),
+                        ...DEFAULT_FILTER_SETTINGS,
+                        ...(s.filterSettings || {}),
                         popularFilterEnabled: !(s.filterSettings?.popularFilterEnabled ?? true),
                       },
                     }))
@@ -2149,212 +1878,13 @@ export default function AdminSettings() {
                     setSettings((s) => ({
                       ...s,
                       filterSettings: {
-                        ...(s.filterSettings || {
-                          categoryFilterEnabled: true,
-                          platformFilterEnabled: true,
-                          contentTypeFilterEnabled: true,
-                          languageFilterEnabled: true,
-                          stateFilterEnabled: true,
-                          districtFilterEnabled: true,
-                          cityFilterEnabled: true,
-                          linkStatusFilterEnabled: true,
-                          featuredFilterEnabled: true,
-                          popularFilterEnabled: true,
-                          newestFilterEnabled: true,
-                          verifiedFilterEnabled: true,
-                          approvalStatusFilterEnabled: true,
-                        }),
+                        ...DEFAULT_FILTER_SETTINGS,
+                        ...(s.filterSettings || {}),
                         newestFilterEnabled: !(s.filterSettings?.newestFilterEnabled ?? true),
                       },
                     }))
                   }
                 />
-                <ToggleCard
-                  title="Verified Filter"
-                  description="Hide/show Verified badge filter"
-                  enabled={settings.filterSettings?.verifiedFilterEnabled ?? true}
-                  onToggle={() =>
-                    setSettings((s) => ({
-                      ...s,
-                      filterSettings: {
-                        ...(s.filterSettings || {
-                          categoryFilterEnabled: true,
-                          platformFilterEnabled: true,
-                          contentTypeFilterEnabled: true,
-                          languageFilterEnabled: true,
-                          stateFilterEnabled: true,
-                          districtFilterEnabled: true,
-                          cityFilterEnabled: true,
-                          linkStatusFilterEnabled: true,
-                          featuredFilterEnabled: true,
-                          popularFilterEnabled: true,
-                          newestFilterEnabled: true,
-                          verifiedFilterEnabled: true,
-                          approvalStatusFilterEnabled: true,
-                        }),
-                        verifiedFilterEnabled: !(s.filterSettings?.verifiedFilterEnabled ?? true),
-                      },
-                    }))
-                  }
-                />
-                <ToggleCard
-                  title="Approval Status Filter"
-                  description="Hide/show Approval status filter"
-                  enabled={settings.filterSettings?.approvalStatusFilterEnabled ?? true}
-                  onToggle={() =>
-                    setSettings((s) => ({
-                      ...s,
-                      filterSettings: {
-                        ...(s.filterSettings || {
-                          categoryFilterEnabled: true,
-                          platformFilterEnabled: true,
-                          contentTypeFilterEnabled: true,
-                          languageFilterEnabled: true,
-                          stateFilterEnabled: true,
-                          districtFilterEnabled: true,
-                          cityFilterEnabled: true,
-                          linkStatusFilterEnabled: true,
-                          featuredFilterEnabled: true,
-                          popularFilterEnabled: true,
-                          newestFilterEnabled: true,
-                          verifiedFilterEnabled: true,
-                          approvalStatusFilterEnabled: true,
-                        }),
-                        approvalStatusFilterEnabled: !(s.filterSettings?.approvalStatusFilterEnabled ?? true),
-                      },
-                    }))
-                  }
-                />
-              </div>
-            </div>
-          )}
-
-          {/* TAB 9: SEARCH ANALYTICS */}
-          {tab === "analytics" && (
-            <div className="bg-card border border-border rounded-3xl p-6 space-y-4 shadow-sm">
-              <h2 className="font-bold text-base border-b border-border pb-3 flex items-center gap-2">
-                <BarChart2 className="w-5 h-5 text-primary" /> Most Searched Keywords & Query Analytics
-              </h2>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {searchAnalytics.map((item) => (
-                  <div key={item.id} className="p-4 bg-muted/20 border border-border rounded-2xl flex justify-between items-center">
-                    <div>
-                      <p className="font-extrabold text-sm text-foreground">"{item.keyword}"</p>
-                      <div className="flex gap-2 text-[10px] text-muted-foreground mt-1 font-mono">
-                        {item.category && <span>Cat: {item.category}</span>}
-                        {item.platform && <span>Plat: {item.platform}</span>}
-                      </div>
-                    </div>
-                    <span className="px-3 py-1 bg-primary/10 text-primary font-extrabold text-xs rounded-full">
-                      {item.count} searches
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* TAB 10: AUDIT LOGS */}
-          {tab === "auditLog" && (
-            <div className="space-y-6">
-              <div className="bg-card border border-border rounded-3xl p-6 space-y-4 shadow-sm">
-                <div className="flex items-center justify-between border-b border-border pb-3">
-                  <div>
-                    <h2 className="font-bold text-base flex items-center gap-2">
-                      <Lock className="w-5 h-5 text-primary" /> Authentication Forensic Event Logs
-                    </h2>
-                    <p className="text-xs text-muted-foreground">
-                      Append-only telemetry from <code className="text-primary font-mono">/auth_logs</code> and <code className="text-primary font-mono">/auth_event_logs</code> tracking login outcomes, signups, failure types, and Firebase error codes without storing credentials.
-                    </p>
-                  </div>
-                </div>
-
-                {authEventLogs.length === 0 ? (
-                  <p className="text-xs text-muted-foreground py-4 text-center">
-                    No authentication events recorded yet.
-                  </p>
-                ) : (
-                  <div className="space-y-2 max-h-96 overflow-y-auto pr-1">
-                    {authEventLogs.map((item) => (
-                      <div
-                        key={item.id || `${item.event}-${item.timestampIso}`}
-                        className="p-3 bg-muted/20 border border-border rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs"
-                      >
-                        <div className="space-y-1">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span
-                              className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase ${
-                                item.outcome === "success"
-                                  ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
-                                  : "bg-destructive/15 text-destructive"
-                              }`}
-                            >
-                              {item.outcome}
-                            </span>
-                            <span className="font-bold text-foreground">{item.event}</span>
-                            <span className="px-2 py-0.5 bg-primary/10 text-primary rounded-md text-[10px] font-mono">
-                              {item.method}
-                            </span>
-                            <span className="px-2 py-0.5 bg-muted text-muted-foreground rounded-md text-[10px] font-mono">
-                              portal: {item.portal}
-                            </span>
-                            {item.failureType && item.failureType !== "none" && (
-                              <span className="px-2 py-0.5 bg-amber-500/15 text-amber-600 dark:text-amber-400 rounded-md text-[10px] font-mono">
-                                {item.failureType}
-                              </span>
-                            )}
-                            {item.errorCode && (
-                              <span className="px-2 py-0.5 bg-rose-500/15 text-rose-600 dark:text-rose-400 rounded-md text-[10px] font-mono">
-                                {item.errorCode}
-                              </span>
-                            )}
-                          </div>
-                          <div className="flex flex-wrap items-center gap-3 text-[11px] text-muted-foreground">
-                            {item.maskedIdentifier && <span>Actor: {item.maskedIdentifier}</span>}
-                            {item.uid && <span className="font-mono">UID: {item.uid}</span>}
-                            {item.errorMessage && (
-                              <span className="text-destructive/90">{item.errorMessage}</span>
-                            )}
-                          </div>
-                        </div>
-                        <span className="text-[10px] text-muted-foreground font-mono shrink-0">
-                          {item.timestampIso ? new Date(item.timestampIso).toLocaleString() : "Recently"}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              <div className="bg-card border border-border rounded-3xl p-6 space-y-4 shadow-sm">
-                <div className="flex items-center justify-between border-b border-border pb-3">
-                  <div>
-                    <h2 className="font-bold text-base flex items-center gap-2">
-                      <History className="w-5 h-5 text-primary" /> Webmaster System Audit Log
-                    </h2>
-                    <p className="text-xs text-muted-foreground">
-                      Chronological record of critical administrative actions performed in the console.
-                    </p>
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  {auditLogs.map((log) => (
-                    <div key={log.id} className="p-3 bg-muted/20 border border-border rounded-xl flex items-center justify-between text-xs">
-                      <div className="space-y-0.5">
-                        <div className="flex items-center gap-2">
-                          <span className="font-bold text-primary">{log.action}</span>
-                          <span className="text-[10px] text-muted-foreground">by {log.adminEmail}</span>
-                        </div>
-                        <p className="text-muted-foreground">{log.details}</p>
-                      </div>
-                      <span className="text-[10px] text-muted-foreground font-mono">
-                        {log.createdAt?.toDate ? log.createdAt.toDate().toLocaleString() : "Recently"}
-                      </span>
-                    </div>
-                  ))}
-                </div>
               </div>
             </div>
           )}
@@ -2368,15 +1898,30 @@ export default function AdminSettings() {
               </div>
 
               <p className="text-xs text-muted-foreground">
-                Cloudinary handles high-performance image uploads for group logos, platform icons, and user avatars.
+                Cloudinary handles direct image uploads for group logos and user avatars when both Cloud Name and Unsigned Upload Preset are configured. Leave blank to route uploads through Firebase Storage.
               </p>
 
               <div>
                 <label className={labelClass}>Cloudinary Cloud Name</label>
                 <input
-                  value={settings.cloudinaryCloudName || ""}
-                  onChange={(e) => setSettings((s) => ({ ...s, cloudinaryCloudName: e.target.value }))}
-                  placeholder="e.g. linkcloud-prod"
+                  value={settings.cloudinaryCloudName || settings.cloudinarySettings?.cloudName || ""}
+                  onChange={(e) => {
+                    const cloudName = e.target.value;
+                    setSettings((s) => {
+                      const preset = s.cloudinaryUploadPreset || s.cloudinarySettings?.uploadPreset || "";
+                      return {
+                        ...s,
+                        cloudinaryCloudName: cloudName,
+                        cloudinarySettings: {
+                          ...(s.cloudinarySettings || {}),
+                          cloudName,
+                          uploadPreset: preset,
+                          enabled: Boolean(cloudName.trim() && preset.trim()),
+                        },
+                      };
+                    });
+                  }}
+                  placeholder="Leave empty to disable Cloudinary (e.g. your-cloud-name)"
                   className={inputClass}
                 />
               </div>
@@ -2384,37 +1929,961 @@ export default function AdminSettings() {
               <div>
                 <label className={labelClass}>Unsigned Upload Preset</label>
                 <input
-                  value={settings.cloudinaryUploadPreset || ""}
-                  onChange={(e) => setSettings((s) => ({ ...s, cloudinaryUploadPreset: e.target.value }))}
-                  placeholder="e.g. linkcloud_unsigned_preset"
+                  value={settings.cloudinaryUploadPreset || settings.cloudinarySettings?.uploadPreset || ""}
+                  onChange={(e) => {
+                    const uploadPreset = e.target.value;
+                    setSettings((s) => {
+                      const cloud = s.cloudinaryCloudName || s.cloudinarySettings?.cloudName || "";
+                      return {
+                        ...s,
+                        cloudinaryUploadPreset: uploadPreset,
+                        cloudinarySettings: {
+                          ...(s.cloudinarySettings || {}),
+                          cloudName: cloud,
+                          uploadPreset,
+                          enabled: Boolean(cloud.trim() && uploadPreset.trim()),
+                        },
+                      };
+                    });
+                  }}
+                  placeholder="Leave empty to disable Cloudinary (e.g. your_unsigned_preset)"
                   className={inputClass}
                 />
               </div>
             </div>
           )}
 
-          {/* Sticky Footer Save Action */}
-          <div className="pt-4 border-t border-border flex items-center justify-between">
-            <p className="text-xs text-muted-foreground">
-              All settings are synced directly to Firestore collection <code className="text-primary font-mono">/settings/site</code>
-            </p>
-            <button
-              type="submit"
-              disabled={saving}
-              className="px-8 py-3 bg-primary text-primary-foreground font-bold text-xs rounded-xl flex items-center gap-2 shadow-lg shadow-primary/20 hover:bg-primary/90 transition-all"
-            >
-              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-              Save All Webmaster Settings
-            </button>
-          </div>
-        </form>
+          {isSiteSettingsTab && (
+            <div className="pt-3 border-t border-border flex items-center justify-between text-xs text-muted-foreground">
+              <span>
+                Global platform settings save via the single <strong className="text-foreground">Save Global Settings</strong> button above to <code className="text-primary font-mono">/settings/site</code>.
+              </span>
+            </div>
+          )}
+            </form>
+          )}
+
+          {!isSiteSettingsTab && (
+            <div className="space-y-6">
+              {/* TAB 2.5: WEBSITE-WIDE ANNOUNCEMENT SYSTEM */}
+              {tab === "announcements" && (
+                <div className="space-y-6">
+                  <div className="bg-card border border-border rounded-3xl p-6 shadow-sm">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-border pb-4">
+                      <div>
+                        <h2 className="font-bold text-base flex items-center gap-2">
+                          <Megaphone className="w-5 h-5 text-primary" /> Website-Wide Announcements & Banners
+                        </h2>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Broadcast global updates, news, maintenance notices, and call-to-actions across the entire platform.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleOpenCreateAnnouncement}
+                        className="px-4 py-2 bg-primary text-primary-foreground font-bold text-xs rounded-xl flex items-center gap-1.5 shadow-sm hover:bg-primary/90 transition-all self-start sm:self-auto"
+                      >
+                        <Plus className="w-4 h-4" /> New Announcement
+                      </button>
+                    </div>
+
+                    {/* Announcement Cards List */}
+                    <div className="mt-6 space-y-4">
+                      {announcements.length === 0 ? (
+                        <div className="text-center py-12 border border-dashed border-border rounded-2xl bg-muted/20">
+                          <Megaphone className="w-10 h-10 text-muted-foreground mx-auto mb-3 opacity-40" />
+                          <p className="text-sm font-semibold text-foreground">No announcements configured yet</p>
+                          <p className="text-xs text-muted-foreground max-w-sm mx-auto mt-1 mb-4">
+                            Add your first announcement to display a real-time banner or scrolling ticker across LinkCloud.
+                          </p>
+                          <button
+                            type="button"
+                            onClick={handleOpenCreateAnnouncement}
+                            className="px-4 py-2 bg-primary text-primary-foreground text-xs font-bold rounded-xl shadow-sm hover:bg-primary/90 transition-all"
+                          >
+                            Create First Announcement
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-1 gap-4">
+                          {announcements.map((item) => {
+                            const now = Date.now();
+                            const isScheduled = item.startAt && new Date(item.startAt).getTime() > now;
+                            const isExpired = item.endAt && new Date(item.endAt).getTime() < now;
+                            const theme = ANNOUNCEMENT_THEMES[item.type] || ANNOUNCEMENT_THEMES.announcement;
+
+                            return (
+                              <div
+                                key={item.id}
+                                className={`border rounded-2xl p-4 sm:p-5 bg-card/60 hover:border-primary/40 transition-all space-y-3 ${
+                                  !item.enabled ? "opacity-60 bg-muted/20 border-border" : "border-border shadow-sm"
+                                }`}
+                              >
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <span
+                                      className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${theme.badgeBg}`}
+                                    >
+                                      {item.type}
+                                    </span>
+
+                                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-muted text-muted-foreground border border-border">
+                                      {item.displayMode === "ticker" || (item.displayMode as string) === "scrolling" ? "Ticker (Marquee)" : "Banner (Static)"}
+                                    </span>
+
+                                    <span className="px-2 py-0.5 rounded-md text-[10px] font-mono bg-muted/60 text-muted-foreground">
+                                      Priority: {item.priority ?? 10}
+                                    </span>
+
+                                    {!item.enabled ? (
+                                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-muted text-muted-foreground">
+                                        Disabled
+                                      </span>
+                                    ) : isScheduled ? (
+                                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-500/10 text-blue-500 border border-blue-500/20">
+                                        Scheduled
+                                      </span>
+                                    ) : isExpired ? (
+                                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-500/10 text-rose-500 border border-rose-500/20">
+                                        Expired
+                                      </span>
+                                    ) : (
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">
+                                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                                        Active Now
+                                      </span>
+                                    )}
+                                  </div>
+
+                                  <div className="flex items-center gap-2 ml-auto">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleToggleAnnouncement(item)}
+                                      className={`px-3 py-1 rounded-lg text-xs font-bold transition-all border ${
+                                        item.enabled
+                                          ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/30 hover:bg-emerald-500/20"
+                                          : "bg-muted text-muted-foreground border-border hover:bg-muted/80"
+                                      }`}
+                                      title={item.enabled ? "Click to Disable" : "Click to Enable"}
+                                    >
+                                      {item.enabled ? "Enabled" : "Disabled"}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleOpenEditAnnouncement(item)}
+                                      className="p-1.5 rounded-lg bg-muted text-muted-foreground hover:text-foreground hover:bg-muted/80 transition-all"
+                                      title="Edit Announcement"
+                                    >
+                                      <Edit2 className="w-4 h-4" />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDeleteAnnouncement(item)}
+                                      className="p-1.5 rounded-lg bg-destructive/10 text-destructive hover:bg-destructive/20 transition-all"
+                                      title="Delete Announcement"
+                                    >
+                                      <Trash2 className="w-4 h-4" />
+                                    </button>
+                                  </div>
+                                </div>
+
+                                <div>
+                                  <h3 className="font-bold text-sm text-foreground">{item.title}</h3>
+                                  <p className="text-xs text-muted-foreground mt-1 line-clamp-2 leading-relaxed">
+                                    {item.message}
+                                  </p>
+                                </div>
+
+                                <div className="flex flex-wrap items-center gap-x-6 gap-y-2 pt-2 border-t border-border/40 text-[11px] text-muted-foreground">
+                                  <div className="flex items-center gap-1.5">
+                                    <Calendar className="w-3.5 h-3.5 text-primary" />
+                                    {item.startAt || item.endAt ? (
+                                      <span>
+                                        {item.startAt ? `From ${new Date(item.startAt).toLocaleString()}` : "Immediate start"}
+                                        {item.endAt ? ` until ${new Date(item.endAt).toLocaleString()}` : " (No end date)"}
+                                      </span>
+                                    ) : (
+                                      <span>Always active (No schedule limits)</span>
+                                    )}
+                                  </div>
+
+                                  {item.actionUrl && (
+                                    <div className="flex items-center gap-1.5">
+                                      <ExternalLink className="w-3.5 h-3.5 text-primary" />
+                                      <span className="font-mono truncate max-w-xs">
+                                        {item.actionLabel || "Action"}: {item.actionUrl}
+                                      </span>
+                                    </div>
+                                  )}
+
+                                  <div>
+                                    {item.dismissible !== false ? (
+                                      <span className="text-emerald-500 font-medium">✓ Dismissible by visitors</span>
+                                    ) : (
+                                      <span className="text-amber-500 font-medium">⚠ Sticky (Non-dismissible)</span>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* TAB: WEBMASTER SECURITY & CHANGE PASSWORD */}
+              {tab === "security" && (
+                <div className="space-y-6 max-w-4xl">
+                  <div className="bg-card border border-border rounded-3xl p-6 shadow-sm space-y-4">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-border pb-4">
+                      <div className="flex items-center gap-3">
+                        <div className="w-12 h-12 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary">
+                          <ShieldCheck className="w-6 h-6" />
+                        </div>
+                        <div>
+                          <h2 className="font-extrabold text-base text-foreground flex items-center gap-2">
+                            Canonical Webmaster Authority
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                              Root Access Active
+                            </span>
+                          </h2>
+                          <p className="text-xs text-muted-foreground mt-0.5">
+                            Verified Webmaster identity enforced at Firestore and server-side authentication boundaries.
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const activeUid = user?.uid || "";
+                            if (!activeUid) return;
+                            navigator.clipboard.writeText(activeUid);
+                            setCopiedUid(true);
+                            toast.success("Webmaster UID copied to clipboard");
+                            setTimeout(() => setCopiedUid(false), 2000);
+                          }}
+                          className="px-3 py-1.5 bg-muted/60 hover:bg-muted text-foreground text-xs font-semibold rounded-xl border border-border flex items-center gap-1.5 transition"
+                        >
+                          {copiedUid ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+                          <span>Copy Webmaster UID</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+                      <div className="p-3.5 rounded-2xl bg-muted/30 border border-border">
+                        <span className="text-[11px] font-medium text-muted-foreground block">Webmaster UID</span>
+                        <span className="font-mono text-xs font-bold text-foreground block mt-1 select-all truncate">
+                          {user?.uid || "Authenticated Webmaster"}
+                        </span>
+                      </div>
+                      <div className="p-3.5 rounded-2xl bg-muted/30 border border-border">
+                        <span className="text-[11px] font-medium text-muted-foreground block">Authorized Email</span>
+                        <span className="font-mono text-xs font-bold text-foreground block mt-1 select-all truncate">
+                          {user?.email || profile?.email || "Not set"}
+                        </span>
+                      </div>
+                      <div className="p-3.5 rounded-2xl bg-muted/30 border border-border">
+                        <span className="text-[11px] font-medium text-muted-foreground block">Authorized Mobile</span>
+                        <span className="font-mono text-xs font-bold text-foreground block mt-1 select-all truncate">
+                          {profile?.phone || user?.phoneNumber || "Not configured"}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="p-4 rounded-2xl bg-primary/5 border border-primary/10 text-xs text-muted-foreground space-y-1">
+                      <p className="font-semibold text-foreground flex items-center gap-1.5">
+                        <Lock className="w-3.5 h-3.5 text-primary" /> Security & Role Immutability Policy
+                      </p>
+                      <p className="leading-relaxed">
+                        LinkCloud enforces a strict zero-admin role hierarchy. The <code className="text-primary font-mono">webmaster</code> role is the only privileged role. Direct writes to <code className="text-primary font-mono">/webmaster</code> are permanently disabled in Firestore rules (<code className="text-primary font-mono">allow write: if false</code>), and user documents disallow role or status elevation.
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* 2. Change Webmaster Password Form (Independent Form) */}
+                  <div className="bg-card border border-border rounded-3xl p-6 shadow-sm space-y-5">
+                    <div className="border-b border-border pb-3 flex items-center justify-between">
+                      <div>
+                        <h2 className="font-bold text-base flex items-center gap-2">
+                          <KeyRound className="w-5 h-5 text-amber-500" /> Change Webmaster Password
+                        </h2>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          Update the password used for email authentication at <code className="font-mono text-foreground">/webmaster/login</code>.
+                        </p>
+                      </div>
+                    </div>
+
+                    <form onSubmit={handleChangeWebmasterPassword} className="space-y-4 max-w-lg">
+                      <div>
+                        <label className={labelClass}>Current Password</label>
+                        <div className="relative">
+                          <input
+                            type={showCurrentWebmasterPass ? "text" : "password"}
+                            value={currentWebmasterPass}
+                            onChange={(e) => setCurrentWebmasterPass(e.target.value)}
+                            placeholder="Enter current webmaster password"
+                            className={inputClass}
+                            autoComplete="current-password"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowCurrentWebmasterPass(!showCurrentWebmasterPass)}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground p-1"
+                            tabIndex={-1}
+                          >
+                            {showCurrentWebmasterPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                          </button>
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className={labelClass}>New Password</label>
+                        <div className="relative">
+                          <input
+                            type={showNewWebmasterPass ? "text" : "password"}
+                            value={newWebmasterPass}
+                            onChange={(e) => setNewWebmasterPass(e.target.value)}
+                            placeholder="Enter robust new password (min. 8 characters)"
+                            className={inputClass}
+                            autoComplete="new-password"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowNewWebmasterPass(!showNewWebmasterPass)}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground p-1"
+                            tabIndex={-1}
+                          >
+                            {showNewWebmasterPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                          </button>
+                        </div>
+                        {newWebmasterPass && (
+                          <div className="mt-2 space-y-1">
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 text-[11px]">
+                              <span className={`flex items-center gap-1 ${newWebmasterPass.length >= 8 ? "text-emerald-500 font-semibold" : "text-muted-foreground"}`}>
+                                {newWebmasterPass.length >= 8 ? "✓" : "○"} 8+ characters
+                              </span>
+                              <span className={`flex items-center gap-1 ${/[A-Z]/.test(newWebmasterPass) ? "text-emerald-500 font-semibold" : "text-muted-foreground"}`}>
+                                {/[A-Z]/.test(newWebmasterPass) ? "✓" : "○"} Uppercase
+                              </span>
+                              <span className={`flex items-center gap-1 ${/[a-z]/.test(newWebmasterPass) ? "text-emerald-500 font-semibold" : "text-muted-foreground"}`}>
+                                {/[a-z]/.test(newWebmasterPass) ? "✓" : "○"} Lowercase
+                              </span>
+                              <span className={`flex items-center gap-1 ${/[0-9!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?]/.test(newWebmasterPass) ? "text-emerald-500 font-semibold" : "text-muted-foreground"}`}>
+                                {/[0-9!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?]/.test(newWebmasterPass) ? "✓" : "○"} Number/Symbol
+                              </span>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      <div>
+                        <label className={labelClass}>Confirm New Password</label>
+                        <div className="relative">
+                          <input
+                            type={showConfirmWebmasterPass ? "text" : "password"}
+                            value={confirmWebmasterPass}
+                            onChange={(e) => setConfirmWebmasterPass(e.target.value)}
+                            placeholder="Re-enter new password to confirm"
+                            className={inputClass}
+                            autoComplete="new-password"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowConfirmWebmasterPass(!showConfirmWebmasterPass)}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground p-1"
+                            tabIndex={-1}
+                          >
+                            {showConfirmWebmasterPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                          </button>
+                        </div>
+                        {confirmWebmasterPass && newWebmasterPass !== confirmWebmasterPass && (
+                          <p className="text-[11px] text-destructive font-semibold mt-1">
+                            Passwords do not match.
+                          </p>
+                        )}
+                      </div>
+
+                      <div className="pt-2">
+                        <button
+                          type="submit"
+                          disabled={updatingWebmasterPass || !currentWebmasterPass || !newWebmasterPass || newWebmasterPass !== confirmWebmasterPass}
+                          className="px-6 py-2.5 bg-primary text-primary-foreground font-bold text-xs rounded-xl flex items-center justify-center gap-2 shadow-sm hover:bg-primary/90 transition-all disabled:opacity-50"
+                        >
+                          {updatingWebmasterPass ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                          Update Webmaster Password
+                        </button>
+                      </div>
+                    </form>
+                  </div>
+
+                  {/* 3. Password Reset Email Flow */}
+                  <div className="bg-card border border-border rounded-3xl p-6 shadow-sm space-y-4">
+                    <div className="border-b border-border pb-3 flex items-center justify-between">
+                      <div>
+                        <h2 className="font-bold text-base flex items-center gap-2">
+                          <Mail className="w-5 h-5 text-blue-500" /> Webmaster Password Reset Link
+                        </h2>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          Send a secure password recovery link to the verified Webmaster session email address.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-2xl bg-muted/30 border border-border">
+                      <div>
+                        <p className="text-xs font-bold text-foreground">
+                          Recipient: <span className="font-mono text-primary">{user?.email || profile?.email || "No verified email on session"}</span>
+                        </p>
+                        <p className="text-[11px] text-muted-foreground mt-0.5">
+                          LinkCloud uses Firebase Authentication secure email action handlers (<code className="font-mono">/verify-handler?mode=resetPassword</code>).
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleSendWebmasterPasswordReset}
+                        disabled={sendingResetEmail || resetEmailCooldown > 0 || (!user?.email && !profile?.email)}
+                        className="px-5 py-2.5 bg-secondary text-secondary-foreground font-bold text-xs rounded-xl hover:bg-secondary/80 transition flex items-center gap-2 flex-shrink-0 disabled:opacity-60"
+                      >
+                        {sendingResetEmail ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <Mail className="w-3.5 h-3.5" />
+                        )}
+                        {resetEmailCooldown > 0 ? `Resend in ${resetEmailCooldown}s` : "Dispatch Password Reset Link"}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Cross-link to Single Authoritative Authentication & System Audit Log Tab */}
+                  <div className="bg-muted/20 border border-border rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="flex items-start gap-3">
+                      <History className="w-4 h-4 text-primary shrink-0 mt-0.5" />
+                      <p className="text-xs text-muted-foreground">
+                        Authentication forensic events (<code className="font-mono text-foreground">/auth_event_logs</code>) and system audit logs are consolidated in the <strong className="text-foreground">Audit Logs</strong> tab.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setTab("auditLog")}
+                      className="px-3.5 py-1.5 rounded-xl bg-card border border-border hover:border-primary/40 text-xs font-bold text-foreground transition shrink-0 self-start sm:self-auto"
+                    >
+                      View Audit Logs
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* TAB 3: ABOUT & HELP ARTICLES */}
+              {tab === "aboutHelp" && (
+                <div className="space-y-6">
+                  <CmsPagesManager
+                    pages={cmsPages}
+                    loading={cmsLoading}
+                    user={user}
+                    filterSlugs={["about", "help", "faq"]}
+                    title="Public Info Pages CMS (/about, /help, /faq)"
+                    subtitle="Edit structured content blocks, SEO metadata, live previews, and revision history for public information pages."
+                    onEditPage={(pg) => setEditingCmsPage(pg)}
+                    onRefreshState={refreshCmsAndContent}
+                  />
+
+                  <div className="bg-muted/20 border border-border rounded-2xl p-4 flex items-start gap-3 text-xs text-muted-foreground">
+                    <Info className="w-4 h-4 text-primary shrink-0 mt-0.5" />
+                    <p>
+                      The <strong className="text-foreground">/about</strong>, <strong className="text-foreground">/help</strong>, and <strong className="text-foreground">/faq</strong> page wrappers and per-page SEO are managed authoritatively through the CMS Pages Manager above. Legacy Firestore summary fields are preserved untouched and sync automatically only when publishing <code className="font-mono text-foreground">/about</code>.
+                    </p>
+                  </div>
+
+                  {/* Help Center Articles (Full Server-Authorized CRUD) */}
+                  <div className="bg-card border border-border rounded-3xl p-6 space-y-4 shadow-sm">
+                    <div className="flex items-center justify-between border-b border-border pb-3">
+                      <div>
+                        <h2 className="font-bold text-base flex items-center gap-2">
+                          <HelpCircle className="w-5 h-5 text-emerald-500" /> Help Center Articles
+                        </h2>
+                        <p className="text-xs text-muted-foreground">
+                          Full CRUD, enable/disable, reorder, categories, step-by-step guides, and draft/published control for /help.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleOpenCreateArticle}
+                        className="px-3.5 py-1.5 bg-primary text-primary-foreground font-bold text-xs rounded-xl flex items-center gap-1.5"
+                      >
+                        <Plus className="w-4 h-4" /> Add Article
+                      </button>
+                    </div>
+
+                    {helpArticles.length === 0 ? (
+                      <p className="text-xs text-muted-foreground py-6 text-center border border-dashed border-border rounded-2xl">
+                        No Help Center articles created yet. Click "Add Article" to create your first guide.
+                      </p>
+                    ) : (
+                      <div className="space-y-3">
+                        {helpArticles.map((article, idx) => (
+                          <div
+                            key={article.id}
+                            className={`p-4 bg-muted/20 border border-border rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-4 ${
+                              article.enabled === false ? "opacity-60" : ""
+                            }`}
+                          >
+                            <div className="space-y-1 flex-1 min-w-0">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className="text-[10px] font-extrabold bg-primary/10 text-primary px-2 py-0.5 rounded-full">
+                                  #{article.sortOrder || idx + 1}
+                                </span>
+                                <span className="text-[10px] font-bold text-primary uppercase tracking-wider">
+                                  {article.category}
+                                </span>
+                                <span
+                                  className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ${
+                                    article.status === "draft"
+                                      ? "bg-amber-500/10 text-amber-500"
+                                      : "bg-emerald-500/10 text-emerald-500"
+                                  }`}
+                                >
+                                  {article.status === "draft" ? "Draft" : "Published"}
+                                </span>
+                                {article.enabled === false && (
+                                  <span className="text-[10px] bg-rose-500/10 text-rose-500 px-2 py-0.5 rounded-full font-bold">
+                                    Disabled
+                                  </span>
+                                )}
+                                {Array.isArray(article.steps) && article.steps.length > 0 && (
+                                  <span className="text-[10px] bg-muted text-muted-foreground px-2 py-0.5 rounded-full font-mono">
+                                    {article.steps.length} steps
+                                  </span>
+                                )}
+                              </div>
+                              <h3 className="font-bold text-sm text-foreground">{article.title}</h3>
+                              <p className="text-xs text-muted-foreground line-clamp-2">{article.content}</p>
+                            </div>
+
+                            <div className="flex items-center gap-1.5 self-end sm:self-auto shrink-0">
+                              <button
+                                type="button"
+                                onClick={() => handleMoveArticle(idx, -1)}
+                                disabled={idx === 0}
+                                className="p-2 rounded-xl bg-muted hover:bg-muted/80 disabled:opacity-30"
+                                title="Move Up"
+                              >
+                                <MoveUp className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleMoveArticle(idx, 1)}
+                                disabled={idx === helpArticles.length - 1}
+                                className="p-2 rounded-xl bg-muted hover:bg-muted/80 disabled:opacity-30"
+                                title="Move Down"
+                              >
+                                <MoveDown className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleToggleArticleEnabled(article)}
+                                className={`px-2.5 py-1.5 rounded-xl text-[11px] font-bold border ${
+                                  article.enabled !== false
+                                    ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/25"
+                                    : "bg-muted text-muted-foreground border-border"
+                                }`}
+                              >
+                                {article.enabled !== false ? "Enabled" : "Disabled"}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleOpenEditArticle(article)}
+                                className="p-2 rounded-xl bg-muted hover:bg-muted/80 text-foreground"
+                                title="Edit Article"
+                              >
+                                <Edit2 className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteArticle(article.id)}
+                                className="p-2 rounded-xl bg-destructive/10 text-destructive hover:bg-destructive/20"
+                                title="Delete Article"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* TAB 4: FAQ MANAGEMENT */}
+              {tab === "faq" && (
+                <div className="bg-card border border-border rounded-3xl p-6 space-y-4 shadow-sm">
+                  <div className="flex items-center justify-between border-b border-border pb-3">
+                    <div>
+                      <h2 className="font-bold text-base flex items-center gap-2">
+                        <HelpCircle className="w-5 h-5 text-primary" /> FAQ Management
+                      </h2>
+                      <p className="text-xs text-muted-foreground">
+                        Create, edit, preview, enable/disable, and reorder FAQs (duplicate questions rejected server-side). Page wrapper SEO for <code className="font-mono">/faq</code> lives in About &amp; Help CMS.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingFaq(null);
+                        setFaqPreviewMode(false);
+                        setFaqForm({
+                          question: "",
+                          answer: "",
+                          category: "General",
+                          sortOrder: faqs.length + 1,
+                          enabled: true,
+                          status: "published",
+                        });
+                        setFaqModalOpen(true);
+                      }}
+                      className="px-4 py-2 bg-primary text-primary-foreground font-bold text-xs rounded-xl flex items-center gap-2 shadow-sm"
+                    >
+                      <Plus className="w-4 h-4" /> Add FAQ Item
+                    </button>
+                  </div>
+
+                  {faqs.length === 0 ? (
+                    <p className="text-xs text-muted-foreground py-8 text-center border border-dashed border-border rounded-2xl">
+                      No FAQ entries yet. Add your first question to publish on /faq.
+                    </p>
+                  ) : (
+                    <div className="space-y-3">
+                      {faqs.map((f, i) => (
+                        <div
+                          key={f.id}
+                          className={`p-4 bg-muted/20 border border-border rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-4 ${
+                            f.enabled === false ? "opacity-60" : ""
+                          }`}
+                        >
+                          <div className="space-y-1 flex-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="text-[10px] font-extrabold bg-primary/10 text-primary px-2 py-0.5 rounded-full">
+                                #{f.sortOrder || i + 1}
+                              </span>
+                              <span className="text-[10px] font-bold text-muted-foreground uppercase">{f.category}</span>
+                              <span
+                                className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ${
+                                  f.status === "draft"
+                                    ? "bg-amber-500/10 text-amber-500"
+                                    : "bg-emerald-500/10 text-emerald-500"
+                                }`}
+                              >
+                                {f.status === "draft" ? "Draft" : "Published"}
+                              </span>
+                              {!f.enabled && (
+                                <span className="text-[10px] bg-rose-500/10 text-rose-500 px-2 py-0.5 rounded-full font-bold">
+                                  Disabled
+                                </span>
+                              )}
+                            </div>
+                            <h3 className="font-bold text-sm text-foreground">{f.question}</h3>
+                            <p className="text-xs text-muted-foreground line-clamp-2">{f.answer}</p>
+                          </div>
+
+                          <div className="flex items-center gap-1.5 self-end sm:self-auto">
+                            <button
+                              type="button"
+                              onClick={() => handleMoveFaq(i, -1)}
+                              disabled={i === 0}
+                              className="p-2 rounded-xl bg-muted hover:bg-muted/80 disabled:opacity-30"
+                              title="Move Up"
+                            >
+                              <MoveUp className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleMoveFaq(i, 1)}
+                              disabled={i === faqs.length - 1}
+                              className="p-2 rounded-xl bg-muted hover:bg-muted/80 disabled:opacity-30"
+                              title="Move Down"
+                            >
+                              <MoveDown className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleToggleFaqEnabled(f)}
+                              className={`px-2.5 py-1.5 rounded-xl text-[11px] font-bold border ${
+                                f.enabled !== false
+                                  ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/25"
+                                  : "bg-muted text-muted-foreground border-border"
+                              }`}
+                            >
+                              {f.enabled !== false ? "Enabled" : "Disabled"}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingFaq(f);
+                                setFaqPreviewMode(false);
+                                setFaqForm({
+                                  question: f.question,
+                                  answer: f.answer,
+                                  category: f.category || "General",
+                                  sortOrder: f.sortOrder || i + 1,
+                                  enabled: f.enabled !== false,
+                                  status: f.status === "draft" ? "draft" : "published",
+                                });
+                                setFaqModalOpen(true);
+                              }}
+                              className="p-2 rounded-xl bg-muted hover:bg-muted/80 text-foreground transition-colors"
+                              title="Edit FAQ"
+                            >
+                              <Edit2 className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteFaq(f.id)}
+                              className="p-2 rounded-xl bg-destructive/10 text-destructive hover:bg-destructive/20 transition-colors"
+                              title="Delete FAQ"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* TAB 6: LEGAL PAGES */}
+              {tab === "legal" && (
+                <div className="space-y-5">
+                  <CmsPagesManager
+                    pages={cmsPages}
+                    loading={cmsLoading}
+                    user={user}
+                    filterSlugs={["privacy", "terms", "dmca", "disclaimer"]}
+                    title="Legal & Compliance Pages CMS"
+                    subtitle="Single authoritative source for /privacy, /terms, /dmca, and /disclaimer. Legal pages remain unpublished drafts until explicitly reviewed and published by the Website Owner."
+                    onEditPage={(pg) => setEditingCmsPage(pg)}
+                    onRefreshState={refreshCmsAndContent}
+                  />
+
+                  <div className="bg-muted/20 border border-border rounded-2xl p-4 flex items-start gap-3 text-xs text-muted-foreground">
+                    <ShieldAlert className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+                    <p>
+                      <strong className="text-foreground">Single Authoritative Legal Source:</strong> All legal copy, publication status, version history, and per-page SEO for Legal routes are managed strictly inside the CMS Pages Manager above. Legacy compatibility fields in Firestore are preserved untouched and update automatically only on explicit CMS Publish.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* TAB 9: SEARCH ANALYTICS */}
+              {tab === "analytics" && (
+                <div className="bg-card border border-border rounded-3xl p-6 space-y-4 shadow-sm">
+                  <div className="flex items-center justify-between border-b border-border pb-3">
+                    <h2 className="font-bold text-base flex items-center gap-2">
+                      <BarChart2 className="w-5 h-5 text-primary" /> Most Searched Keywords & Query Analytics
+                    </h2>
+                    <button
+                      type="button"
+                      onClick={loadSearchAnalytics}
+                      disabled={analyticsLoading}
+                      className="px-3 py-1.5 rounded-xl bg-muted hover:bg-muted/80 text-xs font-bold text-foreground transition disabled:opacity-50"
+                    >
+                      {analyticsLoading ? "Refreshing..." : "Refresh"}
+                    </button>
+                  </div>
+
+                  {analyticsLoading ? (
+                    <div className="flex items-center justify-center py-10 gap-2 text-xs text-muted-foreground">
+                      <Loader2 className="w-4 h-4 animate-spin text-primary" />
+                      <span>Loading live search analytics...</span>
+                    </div>
+                  ) : analyticsError ? (
+                    <div className="p-6 rounded-2xl border border-destructive/30 bg-destructive/5 text-center space-y-3">
+                      <p className="text-xs font-bold text-destructive">Failed to load search analytics</p>
+                      <p className="text-xs text-muted-foreground">{analyticsError}</p>
+                      <button
+                        type="button"
+                        onClick={loadSearchAnalytics}
+                        className="px-4 py-1.5 rounded-xl bg-primary text-primary-foreground text-xs font-bold"
+                      >
+                        Retry
+                      </button>
+                    </div>
+                  ) : searchAnalytics.length === 0 ? (
+                    <div className="text-center py-10 border border-dashed border-border rounded-2xl bg-muted/20">
+                      <p className="text-sm font-semibold text-foreground">No search queries recorded yet</p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Directory searches submitted by visitors will appear here once recorded in <code className="font-mono">/search_analytics</code>.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {searchAnalytics.map((item) => (
+                        <div key={item.id} className="p-4 bg-muted/20 border border-border rounded-2xl flex justify-between items-center">
+                          <div>
+                            <p className="font-extrabold text-sm text-foreground">"{item.keyword}"</p>
+                            <div className="flex gap-2 text-[10px] text-muted-foreground mt-1 font-mono">
+                              {item.category && <span>Cat: {item.category}</span>}
+                              {item.platform && <span>Plat: {item.platform}</span>}
+                            </div>
+                          </div>
+                          <span className="px-3 py-1 bg-primary/10 text-primary font-extrabold text-xs rounded-full">
+                            {item.count} searches
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* TAB 10: AUDIT LOGS */}
+              {tab === "auditLog" && (
+                <div className="space-y-6">
+                  <div className="bg-card border border-border rounded-3xl p-6 space-y-4 shadow-sm">
+                    <div className="flex items-center justify-between border-b border-border pb-3">
+                      <div>
+                        <h2 className="font-bold text-base flex items-center gap-2">
+                          <Lock className="w-5 h-5 text-primary" /> Authentication Forensic Event Logs
+                        </h2>
+                        <p className="text-xs text-muted-foreground">
+                          Authoritative append-only authentication telemetry from <code className="text-primary font-mono">/auth_event_logs</code> (with historical backfill from legacy <code className="text-primary font-mono">/auth_logs</code>) tracking login outcomes, signups, failure types, and error codes without storing credentials.
+                        </p>
+                      </div>
+                    </div>
+
+                    {authEventLogs.length === 0 ? (
+                      <p className="text-xs text-muted-foreground py-4 text-center">
+                        No authentication events recorded yet.
+                      </p>
+                    ) : (
+                      <div className="space-y-2 max-h-96 overflow-y-auto pr-1">
+                        {authEventLogs.map((item) => (
+                          <div
+                            key={item.id || `${item.event}-${item.timestampIso}`}
+                            className="p-3 bg-muted/20 border border-border rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs"
+                          >
+                            <div className="space-y-1">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span
+                                  className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase ${
+                                    item.outcome === "success"
+                                      ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
+                                      : "bg-destructive/15 text-destructive"
+                                  }`}
+                                >
+                                  {item.outcome}
+                                </span>
+                                <span className="font-bold text-foreground">{item.event}</span>
+                                <span className="px-2 py-0.5 bg-primary/10 text-primary rounded-md text-[10px] font-mono">
+                                  {item.method}
+                                </span>
+                                <span className="px-2 py-0.5 bg-muted text-muted-foreground rounded-md text-[10px] font-mono">
+                                  portal: {item.portal}
+                                </span>
+                                {item.failureType && item.failureType !== "none" && (
+                                  <span className="px-2 py-0.5 bg-amber-500/15 text-amber-600 dark:text-amber-400 rounded-md text-[10px] font-mono">
+                                    {item.failureType}
+                                  </span>
+                                )}
+                                {item.errorCode && (
+                                  <span className="px-2 py-0.5 bg-rose-500/15 text-rose-600 dark:text-rose-400 rounded-md text-[10px] font-mono">
+                                    {item.errorCode}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="flex flex-wrap items-center gap-3 text-[11px] text-muted-foreground">
+                                {item.maskedIdentifier && <span>Actor: {item.maskedIdentifier}</span>}
+                                {item.uid && <span className="font-mono">UID: {item.uid}</span>}
+                                {item.errorMessage && (
+                                  <span className="text-destructive/90">{item.errorMessage}</span>
+                                )}
+                              </div>
+                            </div>
+                            <span className="text-[10px] text-muted-foreground font-mono shrink-0">
+                              {item.timestampIso ? new Date(item.timestampIso).toLocaleString() : "Recently"}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="bg-card border border-border rounded-3xl p-6 space-y-4 shadow-sm">
+                    <div className="flex items-center justify-between border-b border-border pb-3">
+                      <div>
+                        <h2 className="font-bold text-base flex items-center gap-2">
+                          <History className="w-5 h-5 text-primary" /> Webmaster System Audit Log
+                        </h2>
+                        <p className="text-xs text-muted-foreground">
+                          Chronological record of critical administrative actions performed in the console.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      {auditLogs.map((log) => {
+                        const formattedDate =
+                          typeof log.createdAt?.toDate === "function"
+                            ? log.createdAt.toDate().toLocaleString()
+                            : log.createdAt || log.timestamp
+                            ? new Date(log.createdAt || log.timestamp).toLocaleString()
+                            : "Recently";
+                        return (
+                          <div key={log.id} className="p-3 bg-muted/20 border border-border rounded-xl flex items-center justify-between text-xs">
+                            <div className="space-y-0.5">
+                              <div className="flex items-center gap-2">
+                                <span className="font-bold text-primary">{log.action}</span>
+                                <span className="text-[10px] text-muted-foreground">
+                                  by {log.adminEmail || log.actorEmail || "webmaster"}
+                                </span>
+                              </div>
+                              <p className="text-muted-foreground">{log.details}</p>
+                            </div>
+                            <span className="text-[10px] text-muted-foreground font-mono">
+                              {formattedDate}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </>
       )}
 
-      {/* FAQ Add/Edit Modal */}
+      {/* FAQ Add/Edit/Preview Modal */}
       {faqModalOpen && (
         <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-card border border-border rounded-3xl p-6 max-w-lg w-full space-y-4 shadow-2xl">
-            <h2 className="font-bold text-lg">{editingFaq ? "Edit FAQ Item" : "Create New FAQ Item"}</h2>
+          <div className="bg-card border border-border rounded-3xl p-6 max-w-lg w-full space-y-4 shadow-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-border pb-3">
+              <h2 className="font-bold text-lg">{editingFaq ? "Edit FAQ Item" : "Create New FAQ Item"}</h2>
+              <button
+                type="button"
+                onClick={() => setFaqPreviewMode((v) => !v)}
+                className="px-3 py-1 rounded-xl bg-muted text-xs font-bold flex items-center gap-1"
+              >
+                <Eye className="w-3.5 h-3.5" /> {faqPreviewMode ? "Edit" : "Preview"}
+              </button>
+            </div>
+
+            {faqPreviewMode ? (
+              <div className="space-y-3 p-4 rounded-2xl border border-border bg-muted/20">
+                <span className="text-[10px] font-bold uppercase text-primary">{faqForm.category}</span>
+                <h3 className="font-bold text-base">{faqForm.question || "Untitled FAQ question"}</h3>
+                <p className="text-xs text-muted-foreground whitespace-pre-line leading-relaxed">
+                  {faqForm.answer || "FAQ answer preview..."}
+                </p>
+              </div>
+            ) : null}
+
             <form onSubmit={handleSaveFaq} className="space-y-4">
               <div>
                 <label className={labelClass}>Question</label>
@@ -2436,7 +2905,7 @@ export default function AdminSettings() {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                 <div>
                   <label className={labelClass}>Category</label>
                   <input
@@ -2454,7 +2923,30 @@ export default function AdminSettings() {
                     className={inputClass}
                   />
                 </div>
+                <div>
+                  <label className={labelClass}>Publish Status</label>
+                  <select
+                    value={faqForm.status}
+                    onChange={(e) =>
+                      setFaqForm((f) => ({ ...f, status: e.target.value === "draft" ? "draft" : "published" }))
+                    }
+                    className={inputClass}
+                  >
+                    <option value="published">Published</option>
+                    <option value="draft">Draft</option>
+                  </select>
+                </div>
               </div>
+
+              <label className="flex items-center gap-2 text-xs font-semibold cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={faqForm.enabled}
+                  onChange={(e) => setFaqForm((f) => ({ ...f, enabled: e.target.checked }))}
+                  className="w-4 h-4 accent-primary"
+                />
+                <span>Enabled (visible on public /faq when published)</span>
+              </label>
 
               <div className="flex justify-end gap-2 pt-2">
                 <button
@@ -2468,7 +2960,7 @@ export default function AdminSettings() {
                   type="submit"
                   className="px-5 py-2 bg-primary text-primary-foreground text-xs font-bold rounded-xl"
                 >
-                  Save FAQ
+                  {editingFaq ? "Update FAQ" : "Save FAQ"}
                 </button>
               </div>
             </form>
@@ -2476,11 +2968,40 @@ export default function AdminSettings() {
         </div>
       )}
 
-      {/* Help Article Modal */}
+      {/* Help Article Create/Edit/Preview Modal */}
       {articleModalOpen && (
         <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-card border border-border rounded-3xl p-6 max-w-lg w-full space-y-4 shadow-2xl">
-            <h2 className="font-bold text-lg">Create Help Center Article</h2>
+          <div className="bg-card border border-border rounded-3xl p-6 max-w-xl w-full space-y-4 shadow-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-border pb-3">
+              <h2 className="font-bold text-lg">
+                {editingArticle ? "Edit Help Center Article" : "Create Help Center Article"}
+              </h2>
+              <button
+                type="button"
+                onClick={() => setArticlePreviewMode((v) => !v)}
+                className="px-3 py-1 rounded-xl bg-muted text-xs font-bold flex items-center gap-1"
+              >
+                <Eye className="w-3.5 h-3.5" /> {articlePreviewMode ? "Edit" : "Preview"}
+              </button>
+            </div>
+
+            {articlePreviewMode ? (
+              <div className="space-y-3 p-4 rounded-2xl border border-border bg-muted/20">
+                <span className="text-[10px] font-bold uppercase text-primary">{articleForm.category}</span>
+                <h3 className="font-bold text-base">{articleForm.title || "Untitled Article"}</h3>
+                <p className="text-xs text-muted-foreground whitespace-pre-line leading-relaxed">
+                  {articleForm.content}
+                </p>
+                {articleForm.steps.length > 0 && (
+                  <ol className="list-decimal pl-5 space-y-1 text-xs text-muted-foreground">
+                    {articleForm.steps.map((s, idx) => (
+                      <li key={idx}>{s}</li>
+                    ))}
+                  </ol>
+                )}
+              </div>
+            ) : null}
+
             <form onSubmit={handleSaveArticle} className="space-y-4">
               <div>
                 <label className={labelClass}>Article Title</label>
@@ -2492,25 +3013,79 @@ export default function AdminSettings() {
                 />
               </div>
 
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <label className={labelClass}>Category</label>
+                  <input
+                    value={articleForm.category}
+                    onChange={(e) => setArticleForm((a) => ({ ...a, category: e.target.value }))}
+                    className={inputClass}
+                    required
+                  />
+                </div>
+                <div>
+                  <label className={labelClass}>Sort Order</label>
+                  <input
+                    type="number"
+                    value={articleForm.sortOrder}
+                    onChange={(e) =>
+                      setArticleForm((a) => ({ ...a, sortOrder: parseInt(e.target.value) || 1 }))
+                    }
+                    className={inputClass}
+                  />
+                </div>
+                <div>
+                  <label className={labelClass}>Publish Status</label>
+                  <select
+                    value={articleForm.status}
+                    onChange={(e) =>
+                      setArticleForm((a) => ({
+                        ...a,
+                        status: e.target.value === "draft" ? "draft" : "published",
+                      }))
+                    }
+                    className={inputClass}
+                  >
+                    <option value="published">Published</option>
+                    <option value="draft">Draft</option>
+                  </select>
+                </div>
+              </div>
+
               <div>
-                <label className={labelClass}>Category</label>
-                <input
-                  value={articleForm.category}
-                  onChange={(e) => setArticleForm((a) => ({ ...a, category: e.target.value }))}
-                  className={inputClass}
+                <label className={labelClass}>Summary / Body Content</label>
+                <textarea
+                  value={articleForm.content}
+                  onChange={(e) => setArticleForm((a) => ({ ...a, content: e.target.value }))}
+                  className="w-full h-28 p-3 bg-muted/30 border border-border rounded-xl text-xs outline-none"
                   required
                 />
               </div>
 
               <div>
-                <label className={labelClass}>Content / Instructions</label>
+                <label className={labelClass}>Step-by-Step Instructions (Optional, 1 step per line)</label>
                 <textarea
-                  value={articleForm.content}
-                  onChange={(e) => setArticleForm((a) => ({ ...a, content: e.target.value }))}
-                  className="w-full h-32 p-3 bg-muted/30 border border-border rounded-xl text-xs outline-none"
-                  required
+                  value={articleForm.steps.join("\n")}
+                  onChange={(e) =>
+                    setArticleForm((a) => ({
+                      ...a,
+                      steps: e.target.value.split("\n"),
+                    }))
+                  }
+                  placeholder="Step 1: Open the community page...\nStep 2: Click Submit Community..."
+                  className="w-full h-24 p-3 bg-muted/30 border border-border rounded-xl text-xs font-mono outline-none"
                 />
               </div>
+
+              <label className="flex items-center gap-2 text-xs font-semibold cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={articleForm.enabled}
+                  onChange={(e) => setArticleForm((a) => ({ ...a, enabled: e.target.checked }))}
+                  className="w-4 h-4 accent-primary"
+                />
+                <span>Enabled (visible on public /help when published)</span>
+              </label>
 
               <div className="flex justify-end gap-2 pt-2">
                 <button
@@ -2524,13 +3099,23 @@ export default function AdminSettings() {
                   type="submit"
                   className="px-5 py-2 bg-primary text-primary-foreground text-xs font-bold rounded-xl"
                 >
-                  Publish Article
+                  {editingArticle ? "Update Article" : "Save Article"}
                 </button>
               </div>
             </form>
           </div>
         </div>
       )}
+
+      {/* CMS Structured Page Editor Modal */}
+      <CmsPageEditorModal
+        open={!!editingCmsPage}
+        overview={editingCmsPage}
+        user={user}
+        supportEmail={settings.supportEmail || settings.officialContactEmail || settings.contactEmail || ""}
+        onClose={() => setEditingCmsPage(null)}
+        onChanged={refreshCmsAndContent}
+      />
 
       {/* Announcement Modal with Live Device Preview */}
       {announcementModalOpen && (

@@ -1,35 +1,41 @@
-import { HelpCircle, ChevronDown, CheckCircle2, ShieldCheck, Mail, Plus } from "lucide-react";
+import { useEffect, useState } from "react";
+import { HelpCircle, CheckCircle2, Mail, Loader2, ExternalLink } from "lucide-react";
 import { Link } from "wouter";
 import type { DashboardTab } from "@/hooks/useDashboardTabs";
+import { fetchPublicFaqs } from "@/lib/cms-client";
+import type { FAQItem } from "@/lib/types";
 
 interface HelpTabProps {
   onNavigate: (tab: DashboardTab) => void;
 }
 
 export function HelpTab({ onNavigate }: HelpTabProps) {
-  const faqs = [
-    {
-      q: "How long does it take for a submitted group to get approved?",
-      a: "Our Webmaster team reviews all submissions within 24 to 48 hours to ensure compliance with our community guidelines and Indian cyber regulations.",
-    },
-    {
-      q: "Why was my group rejected?",
-      a: "Common reasons include expired invite links, prohibited or adult content, misleading descriptions, or duplicate submissions. You can check specific feedback on your My Groups tab.",
-    },
-    {
-      q: "How does the account deletion lifecycle work?",
-      a: "When you submit an account deletion request, it enters PENDING review by the Webmaster. Once approved, all your private profile data is permanently purged. If rejected, a 7-day cooldown applies before a new request can be submitted.",
-    },
-    {
-      q: "How do I verify my Indian mobile number?",
-      a: "Go to your Profile tab or Account Security tab and click 'Link Mobile'. Enter your 10-digit number to complete verification.",
-    },
-  ];
+  const [faqs, setFaqs] = useState<FAQItem[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let active = true;
+    setLoading(true);
+    fetchPublicFaqs()
+      .then((items) => {
+        if (!active) return;
+        setFaqs(items.filter((f) => f.enabled !== false && f.status !== "draft"));
+      })
+      .catch(() => {
+        if (active) setFaqs([]);
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 sm:p-6 shadow-sm">
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 sm:p-6 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-purple-50 dark:bg-purple-950/50 flex items-center justify-center text-purple-600 dark:text-purple-400 flex-shrink-0">
             <HelpCircle className="w-5 h-5" />
@@ -37,34 +43,71 @@ export function HelpTab({ onNavigate }: HelpTabProps) {
           <div>
             <h2 className="text-lg font-bold text-slate-900 dark:text-white">Help Center & FAQ</h2>
             <p className="text-xs text-slate-500 dark:text-slate-400">
-              Guidance for group submissions, safety rules, and platform policies
+              Live guidance for group submissions, safety rules, and platform policies
             </p>
           </div>
         </div>
+        <div className="flex items-center gap-2">
+          <Link
+            href="/faq"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 transition"
+          >
+            All FAQs <ExternalLink className="w-3.5 h-3.5" />
+          </Link>
+          <Link
+            href="/help"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 transition"
+          >
+            Help Guides <ExternalLink className="w-3.5 h-3.5" />
+          </Link>
+        </div>
       </div>
 
-      {/* FAQs */}
+      {/* Live FAQs from Authoritative FAQ Management */}
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 sm:p-6 shadow-sm space-y-4">
         <h3 className="text-sm font-bold text-slate-900 dark:text-white mb-2">
           Frequently Asked Questions
         </h3>
 
-        <div className="space-y-3">
-          {faqs.map((faq, idx) => (
-            <div
-              key={idx}
-              className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/80 dark:border-slate-700/60 space-y-1.5"
-            >
-              <h4 className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                <CheckCircle2 className="w-3.5 h-3.5 text-purple-600 flex-shrink-0" />
-                <span>{faq.q}</span>
-              </h4>
-              <p className="text-xs text-slate-600 dark:text-slate-300 pl-5.5 leading-relaxed">
-                {faq.a}
-              </p>
-            </div>
-          ))}
-        </div>
+        {loading ? (
+          <div className="py-8 flex flex-col items-center gap-2 text-slate-500 dark:text-slate-400">
+            <Loader2 className="w-5 h-5 animate-spin text-purple-600" />
+            <span className="text-xs">Loading live FAQs...</span>
+          </div>
+        ) : faqs.length === 0 ? (
+          <div className="p-6 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/80 dark:border-slate-700/60 text-center space-y-1.5">
+            <p className="text-xs font-semibold text-slate-900 dark:text-white">
+              No published FAQs available right now.
+            </p>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              Browse the Help Center or reach out to our support desk below.
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {faqs.map((faq) => (
+              <div
+                key={faq.id}
+                className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/80 dark:border-slate-700/60 space-y-1.5"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <h4 className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-purple-600 flex-shrink-0" />
+                    <span>{faq.question}</span>
+                  </h4>
+                  {faq.category && (
+                    <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-purple-500/10 text-purple-600 dark:text-purple-400 shrink-0">
+                      {faq.category}
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-slate-600 dark:text-slate-300 pl-5 leading-relaxed whitespace-pre-line">
+                  {faq.answer}
+                </p>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Contact Support Banner */}

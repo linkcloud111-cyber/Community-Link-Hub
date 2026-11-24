@@ -9,6 +9,46 @@ export interface WebmasterAuthResult {
   response?: Response;
 }
 
+export function isFirestoreQuotaError(err: any): boolean {
+  const code = Number(err?.code);
+  const msg = String(err?.message || err || "");
+  return (
+    code === 8 ||
+    msg.includes("RESOURCE_EXHAUSTED") ||
+    msg.includes("Quota exceeded") ||
+    msg.includes("429")
+  );
+}
+
+export function isFirestoreTransientError(err: any): boolean {
+  const code = Number(err?.code);
+  const msg = String(err?.message || err || "");
+  return (
+    isFirestoreQuotaError(err) ||
+    code === 14 ||
+    code === 4 ||
+    msg.includes("UNAVAILABLE") ||
+    msg.includes("DEADLINE_EXHAUSTED") ||
+    msg.includes("DEADLINE_EXCEEDED")
+  );
+}
+
+export function handleAdminFirestoreError(err: any, fallbackMessage: string): Response {
+  if (isFirestoreQuotaError(err)) {
+    return errorResponse(
+      "Firestore daily quota exceeded. Daily quota resets tomorrow; please try again later or check your Firebase Spark/Blaze plan.",
+      503
+    );
+  }
+  if (isFirestoreTransientError(err)) {
+    return errorResponse(
+      "Database service is temporarily unavailable. Please try again shortly.",
+      503
+    );
+  }
+  return errorResponse(err?.message || fallbackMessage, 500);
+}
+
 export async function requireWebmasterAuth(
   request: Request,
   env: Env
@@ -29,11 +69,31 @@ export async function requireWebmasterAuth(
     };
   }
 
+  let uid: string;
+  let email = "";
   try {
     const verified = await verifyFirebaseIdToken(idToken, env);
-    const uid = verified.uid;
-    const email = verified.email || "";
+    uid = verified.uid;
+    email = verified.email || "";
+  } catch (err: any) {
+    const msg = String(err?.message || err || "");
+    console.warn("[Admin Auth] Token verification failed:", msg);
+    if (isFirestoreQuotaError(err) || isFirestoreTransientError(err)) {
+      return {
+        valid: false,
+        response: handleAdminFirestoreError(
+          err,
+          "Authentication service temporarily unavailable."
+        ),
+      };
+    }
+    return {
+      valid: false,
+      response: errorResponse("Invalid or expired authentication token.", 401),
+    };
+  }
 
+  try {
     // 1. Check /webmaster/{uid}
     const webmasterDoc = await firestoreGetDoc(`webmaster/${uid}`, env);
     if (webmasterDoc) {
@@ -54,9 +114,13 @@ export async function requireWebmasterAuth(
       response: errorResponse("Forbidden: Webmaster authority required.", 403),
     };
   } catch (err: any) {
+    console.warn("[Admin Auth] Webmaster role lookup failed:", err?.message || err);
     return {
       valid: false,
-      response: errorResponse(err?.message || "Invalid or expired token.", 401),
+      response: handleAdminFirestoreError(
+        err,
+        "Database service temporarily unavailable while verifying Webmaster permissions."
+      ),
     };
   }
 }
