@@ -2,7 +2,6 @@ import React, { createContext, useContext, useEffect, useState, useMemo } from "
 import { doc, onSnapshot } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { getSiteSettings } from "@/lib/firestore";
-import { isSafePublicUrl } from "@/lib/settings-validation";
 import type { SiteSettings } from "@/lib/types";
 
 interface SiteSettingsContextType {
@@ -95,10 +94,6 @@ const DEFAULT_SITE_SETTINGS: SiteSettings = {
   reportSystemEnabled: true,
   complaintSystemEnabled: true,
   contactFormEnabled: true,
-  announcementsEnabled: true,
-  searchEnabled: true,
-  publicDirectoryEnabled: true,
-  profileEditingEnabled: true,
   maintenanceMode: false,
   maintenanceMessage:
     "LinkCloud is currently undergoing scheduled system upgrades and database optimization. We will be back online shortly!",
@@ -168,16 +163,64 @@ function hexToHslCssVars(hex: string): { primary: string; ring: string } | null 
   return { primary: hslStr, ring: hslStr };
 }
 
+function upsertHeadMeta(selector: string, attrName: string, attrValue: string, content: string) {
+  if (typeof document === "undefined") return;
+  let el = document.head.querySelector(selector) as HTMLMetaElement | null;
+  if (!content) {
+    return;
+  }
+  if (!el) {
+    el = document.createElement("meta");
+    el.setAttribute(attrName, attrValue);
+    document.head.appendChild(el);
+  }
+  el.setAttribute("content", content);
+}
+
+function upsertCanonicalLink(href: string) {
+  if (typeof document === "undefined" || !href) return;
+  let link = document.head.querySelector('link[rel="canonical"]') as HTMLLinkElement | null;
+  if (!link) {
+    link = document.createElement("link");
+    link.setAttribute("rel", "canonical");
+    document.head.appendChild(link);
+  }
+  link.setAttribute("href", href);
+}
+
 function upsertFaviconLink(href: string) {
   if (typeof document === "undefined" || !href) return;
-  if (!isSafePublicUrl(href, true)) return;
   let link = document.head.querySelector('link[rel="icon"]') as HTMLLinkElement | null;
   if (!link) {
     link = document.createElement("link");
     link.setAttribute("rel", "icon");
     document.head.appendChild(link);
   }
-  link.setAttribute("href", href.trim());
+  link.setAttribute("href", href);
+}
+
+function upsertStructuredDataJson(jsonRaw: string) {
+  if (typeof document === "undefined") return;
+  const scriptId = "lc-webmaster-jsonld";
+  let script = document.getElementById(scriptId) as HTMLScriptElement | null;
+  const trimmed = (jsonRaw || "").trim();
+  if (!trimmed) {
+    if (script) script.remove();
+    return;
+  }
+  try {
+    // Validate JSON before injecting
+    JSON.parse(trimmed);
+    if (!script) {
+      script = document.createElement("script");
+      script.id = scriptId;
+      script.type = "application/ld+json";
+      document.head.appendChild(script);
+    }
+    script.textContent = trimmed;
+  } catch {
+    // Ignore malformed JSON-LD while typing
+  }
 }
 
 const SiteSettingsContext = createContext<SiteSettingsContextType>({
@@ -342,11 +385,39 @@ export function SiteSettingsProvider({ children }: { children: React.ReactNode }
       }
     }
 
-    // Apply Favicon (supports both faviconUrl and legacy/admin favicon field)
-    const activeFavicon = settings.faviconUrl || settings.favicon;
-    if (activeFavicon) {
-      upsertFaviconLink(activeFavicon);
+    // Apply Favicon
+    if (settings.faviconUrl) {
+      upsertFaviconLink(settings.faviconUrl);
     }
+
+    // Apply Global SEO / Meta Tags
+    const metaDescription = settings.metaDescription || settings.siteDescription || "";
+    const metaTitle =
+      settings.metaTitle ||
+      `${settings.siteName || "LinkCloud"} — ${settings.siteTagline || "India's Community Link Directory"}`;
+
+    upsertHeadMeta('meta[name="description"]', "name", "description", metaDescription);
+    upsertHeadMeta('meta[name="keywords"]', "name", "keywords", settings.metaKeywords || "");
+    upsertHeadMeta('meta[property="og:site_name"]', "property", "og:site_name", settings.siteName || "LinkCloud");
+    upsertHeadMeta('meta[property="og:title"]', "property", "og:title", metaTitle);
+    upsertHeadMeta('meta[property="og:description"]', "property", "og:description", metaDescription);
+    if (settings.ogImage) {
+      upsertHeadMeta('meta[property="og:image"]', "property", "og:image", settings.ogImage);
+    }
+    upsertHeadMeta('meta[name="twitter:title"]', "name", "twitter:title", metaTitle);
+    upsertHeadMeta('meta[name="twitter:description"]', "name", "twitter:description", metaDescription);
+    if (settings.twitterCardImage || settings.ogImage) {
+      upsertHeadMeta(
+        'meta[name="twitter:image"]',
+        "name",
+        "twitter:image",
+        settings.twitterCardImage || settings.ogImage || ""
+      );
+    }
+    if (settings.canonicalUrl) {
+      upsertCanonicalLink(settings.canonicalUrl);
+    }
+    upsertStructuredDataJson(settings.structuredDataJson || "");
   }, [effectiveTheme, settings]);
 
   return (

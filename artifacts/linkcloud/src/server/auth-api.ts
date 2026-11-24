@@ -1,10 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "http";
-import fs from "fs";
-import path from "path";
 import { getFirebaseAdminApp } from "./admin-api.ts";
 import { getAuth } from "firebase-admin/auth";
-import { FieldValue, getFirestore } from "firebase-admin/firestore";
-import { normalizeIndianMobileNumber } from "../lib/group-validation.ts";
+import { getFirestore } from "firebase-admin/firestore";
 
 function sendJson(res: ServerResponse, data: any, status = 200) {
   res.statusCode = status;
@@ -95,31 +92,6 @@ export async function allocateNextSequentialUid(): Promise<string> {
   return allocatedUid;
 }
 
-/**
- * Fail-closed evaluator for the Webmaster `userRegistrationEnabled` flag.
- * Only strictly boolean `true` permits new account creation.
- * Missing, null, false, or malformed values fail closed with HTTP 403.
- */
-export function evaluateRegistrationGuard(siteSettings: unknown): {
-  allowed: boolean;
-  status?: number;
-  error?: string;
-} {
-  if (
-    !siteSettings ||
-    typeof siteSettings !== "object" ||
-    Array.isArray(siteSettings) ||
-    (siteSettings as Record<string, unknown>).userRegistrationEnabled !== true
-  ) {
-    return {
-      allowed: false,
-      status: 403,
-      error: "New user registrations are currently closed by the webmaster.",
-    };
-  }
-  return { allowed: true };
-}
-
 export async function handleAuthProvisionUser(
   req: IncomingMessage,
   res: ServerResponse
@@ -135,26 +107,6 @@ export async function handleAuthProvisionUser(
 
   const body = await parseBody(req);
   const { fullName, dob, email, phone, password } = body;
-
-  // Enforce Webmaster userRegistrationEnabled setting server-side (strict fail-closed)
-  const adminAppForSettings = getFirebaseAdminApp();
-  if (!adminAppForSettings) {
-    sendJson(res, { error: "Registration service is temporarily unavailable. Please try again." }, 503);
-    return;
-  }
-
-  try {
-    const siteSnap = await getFirestore(adminAppForSettings).doc("settings/site").get();
-    const guard = evaluateRegistrationGuard(siteSnap.exists ? siteSnap.data() : null);
-    if (!guard.allowed) {
-      sendJson(res, { error: guard.error }, guard.status || 403);
-      return;
-    }
-  } catch (err) {
-    console.error("[Auth API] Failed to verify userRegistrationEnabled setting:", err);
-    sendJson(res, { error: "Unable to verify registration availability. Please try again." }, 503);
-    return;
-  }
 
   // 1. Validations
   const cleanName = typeof fullName === "string" ? fullName.trim() : "";
@@ -214,21 +166,18 @@ export async function handleAuthProvisionUser(
   const firestore = getFirestore(app);
 
   try {
-    // 2. Duplicate checks in Firestore indexes (unified safe 409 prevents email/phone enumeration)
-    const SAFE_CONFLICT_MSG =
-      "Unable to complete registration with the provided details. If you already have an account, please sign in.";
-
+    // 2. Duplicate checks in Firestore indexes
     const emailIndexRef = firestore.collection("emailIndex").doc(cleanEmail);
     const emailIndexSnap = await emailIndexRef.get();
     if (emailIndexSnap.exists) {
-      sendJson(res, { error: SAFE_CONFLICT_MSG }, 409);
+      sendJson(res, { error: "This Gmail address is already registered." }, 409);
       return;
     }
 
     const mobileIndexRef = firestore.collection("mobileIndex").doc(cleanPhone);
     const mobileIndexSnap = await mobileIndexRef.get();
     if (mobileIndexSnap.exists) {
-      sendJson(res, { error: SAFE_CONFLICT_MSG }, 409);
+      sendJson(res, { error: "An account with this Mobile Number is already registered." }, 409);
       return;
     }
 
@@ -236,7 +185,7 @@ export async function handleAuthProvisionUser(
     try {
       const existingUser = await auth.getUserByEmail(cleanEmail);
       if (existingUser) {
-        sendJson(res, { error: SAFE_CONFLICT_MSG }, 409);
+        sendJson(res, { error: "This Gmail address is already registered." }, 409);
         return;
       }
     } catch (authLookupErr: any) {
@@ -362,7 +311,7 @@ export async function handleAuthProvisionUser(
       res,
       {
         success: false,
-        error: "Unable to complete registration. Please try again later.",
+        error: err?.message || "Failed to provision user.",
       },
       500
     );
@@ -441,7 +390,7 @@ export async function handleAuthProvisionGoogleUser(
     return;
   } catch (err: any) {
     console.error("[Auth API] Google provision error:", err);
-    sendJson(res, { success: false, error: "Authentication failed. Please try again." }, 500);
+    sendJson(res, { success: false, error: err?.message || "Failed to provision Google account." }, 500);
   }
 }
 
@@ -484,14 +433,10 @@ export async function handleAuthProvisionPhoneUser(
       return;
     }
 
-    // Check if phone exists in mobileIndex (check +91, +91 spaced, and 10-digit formats)
+    // Check if phone exists in mobileIndex (check both +91 and 10-digit formats)
     let mobileIndexSnap = await firestore.collection("mobileIndex").doc(phoneNumber).get();
     if (!mobileIndexSnap.exists && phoneNumber.startsWith("+91")) {
-      const raw10 = phoneNumber.slice(3).trim();
-      mobileIndexSnap = await firestore.collection("mobileIndex").doc(`+91 ${raw10}`).get();
-      if (!mobileIndexSnap.exists) {
-        mobileIndexSnap = await firestore.collection("mobileIndex").doc(raw10).get();
-      }
+      mobileIndexSnap = await firestore.collection("mobileIndex").doc(phoneNumber.slice(3)).get();
     }
     if (!mobileIndexSnap.exists && !phoneNumber.startsWith("+")) {
       mobileIndexSnap = await firestore.collection("mobileIndex").doc(`+91${phoneNumber}`).get();
@@ -529,20 +474,6 @@ export async function handleAuthProvisionPhoneUser(
         });
         return;
       }
-    }
-
-    // Enforce Webmaster userRegistrationEnabled before creating a new phone user (strict fail-closed)
-    try {
-      const siteSnap = await firestore.doc("settings/site").get();
-      const guard = evaluateRegistrationGuard(siteSnap.exists ? siteSnap.data() : null);
-      if (!guard.allowed) {
-        sendJson(res, { success: false, error: guard.error }, guard.status || 403);
-        return;
-      }
-    } catch (guardErr) {
-      console.error("[Auth API] Failed to verify userRegistrationEnabled for phone signup:", guardErr);
-      sendJson(res, { success: false, error: "Unable to verify registration availability. Please try again." }, 503);
-      return;
     }
 
     // Allocate canonical sequential UID
@@ -639,7 +570,7 @@ export async function handleAuthProvisionPhoneUser(
     });
   } catch (err: any) {
     console.error("[Auth API] Phone provision error:", err);
-    sendJson(res, { success: false, error: "Unable to complete phone authentication. Please try again." }, 500);
+    sendJson(res, { success: false, error: err?.message || "Failed to provision phone account." }, 500);
   }
 }
 
@@ -688,424 +619,50 @@ export async function handleAuthCheckRegistration(
 
   const clientIp = (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() || req.socket?.remoteAddress || "local";
   if (isDevRateLimited(clientIp)) {
-    sendJson(res, { error: "Too many requests. Please try again later." }, 429);
+    sendJson(res, { error: "Too many registration checks. Please try again later." }, 429);
     return;
   }
-
-  // Unauthenticated account-existence lookup is permanently disabled to prevent
-  // Gmail enumeration via response body, status, or Firestore timing side-channels.
-  sendJson(
-    res,
-    {
-      error: "Account lookup is disabled to protect user privacy. Please sign in or reset your password directly.",
-    },
-    403
-  );
-}
-
-const mobileIpRateLimitMap = new Map<string, { count: number; resetAt: number }>();
-const mobilePhoneIpRateLimitMap = new Map<string, { count: number; resetAt: number }>();
-const MOBILE_IP_WINDOW_MS = 60 * 1000;
-const MOBILE_IP_MAX = 25;
-const MOBILE_PHONE_WINDOW_MS = 5 * 60 * 1000;
-const MOBILE_PHONE_MAX = 10;
-
-function isMobileRateLimited(
-  map: Map<string, { count: number; resetAt: number }>,
-  key: string,
-  max: number,
-  windowMs: number
-): boolean {
-  const now = Date.now();
-  const entry = map.get(key);
-  if (!entry || entry.resetAt <= now) {
-    map.set(key, { count: 1, resetAt: now + windowMs });
-    if (map.size > 2000) {
-      for (const [k, v] of map.entries()) {
-        if (v.resetAt <= now) map.delete(k);
-      }
-    }
-    return false;
-  }
-  entry.count++;
-  return entry.count > max;
-}
-
-function resolveFirebaseWebApiKey(): string {
-  const envKey = process.env.FIREBASE_WEB_API_KEY || process.env.VITE_FIREBASE_API_KEY;
-  if (envKey && envKey.trim().length > 10) return envKey.trim();
-  try {
-    const cfgPath = path.resolve(process.cwd(), "firebase-applet-config.json");
-    if (fs.existsSync(cfgPath)) {
-      const parsed = JSON.parse(fs.readFileSync(cfgPath, "utf8"));
-      if (parsed?.apiKey) return String(parsed.apiKey);
-    }
-    const nestedCfgPath = path.resolve(process.cwd(), "artifacts/linkcloud/firebase-applet-config.json");
-    if (fs.existsSync(nestedCfgPath)) {
-      const parsed = JSON.parse(fs.readFileSync(nestedCfgPath, "utf8"));
-      if (parsed?.apiKey) return String(parsed.apiKey);
-    }
-  } catch {
-    // ignore
-  }
-  return "";
-}
-
-const GENERIC_MOBILE_LOGIN_ERROR = "Invalid mobile number or password.";
-
-export async function handleAuthMobilePasswordLogin(
-  req: IncomingMessage,
-  res: ServerResponse
-): Promise<void> {
-  if (req.method === "OPTIONS") {
-    sendJson(res, {}, 204);
-    return;
-  }
-  if (req.method !== "POST") {
-    sendJson(res, { success: false, error: "Method not allowed. Use POST." }, 405);
-    return;
-  }
-
-  const clientIp =
-    (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() ||
-    req.socket?.remoteAddress ||
-    "local";
-
-  if (isMobileRateLimited(mobileIpRateLimitMap, clientIp, MOBILE_IP_MAX, MOBILE_IP_WINDOW_MS)) {
-    sendJson(res, { success: false, error: "Too many login attempts. Please wait a minute and try again." }, 429);
-    return;
-  }
-
-  const body = await parseBody(req);
-  const rawMobile =
-    typeof body.mobile === "string"
-      ? body.mobile
-      : typeof body.phone === "string"
-      ? body.phone
-      : "";
-  const password = typeof body.password === "string" ? body.password : "";
-  const portal = body.portal === "webmaster" ? "webmaster" : "user";
-
-  const norm = normalizeIndianMobileNumber(rawMobile);
-  if (!norm.valid) {
-    sendJson(res, { success: false, error: "Invalid mobile number. Please check and try again." }, 400);
-    return;
-  }
-  if (!password) {
-    sendJson(res, { success: false, error: "Please enter your password." }, 400);
-    return;
-  }
-
-  const phoneRateKey = `${clientIp}:${norm.canonical}`;
-  if (isMobileRateLimited(mobilePhoneIpRateLimitMap, phoneRateKey, MOBILE_PHONE_MAX, MOBILE_PHONE_WINDOW_MS)) {
-    sendJson(
-      res,
-      { success: false, error: "Too many failed attempts for this mobile number. Please try again in a few minutes." },
-      429
-    );
-    return;
-  }
-
-  const app = getFirebaseAdminApp();
-  const webApiKey = resolveFirebaseWebApiKey();
-  if (!app || !webApiKey) {
-    sendJson(res, { success: false, error: "Authentication service is temporarily unavailable." }, 503);
-    return;
-  }
-
-  const adminAuth = getAuth(app);
-  const firestore = getFirestore(app);
 
   try {
-    // 1. Server-side resolve UID via mobileIndex (+91 canonical, +91 spaced, 10-digit legacy)
-    let resolvedUid = "";
-    for (const variation of norm.variations) {
-      const snap = await firestore.collection("mobileIndex").doc(variation).get();
-      if (snap.exists) {
-        const data = snap.data() || {};
-        if (data.uid && data.status !== "deleted") {
-          resolvedUid = String(data.uid).trim();
-          break;
-        }
-      }
-    }
-
-    // Fallback for legacy users missing mobileIndex entries
-    if (!resolvedUid) {
-      const usersSnap = await firestore
-        .collection("users")
-        .where("phone", "in", norm.variations)
-        .limit(3)
-        .get();
-      const activeDoc = usersSnap.docs.find((d) => d.data()?.status !== "deleted");
-      if (activeDoc) {
-        const data = activeDoc.data();
-        resolvedUid = String(data?.uid || activeDoc.id).trim();
-      }
-    }
-
-    if (!resolvedUid) {
-      sendJson(res, { success: false, error: GENERIC_MOBILE_LOGIN_ERROR }, 401);
+    const body = await parseBody(req);
+    const email = typeof body?.email === "string" ? body.email.trim().toLowerCase() : "";
+    if (!email || !email.endsWith("@gmail.com")) {
+      sendJson(res, { error: "Please provide a valid Gmail address." }, 400);
       return;
     }
 
-    const userSnap = await firestore.collection("users").doc(resolvedUid).get();
-    const userData = userSnap.exists ? userSnap.data() || {} : null;
-
-    let authRecord: { email?: string; disabled?: boolean } | null = null;
-    try {
-      const rec = await adminAuth.getUser(resolvedUid);
-      authRecord = { email: rec.email, disabled: rec.disabled };
-    } catch {
-      authRecord = null;
+    const app = getFirebaseAdminApp();
+    if (!app) {
+      sendJson(res, { error: "Firebase Admin not initialized" }, 500);
+      return;
     }
+    const firestore = getFirestore(app);
 
-    const authEmail = String(authRecord?.email || userData?.email || "")
-      .trim()
-      .toLowerCase();
+    const emailIndexRef = firestore.collection("emailIndex").doc(email);
+    const emailIndexSnap = await emailIndexRef.get();
 
-    if (!authEmail) {
-      sendJson(res, { success: false, error: GENERIC_MOBILE_LOGIN_ERROR }, 401);
+    if (!emailIndexSnap.exists) {
+      sendJson(res, { registered: false, verified: false });
       return;
     }
 
-    // 2. Verify password using Firebase Authentication Identity Toolkit REST API
-    const signInRes = await fetch(
-      `https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${encodeURIComponent(webApiKey)}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          email: authEmail,
-          password,
-          returnSecureToken: false,
-        }),
-      }
-    );
-
-    if (!signInRes.ok) {
-      const errData: any = await signInRes.json().catch(() => ({}));
-      const errMsg = String(errData?.error?.message || "");
-      if (errMsg.includes("TOO_MANY_ATTEMPTS_TRY_LATER")) {
-        sendJson(res, { success: false, error: "Too many login attempts. Please try again later." }, 429);
-        return;
-      }
-      sendJson(res, { success: false, error: GENERIC_MOBILE_LOGIN_ERROR }, 401);
+    const indexData = emailIndexSnap.data();
+    if (!indexData?.uid || indexData.status === "deleted") {
+      sendJson(res, { registered: false, verified: false });
       return;
     }
 
-    // 3. Enforce account status after password succeeds
-    const status = String(userData?.status || "active");
-    if (status === "deleted" || authRecord?.disabled === true) {
-      sendJson(res, { success: false, error: "This account has been suspended or disabled. Please contact support." }, 403);
-      return;
-    }
-    if (status === "suspended" || status === "banned" || userData?.suspended === true || userData?.banned === true) {
-      sendJson(res, { success: false, error: "Your account has been suspended or banned. Please contact support." }, 403);
-      return;
-    }
+    const userSnap = await firestore.collection("users").doc(indexData.uid).get();
+    const userData = userSnap.data();
+    const isVerified = Boolean(userData?.emailVerified === true || userData?.phoneVerified === true);
 
-    // 4. Enforce portal role isolation
-    const wmSnap = await firestore.collection("webmaster").doc(resolvedUid).get();
-    const isWebmaster = Boolean(
-      resolvedUid === "OXGYTyWBcdYNcHkWyXPbOvVlV2h1" ||
-        userData?.role === "webmaster" ||
-        (wmSnap.exists && wmSnap.data()?.active !== false)
-    );
-
-    if (portal === "webmaster" && !isWebmaster) {
-      sendJson(res, { success: false, error: "This account is not authorized to access the Webmaster Portal." }, 403);
-      return;
-    }
-    if (portal === "user" && isWebmaster) {
-      sendJson(res, { success: false, error: "This is a Webmaster account. Please sign in from the Webmaster Login page." }, 403);
-      return;
-    }
-
-    mobilePhoneIpRateLimitMap.delete(phoneRateKey);
-
-    const customToken = await adminAuth.createCustomToken(resolvedUid, {
-      accountUid: userData?.accountUid || resolvedUid,
-      role: isWebmaster ? "webmaster" : "user",
-    });
-
-    // Privacy invariant: NEVER return email, uid, accountUid, or phone in response
     sendJson(res, {
-      success: true,
-      customToken,
+      registered: true,
+      verified: isVerified,
     });
   } catch (err: any) {
-    const msg = String(err?.message ?? "");
-    const code = Number(err?.code);
-    const isTransient =
-      code === 8 ||
-      code === 14 ||
-      code === 4 ||
-      msg.includes("RESOURCE_EXHAUSTED") ||
-      msg.includes("UNAVAILABLE") ||
-      msg.includes("DEADLINE_EXCEEDED");
-    console.error("[Auth API] Mobile password login error:", msg || "unexpected");
-    sendJson(
-      res,
-      {
-        success: false,
-        error: isTransient
-          ? "Authentication service is temporarily busy. Please try again in a moment."
-          : "Unable to process login request. Please try again.",
-      },
-      isTransient ? 503 : 500
-    );
-  }
-}
-
-export async function handleAuthDeleteAccount(
-  req: IncomingMessage,
-  res: ServerResponse
-): Promise<void> {
-  if (req.method === "OPTIONS") {
-    sendJson(res, {}, 204);
-    return;
-  }
-  if (req.method !== "POST") {
-    sendJson(res, { success: false, error: "Method not allowed. Use POST." }, 405);
-    return;
-  }
-
-  const authHeader = String(req.headers.authorization || "");
-  const idToken = authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : "";
-  if (!idToken) {
-    sendJson(res, { success: false, error: "Authentication required." }, 401);
-    return;
-  }
-
-  const app = getFirebaseAdminApp();
-  if (!app) {
-    sendJson(res, { success: false, error: "Account deletion service is temporarily unavailable." }, 503);
-    return;
-  }
-
-  const adminAuth = getAuth(app);
-  const firestore = getFirestore(app);
-
-  let decoded: { uid: string; email?: string };
-  try {
-    decoded = await adminAuth.verifyIdToken(idToken);
-  } catch {
-    sendJson(res, { success: false, error: "Invalid or expired authentication token." }, 401);
-    return;
-  }
-
-  const uid = decoded.uid;
-
-  try {
-    const [wmSnap, userSnap] = await Promise.all([
-      firestore.collection("webmaster").doc(uid).get(),
-      firestore.collection("users").doc(uid).get(),
-    ]);
-    const userData = userSnap.exists ? userSnap.data() || {} : null;
-
-    if (
-      uid === "OXGYTyWBcdYNcHkWyXPbOvVlV2h1" ||
-      userData?.role === "webmaster" ||
-      (wmSnap.exists && wmSnap.data()?.active !== false)
-    ) {
-      sendJson(res, { success: false, error: "Security Protection: Webmaster accounts cannot be self-deleted." }, 403);
-      return;
-    }
-
-    const email = String(userData?.email || decoded.email || "").trim().toLowerCase();
-    const phone = String(userData?.phone || "").trim();
-    const accountUid = userData?.accountUid || uid;
-
-    const batch = firestore.batch();
-
-    // 1. Anonymize groups submitted by user
-    const groupsSnap = await firestore.collection("groups").where("submittedBy", "==", uid).get();
-    for (const gDoc of groupsSnap.docs) {
-      batch.update(gDoc.ref, {
-        submittedBy: "deleted",
-        submitterDeleted: true,
-        submittedByName: "Deleted User",
-        submittedByEmail: "",
-        submittedByPhone: "",
-        updatedAt: FieldValue.serverTimestamp(),
-      });
-      batch.delete(firestore.collection("groupOwnership").doc(gDoc.id));
-    }
-
-    // 2. Delete favorites & notifications
-    const [favsSnap, notifSnap] = await Promise.all([
-      firestore.collection("favorites").where("userId", "==", uid).get(),
-      firestore.collection("notifications").where("userId", "==", uid).get(),
-    ]);
-    favsSnap.docs.forEach((d) => batch.delete(d.ref));
-    notifSnap.docs.forEach((d) => batch.delete(d.ref));
-
-    // 3. Registry & tombstone
-    if (accountUid) {
-      batch.set(
-        firestore.collection("accountUidRegistry").doc(accountUid),
-        {
-          accountUid,
-          firebaseUid: uid,
-          status: "deleted",
-          deletedAt: FieldValue.serverTimestamp(),
-        },
-        { merge: true }
-      );
-    }
-
-    batch.set(
-      firestore.collection("deletedAccounts").doc(accountUid),
-      {
-        accountUid,
-        status: "permanently_deleted",
-        deletedAt: FieldValue.serverTimestamp(),
-        deletedBy: uid,
-        deletedByEmail: email,
-        reason: "Self Direct Permanent Deletion",
-        deletionType: "direct_user_delete",
-        reRegistrationAllowed: true,
-      },
-      { merge: true }
-    );
-
-    // 4. Clean up identity indexes server-side
-    if (email) {
-      batch.delete(firestore.collection("emailIndex").doc(email));
-    }
-    if (phone) {
-      const norm = normalizeIndianMobileNumber(phone);
-      const keys = norm.valid ? norm.variations : [phone];
-      for (const k of Array.from(new Set([phone, ...keys]))) {
-        batch.delete(firestore.collection("mobileIndex").doc(k));
-      }
-    }
-
-    batch.delete(firestore.collection("pendingRegistrations").doc(uid));
-    batch.delete(firestore.collection("users").doc(uid));
-
-    batch.set(firestore.collection("audit_logs").doc(), {
-      action: "USER_SELF_DELETED",
-      targetUid: uid,
-      actorUid: uid,
-      details: { accountUid },
-      createdAt: new Date().toISOString(),
-      timestamp: new Date().toISOString(),
-    });
-
-    await batch.commit();
-
-    try {
-      await adminAuth.deleteUser(uid);
-    } catch (authErr: any) {
-      console.warn("[Auth API] Self-delete Firebase Auth user cleanup notice:", authErr?.message);
-    }
-
-    sendJson(res, { success: true });
-  } catch (err: any) {
-    console.error("[Auth API] Self-delete error:", err?.message ?? "unexpected");
-    sendJson(res, { success: false, error: "Failed to delete account. Please try again." }, 500);
+    console.warn("[Auth API] check registration notice:", err);
+    sendJson(res, { error: "Failed to check registration status" }, 500);
   }
 }
 

@@ -15,8 +15,6 @@ import {
   AlertCircle,
 } from "lucide-react";
 import { PlatformIcon } from "@/components/platform-icon";
-import { useSiteSettings } from "@/contexts/SiteSettingsContext";
-import { useAuth } from "@/contexts/AuthContext";
 import type { Group } from "@/lib/types";
 
 interface MyGroupsTabProps {
@@ -32,11 +30,8 @@ export function MyGroupsTab({
   onFilterChange,
   onDeleteGroup,
 }: MyGroupsTabProps) {
-  const { settings } = useSiteSettings();
-  const { isWebmaster } = useAuth();
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<"newest" | "oldest" | "name">("newest");
-  const canSubmit = Boolean(isWebmaster || settings?.groupSubmissionEnabled === true);
 
   // Filtering
   let filtered = groups;
@@ -125,15 +120,13 @@ export function MyGroupsTab({
           </div>
         </div>
 
-        {canSubmit && (
-          <Link
-            href="/submit"
-            className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold text-white bg-purple-600 hover:bg-purple-700 transition shadow-sm self-start sm:self-auto"
-          >
-            <Plus className="w-4 h-4" />
-            <span>+ Submit New Group</span>
-          </Link>
-        )}
+        <Link
+          href="/submit"
+          className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold text-white bg-purple-600 hover:bg-purple-700 transition shadow-sm self-start sm:self-auto"
+        >
+          <Plus className="w-4 h-4" />
+          <span>+ Submit New Group</span>
+        </Link>
       </div>
 
       {/* Filter Tabs & Search Bar */}
@@ -212,7 +205,7 @@ export function MyGroupsTab({
                 : "No groups match your current filter or search criteria."}
             </p>
           </div>
-          {groups.length === 0 && canSubmit && (
+          {groups.length === 0 && (
             <Link
               href="/submit"
               className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold text-white bg-purple-600 hover:bg-purple-700 transition shadow-sm"
@@ -288,27 +281,23 @@ export function MyGroupsTab({
                     </Link>
                   )}
 
-                  {(isWebmaster || group.status === "pending" || group.allowResubmit === true) && (
-                    <Link
-                      href={`/dashboard/edit/${group.id}`}
-                      className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-xl text-slate-500 hover:text-purple-600 hover:bg-purple-50 dark:hover:bg-purple-950/50 transition"
-                      title={group.allowResubmit ? "Edit & Resubmit Group" : "Edit Group"}
-                      aria-label={group.allowResubmit ? "Edit & Resubmit Group" : "Edit Group"}
-                    >
-                      <Edit className="w-4 h-4" />
-                    </Link>
-                  )}
+                  <Link
+                    href={`/dashboard/edit/${group.id}`}
+                    className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-xl text-slate-500 hover:text-purple-600 hover:bg-purple-50 dark:hover:bg-purple-950/50 transition"
+                    title="Edit Group"
+                    aria-label="Edit Group"
+                  >
+                    <Edit className="w-4 h-4" />
+                  </Link>
 
-                  {(isWebmaster || group.status === "pending") && (
-                    <button
-                      onClick={() => onDeleteGroup(group.id, group.name)}
-                      className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-xl text-slate-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/50 transition"
-                      title="Delete Pending Group"
-                      aria-label="Delete Pending Group"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  )}
+                  <button
+                    onClick={() => onDeleteGroup(group.id, group.name)}
+                    className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-xl text-slate-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/50 transition"
+                    title="Delete Group"
+                    aria-label="Delete Group"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
                 </div>
               </div>
             </div>

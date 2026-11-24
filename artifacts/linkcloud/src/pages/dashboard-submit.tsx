@@ -5,13 +5,6 @@ import { useSiteSettings } from "@/contexts/SiteSettingsContext";
 import { useTaxonomy } from "@/contexts/TaxonomyContext";
 import { useLocation as useAppLocation } from "@/contexts/LocationContext";
 import { createGroup, checkDuplicateGroup } from "@/lib/firestore";
-import {
-  parseAndValidateTags,
-  getLiveTagStats,
-  MAX_GROUP_TAGS,
-  MAX_TAG_LENGTH,
-  MAX_GROUP_DESCRIPTION_LENGTH,
-} from "@/lib/group-validation";
 import { uploadToCloudinary } from "@/lib/cloudinary";
 import { getPlatformLinkHints, normalizePlatformKey, validateInviteLink } from "@/lib/utils";
 import { toast } from "sonner";
@@ -176,7 +169,7 @@ export default function DashboardSubmit() {
 
   // Auto Save Draft & dirty flag
   useEffect(() => {
-    if (name || joinUrl || description || state || city || rules || tagsInput) {
+    if (name || joinUrl || description || state || city || rules) {
       setIsDirty(true);
       const draftObj = {
         name,
@@ -190,12 +183,11 @@ export default function DashboardSubmit() {
         city,
         rules,
         minimumAge,
-        tagsInput,
         joinUrl,
       };
       localStorage.setItem(draftKey, JSON.stringify(draftObj));
     }
-  }, [name, platform, categoryId, contentType, description, language, state, district, city, rules, minimumAge, tagsInput, joinUrl, draftKey]);
+  }, [name, platform, categoryId, contentType, description, language, state, district, city, rules, minimumAge, joinUrl, draftKey]);
 
   // Unsaved changes warning
   useEffect(() => {
@@ -226,7 +218,6 @@ export default function DashboardSubmit() {
       if (data.city) setCity(data.city);
       if (data.rules) setRules(data.rules);
       if (data.minimumAge) setMinimumAge(data.minimumAge);
-      if (data.tagsInput) setTagsInput(data.tagsInput);
       if (data.joinUrl) setJoinUrl(data.joinUrl);
       toast.success("Saved submission draft restored!");
     } catch {
@@ -271,7 +262,7 @@ export default function DashboardSubmit() {
     if (platform) filled++;
     if (categoryId) filled++;
     if (contentType) filled++;
-    if (description.trim().length >= 20 && description.trim().length <= MAX_GROUP_DESCRIPTION_LENGTH) filled++;
+    if (description.trim().length >= 20 && description.trim().length <= 500) filled++;
     if (language) filled++;
     if (state) filled++;
     if (district) filled++;
@@ -295,12 +286,7 @@ export default function DashboardSubmit() {
     if (!categoryId) { toast.error("Please select a Category."); return; }
     if (!description.trim()) { toast.error("Description is required."); return; }
     if (description.trim().length < 20) { toast.error("Description must be at least 20 characters."); return; }
-    if (description.trim().length > MAX_GROUP_DESCRIPTION_LENGTH) {
-      toast.error(`Description must not exceed ${MAX_GROUP_DESCRIPTION_LENGTH} characters.`);
-      return;
-    }
-    const tagCheck = parseAndValidateTags(tagsInput, { required: true });
-    if (!tagCheck.valid) { toast.error(tagCheck.error || "Please enter valid tags."); return; }
+    if (description.trim().length > 500) { toast.error("Description must not exceed 500 characters."); return; }
     if (!state) { toast.error("Please select a State."); return; }
     if (!district) { toast.error("Please select a District."); return; }
     if (!city.trim()) { toast.error("City is required."); return; }
@@ -325,19 +311,20 @@ export default function DashboardSubmit() {
       if (logoFile) {
         logoUrl = await uploadToCloudinary(
           logoFile,
-          settings?.cloudinaryUploadPreset || settings?.cloudinarySettings?.uploadPreset,
-          settings?.cloudinaryCloudName || settings?.cloudinarySettings?.cloudName
+          settings?.cloudinaryUploadPreset,
+          settings?.cloudinaryCloudName
         );
       }
 
-      const tagCheck = parseAndValidateTags(tagsInput, { required: true });
-      if (!tagCheck.valid) {
-        toast.error(tagCheck.error || "Please enter valid tags.");
-        setIsSubmitting(false);
-        return;
-      }
-
       const categoryName = categories.find((c) => c.id === categoryId)?.name || "";
+      const tags = Array.from(
+        new Set(
+          tagsInput
+            .split(",")
+            .map((t) => t.trim().toLowerCase())
+            .filter(Boolean)
+        )
+      );
 
       await createGroup({
         name: name.trim(),
@@ -353,7 +340,7 @@ export default function DashboardSubmit() {
         city: city.trim(),
         rules: rules.trim(),
         minimumAge: minimumAge || "All Ages",
-        tags: tagCheck.tags,
+        tags,
         joinUrl: joinUrl.trim(),
         submittedBy: user.uid,
         submittedByName: profile.displayName || user.displayName || user.email || "User",
@@ -476,6 +463,30 @@ export default function DashboardSubmit() {
           >
             Submit Another Group
           </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (settings?.groupSubmissionEnabled !== true && !isWebmaster && profile?.role !== "webmaster") {
+    return (
+      <div className="max-w-2xl mx-auto py-16 px-4 text-center space-y-5">
+        <div className="w-16 h-16 rounded-2xl bg-amber-500/10 text-amber-500 flex items-center justify-center mx-auto border border-amber-500/20 shadow-lg">
+          <ShieldAlert className="w-8 h-8" />
+        </div>
+        <h1 className="text-2xl sm:text-3xl font-extrabold text-foreground">
+          Community Submissions Closed
+        </h1>
+        <p className="text-sm text-muted-foreground max-w-md mx-auto leading-relaxed">
+          Public submissions are temporarily paused by the webmaster for scheduled database review. Please check back soon or browse existing verified groups.
+        </p>
+        <div className="pt-2">
+          <Link
+            href="/groups"
+            className="px-6 py-2.5 bg-primary text-primary-foreground font-semibold text-sm rounded-xl hover:bg-primary/90 transition inline-block shadow-md"
+          >
+            Browse Verified Communities
+          </Link>
         </div>
       </div>
     );
@@ -718,46 +729,17 @@ export default function DashboardSubmit() {
 
             {/* FIELD 7: Tags * */}
             <div>
-              {(() => {
-                const tagStats = getLiveTagStats(tagsInput);
-                const tagCheck = tagsInput.trim()
-                  ? parseAndValidateTags(tagsInput, { required: true })
-                  : null;
-                return (
-                  <>
-                    <div className="flex justify-between items-center mb-1.5">
-                      <label className={labelClass}>7. Tags *</label>
-                      <span
-                        className={`text-xs font-bold ${
-                          tagStats.count > MAX_GROUP_TAGS || (tagCheck && !tagCheck.valid)
-                            ? "text-destructive"
-                            : "text-muted-foreground"
-                        }`}
-                      >
-                        {tagStats.count} / {MAX_GROUP_TAGS} Tags ({tagStats.remaining} remaining)
-                      </span>
-                    </div>
-                    <input
-                      required
-                      value={tagsInput}
-                      onChange={(e) => setTagsInput(e.target.value)}
-                      className={`${inputClass} ${
-                        tagCheck && !tagCheck.valid ? "border-destructive focus:ring-destructive" : ""
-                      }`}
-                      placeholder="jobs, electrician, whatsapp, cg, room rent"
-                    />
-                    {tagCheck && !tagCheck.valid ? (
-                      <p className="text-xs font-medium text-destructive mt-1 flex items-center gap-1">
-                        <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" /> {tagCheck.error}
-                      </p>
-                    ) : (
-                      <p className="text-[11px] text-muted-foreground mt-1">
-                        Up to {MAX_GROUP_TAGS} comma-separated tags (max {MAX_TAG_LENGTH} characters per tag, no empty or duplicate tags).
-                      </p>
-                    )}
-                  </>
-                );
-              })()}
+              <label className={labelClass}>7. Tags *</label>
+              <input
+                required
+                value={tagsInput}
+                onChange={(e) => setTagsInput(e.target.value)}
+                className={inputClass}
+                placeholder="jobs, electrician, whatsapp, cg, room rent"
+              />
+              <p className="text-[11px] text-muted-foreground mt-1">
+                Enter keywords separated by commas (e.g. jobs, electrician, whatsapp, cg, room rent)
+              </p>
             </div>
 
             {/* FIELD 8: Group Logo (Optional) */}

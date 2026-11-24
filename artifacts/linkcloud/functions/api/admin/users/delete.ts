@@ -119,16 +119,7 @@ export async function onRequestPost(context: {
     await firestoreDeleteDoc(`emailIndex/${targetEmail.toLowerCase()}`, env);
   }
   if (targetPhone) {
-    const digits = targetPhone.replace(/\D/g, "").slice(-10);
-    const phoneKeys = Array.from(
-      new Set([
-        targetPhone,
-        ...(digits.length === 10 ? [`+91${digits}`, `+91 ${digits}`, digits] : []),
-      ])
-    );
-    for (const pk of phoneKeys) {
-      await firestoreDeleteDoc(`mobileIndex/${encodeURIComponent(pk)}`, env).catch(() => {});
-    }
+    await firestoreDeleteDoc(`mobileIndex/${targetPhone}`, env);
   }
 
   // 4. Write audit log

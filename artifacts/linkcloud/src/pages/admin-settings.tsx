@@ -2,25 +2,23 @@ import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import {
   getSiteSettings,
+  updateSiteSettings,
+  getFAQs,
+  addFAQ,
+  updateFAQ,
+  deleteFAQ,
   getAuditLogs,
   getSearchAnalytics,
+  logAuditEvent,
+  getHelpArticles,
+  addHelpArticle,
+  deleteHelpArticle,
   getAnnouncements,
   createAnnouncement,
   updateAnnouncement,
   deleteAnnouncement,
   toggleAnnouncementEnabled,
 } from "@/lib/firestore";
-import {
-  adminCreateFaq,
-  adminCreateHelpArticle,
-  adminDeleteFaq,
-  adminDeleteHelpArticle,
-  adminFetchCmsOverview,
-  adminListFaqs,
-  adminListHelpArticles,
-  adminUpdateFaq,
-  adminUpdateHelpArticle,
-} from "@/lib/cms-client";
 import type {
   SiteSettings,
   FAQItem,
@@ -30,16 +28,12 @@ import type {
   Announcement,
   AnnouncementType,
   AnnouncementDisplayMode,
-  CmsPageAdminOverview,
 } from "@/lib/types";
 import { clearSiteSettingsCache } from "@/lib/page-meta";
-import { validateAdminSettingsPayload } from "@/lib/settings-validation";
 import { getAuthEventLogs, type AuthEventLogRecord, changePassword, sendPasswordResetLink } from "@/lib/auth";
 import { validatePasswordStrength } from "@/lib/utils";
 import AdminNav from "@/components/admin-nav";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import CmsPagesManager from "@/components/cms/CmsPagesManager";
-import CmsPageEditorModal from "@/components/cms/CmsPageEditorModal";
 import { useAuth } from "@/contexts/AuthContext";
 import AnnouncementBanner, {
   isSafeActionUrl,
@@ -108,7 +102,7 @@ type SettingsTab =
   | "cloudinary";
 
 export default function AdminSettings() {
-  const { user, profile } = useAuth();
+  const { user } = useAuth();
   const [location] = useLocation();
 
   const getInitialTab = (): SettingsTab => {
@@ -185,10 +179,10 @@ export default function AdminSettings() {
     aboutVision: "Building India's largest and safest directory of public social messaging groups with zero scam or broken links.",
     aboutUsContent: "LinkCloud is India's leading verified directory for WhatsApp, Telegram, and Discord communities.",
 
-    privacyPolicyContent: "",
-    termsContent: "",
-    dmcaContent: "",
-    disclaimerContent: "",
+    privacyPolicyContent: "LinkCloud respects user privacy. We do not store or inspect private chat content, messages, or member lists.",
+    termsContent: "By using LinkCloud, users agree not to submit illegal, spam, copyrighted, or prohibited group links.",
+    dmcaContent: "To file a copyright takedown request under DMCA, please email support@linkcloud.in with link details.",
+    disclaimerContent: "LinkCloud is a public indexing platform and is not affiliated with WhatsApp, Telegram, Discord, Meta, or Google.",
 
     metaTitle: "LinkCloud - India's #1 WhatsApp, Telegram & Discord Group Directory",
     metaDescription: "Discover and join thousands of active WhatsApp groups, Telegram channels, and Discord communities in India.",
@@ -204,7 +198,7 @@ export default function AdminSettings() {
     sitemapXmlContent: "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">\n  <url>\n    <loc>https://linkcloud.in/</loc>\n    <changefreq>daily</changefreq>\n    <priority>1.0</priority>\n  </url>\n  <url>\n    <loc>https://linkcloud.in/groups</loc>\n    <changefreq>hourly</changefreq>\n    <priority>0.9</priority>\n  </url>\n</urlset>",
     structuredDataJson: "{\n  \"@context\": \"https://schema.org\",\n  \"@type\": \"WebSite\",\n  \"name\": \"LinkCloud\",\n  \"url\": \"https://linkcloud.in\"\n}",
 
-    allowPublicSubmissions: false,
+    allowPublicSubmissions: true,
     groupSubmissionEnabled: true,
     userRegistrationEnabled: true,
     googleLoginEnabled: true,
@@ -312,79 +306,29 @@ export default function AdminSettings() {
     }
   };
 
-  // CMS Overview & Editor Modal State
-  const [cmsPages, setCmsPages] = useState<CmsPageAdminOverview[]>([]);
-  const [cmsLoading, setCmsLoading] = useState(false);
-  const [editingCmsPage, setEditingCmsPage] = useState<CmsPageAdminOverview | null>(null);
-
   // FAQ Modal / Input
   const [faqModalOpen, setFaqModalOpen] = useState(false);
   const [editingFaq, setEditingFaq] = useState<FAQItem | null>(null);
-  const [faqPreviewMode, setFaqPreviewMode] = useState(false);
-  const [faqForm, setFaqForm] = useState<{
-    question: string;
-    answer: string;
-    category: string;
-    sortOrder: number;
-    enabled: boolean;
-    status: "draft" | "published";
-  }>({ question: "", answer: "", category: "General", sortOrder: 1, enabled: true, status: "published" });
+  const [faqForm, setFaqForm] = useState({ question: "", answer: "", category: "General", sortOrder: 1, enabled: true });
 
   // Help Article Modal
   const [articleModalOpen, setArticleModalOpen] = useState(false);
-  const [editingArticle, setEditingArticle] = useState<HelpArticle | null>(null);
-  const [articlePreviewMode, setArticlePreviewMode] = useState(false);
-  const [articleForm, setArticleForm] = useState<{
-    title: string;
-    category: string;
-    content: string;
-    steps: string[];
-    enabled: boolean;
-    sortOrder: number;
-    status: "draft" | "published";
-    views: number;
-  }>({
-    title: "",
-    category: "General",
-    content: "",
-    steps: [],
-    enabled: true,
-    sortOrder: 1,
-    status: "published",
-    views: 0,
-  });
-
-  const refreshCmsAndContent = async () => {
-    if (!user) return;
-    setCmsLoading(true);
-    try {
-      const [cmsRes, faqRes, helpRes, logsRes] = await Promise.all([
-        adminFetchCmsOverview(user),
-        adminListFaqs(user),
-        adminListHelpArticles(user),
-        getAuditLogs(30),
-      ]);
-      if (Array.isArray(cmsRes?.pages)) setCmsPages(cmsRes.pages);
-      setFaqs(faqRes);
-      setHelpArticles(helpRes);
-      setAuditLogs(logsRes);
-    } catch (err: any) {
-      toast.error(err?.message || "Failed to refresh CMS data from server");
-    } finally {
-      setCmsLoading(false);
-    }
-  };
+  const [articleForm, setArticleForm] = useState({ title: "", category: "General", content: "", views: 0 });
 
   useEffect(() => {
     Promise.all([
       getSiteSettings(),
+      getFAQs(),
+      getHelpArticles(),
       getAuditLogs(30),
       getSearchAnalytics(),
       getAnnouncements(false),
       getAuthEventLogs(40),
     ])
-      .then(([siteData, auditData, searchData, annData, authLogsData]) => {
+      .then(([siteData, faqData, articleData, auditData, searchData, annData, authLogsData]) => {
         if (siteData) setSettings((prev) => ({ ...prev, ...siteData }));
+        if (faqData) setFaqs(faqData);
+        if (articleData) setHelpArticles(articleData);
         if (auditData) setAuditLogs(auditData);
         if (searchData) setSearchAnalytics(searchData);
         if (annData) setAnnouncements(annData);
@@ -392,144 +336,75 @@ export default function AdminSettings() {
       })
       .catch((err) => {
         console.error(err);
-        toast.error("Failed to sync webmaster settings");
+        toast.error("Failed to sync webmaster settings from Firestore");
       })
       .finally(() => setLoading(false));
   }, []);
 
-  useEffect(() => {
-    if (!user) return;
-    setCmsLoading(true);
-    Promise.all([
-      adminFetchCmsOverview(user),
-      adminListFaqs(user),
-      adminListHelpArticles(user),
-    ])
-      .then(([cmsRes, faqRes, helpRes]) => {
-        if (Array.isArray(cmsRes?.pages)) setCmsPages(cmsRes.pages);
-        setFaqs(faqRes);
-        setHelpArticles(helpRes);
-      })
-      .catch((err: any) => {
-        toast.error(err?.message || "Failed to load CMS content from server API");
-      })
-      .finally(() => setCmsLoading(false));
-  }, [user]);
-
-  const isSiteSettingsTab = [
-    "general",
-    "homepage",
-    "contactSocial",
-    "seo",
-    "system",
-    "filters",
-    "cloudinary",
-  ].includes(tab);
-
   const handleSaveSettings = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    if (!user) {
-      toast.error("Webmaster authentication session missing. Please sign in again.");
-      return;
-    }
-    const candidatePayload = {
-      ...settings,
-      logoUrl: settings.siteLogo || settings.logoUrl || "",
-      faviconUrl: settings.favicon || settings.faviconUrl || "",
-      cloudinarySettings: {
-        ...(settings.cloudinarySettings || {}),
-        cloudName: settings.cloudinaryCloudName || settings.cloudinarySettings?.cloudName || "",
-        uploadPreset: settings.cloudinaryUploadPreset || settings.cloudinarySettings?.uploadPreset || "",
-      },
-    };
-
-    const validation = validateAdminSettingsPayload(candidatePayload);
-    if (!validation.valid || !validation.sanitized) {
-      toast.error(validation.error || "Please fix invalid settings before saving.");
-      return;
-    }
-
     setSaving(true);
     try {
-      const idToken = await user.getIdToken();
-      const res = await fetch("/api/admin/settings", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${idToken}`,
-        },
-        body: JSON.stringify(validation.sanitized),
-      });
+      let savedViaApi = false;
+      if (user) {
+        try {
+          const idToken = await user.getIdToken();
+          const res = await fetch("/api/admin/settings", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${idToken}`,
+            },
+            body: JSON.stringify(settings),
+          });
+          if (res.ok) {
+            savedViaApi = true;
+          }
+        } catch {
+          // fallback to client-side Firestore write
+        }
+      }
 
-      const payload = await res.json().catch(() => null);
-      if (!res.ok) {
-        throw new Error(payload?.error || `Server rejected settings update (${res.status}).`);
+      if (!savedViaApi) {
+        await updateSiteSettings(settings);
+        await logAuditEvent(
+          "Settings Changed",
+          `Updated webmaster configuration section (${tab})`,
+          user?.email || "webmaster@linkcloud.in",
+          user?.uid || "webmaster"
+        );
       }
 
       clearSiteSettingsCache();
-      toast.success("Webmaster global settings saved successfully");
+      toast.success("Webmaster configuration saved successfully");
+      // Refresh audit logs
       const updatedLogs = await getAuditLogs(30);
       setAuditLogs(updatedLogs);
-    } catch (err: any) {
-      toast.error(err?.message || "Failed to save settings via Webmaster API");
+    } catch {
+      toast.error("Failed to save settings");
     } finally {
       setSaving(false);
     }
   };
 
-  // FAQ Handlers (Server-Authorized, Duplicate-Checked)
+  // FAQ Handlers
   const handleSaveFaq = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
       if (editingFaq) {
-        await adminUpdateFaq(user, { id: editingFaq.id, ...faqForm });
+        await updateFAQ(editingFaq.id, faqForm);
         toast.success("FAQ item updated");
       } else {
-        await adminCreateFaq(user, faqForm);
+        await addFAQ(faqForm);
         toast.success("New FAQ item created");
       }
       setFaqModalOpen(false);
       setEditingFaq(null);
-      setFaqPreviewMode(false);
-      setFaqForm({
-        question: "",
-        answer: "",
-        category: "General",
-        sortOrder: faqs.length + 1,
-        enabled: true,
-        status: "published",
-      });
-      await refreshCmsAndContent();
-    } catch (err: any) {
-      toast.error(err?.message || "Failed to save FAQ");
-    }
-  };
-
-  const handleToggleFaqEnabled = async (faq: FAQItem) => {
-    try {
-      await adminUpdateFaq(user, { id: faq.id, enabled: faq.enabled === false });
-      toast.success(`FAQ ${faq.enabled === false ? "enabled" : "disabled"}`);
-      await refreshCmsAndContent();
-    } catch (err: any) {
-      toast.error(err?.message || "Failed to update FAQ status");
-    }
-  };
-
-  const handleMoveFaq = async (index: number, dir: -1 | 1) => {
-    const target = index + dir;
-    if (target < 0 || target >= faqs.length) return;
-    const reordered = [...faqs];
-    const [item] = reordered.splice(index, 1);
-    reordered.splice(target, 0, item);
-    const payload = reordered.map((f, idx) => ({ id: f.id, sortOrder: idx + 1 }));
-    setFaqs(reordered.map((f, idx) => ({ ...f, sortOrder: idx + 1 })));
-    try {
-      await adminUpdateFaq(user, { reorder: payload });
-      toast.success("FAQ display order saved");
-      await refreshCmsAndContent();
-    } catch (err: any) {
-      toast.error(err?.message || "Failed to reorder FAQs");
-      await refreshCmsAndContent();
+      setFaqForm({ question: "", answer: "", category: "General", sortOrder: faqs.length + 1, enabled: true });
+      const freshFaqs = await getFAQs();
+      setFaqs(freshFaqs);
+    } catch {
+      toast.error("Failed to save FAQ");
     }
   };
 
@@ -539,86 +414,18 @@ export default function AdminSettings() {
     setDeleteConfirm({ id, type: "faq" });
   };
 
-  // Help Article Handlers (Server-Authorized Full CRUD)
-  const handleOpenCreateArticle = () => {
-    setEditingArticle(null);
-    setArticlePreviewMode(false);
-    setArticleForm({
-      title: "",
-      category: "General",
-      content: "",
-      steps: [],
-      enabled: true,
-      sortOrder: helpArticles.length + 1,
-      status: "published",
-      views: 0,
-    });
-    setArticleModalOpen(true);
-  };
-
-  const handleOpenEditArticle = (art: HelpArticle) => {
-    setEditingArticle(art);
-    setArticlePreviewMode(false);
-    setArticleForm({
-      title: art.title,
-      category: art.category || "General",
-      content: art.content,
-      steps: Array.isArray(art.steps) ? art.steps : [],
-      enabled: art.enabled !== false,
-      sortOrder: art.sortOrder ?? 1,
-      status: art.status === "draft" ? "draft" : "published",
-      views: art.views || 0,
-    });
-    setArticleModalOpen(true);
-  };
-
+  // Help Article Handlers
   const handleSaveArticle = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      if (editingArticle) {
-        await adminUpdateHelpArticle(user, { id: editingArticle.id, ...articleForm });
-        toast.success("Help article updated");
-      } else {
-        await adminCreateHelpArticle(user, articleForm);
-        toast.success("Help article created");
-      }
+      await addHelpArticle(articleForm);
+      toast.success("Help article created");
       setArticleModalOpen(false);
-      setEditingArticle(null);
-      setArticlePreviewMode(false);
-      await refreshCmsAndContent();
-    } catch (err: any) {
-      toast.error(err?.message || "Failed to save help article");
-    }
-  };
-
-  const handleToggleArticleEnabled = async (art: HelpArticle) => {
-    try {
-      await adminUpdateHelpArticle(user, {
-        id: art.id,
-        enabled: art.enabled === false,
-      });
-      toast.success(`Help article ${art.enabled === false ? "enabled" : "disabled"}`);
-      await refreshCmsAndContent();
-    } catch (err: any) {
-      toast.error(err?.message || "Failed to update help article status");
-    }
-  };
-
-  const handleMoveArticle = async (index: number, dir: -1 | 1) => {
-    const target = index + dir;
-    if (target < 0 || target >= helpArticles.length) return;
-    const reordered = [...helpArticles];
-    const [item] = reordered.splice(index, 1);
-    reordered.splice(target, 0, item);
-    const payload = reordered.map((a, idx) => ({ id: a.id, sortOrder: idx + 1 }));
-    setHelpArticles(reordered.map((a, idx) => ({ ...a, sortOrder: idx + 1 })));
-    try {
-      await adminUpdateHelpArticle(user, { reorder: payload });
-      toast.success("Help article order saved");
-      await refreshCmsAndContent();
-    } catch (err: any) {
-      toast.error(err?.message || "Failed to reorder help articles");
-      await refreshCmsAndContent();
+      setArticleForm({ title: "", category: "General", content: "", views: 0 });
+      const freshArticles = await getHelpArticles();
+      setHelpArticles(freshArticles);
+    } catch {
+      toast.error("Failed to create article");
     }
   };
 
@@ -794,13 +601,13 @@ export default function AdminSettings() {
     const { id, type } = deleteConfirm;
     try {
       if (type === "faq") {
-        await adminDeleteFaq(user, id);
+        await deleteFAQ(id);
         toast.success("FAQ deleted");
-        await refreshCmsAndContent();
+        setFaqs(faqs.filter((f) => f.id !== id));
       } else if (type === "article") {
-        await adminDeleteHelpArticle(user, id);
+        await deleteHelpArticle(id);
         toast.success("Help article deleted");
-        await refreshCmsAndContent();
+        setHelpArticles(helpArticles.filter((a) => a.id !== id));
       } else if (type === "announcement") {
         let deletedViaApi = false;
         if (user) {
@@ -841,20 +648,17 @@ export default function AdminSettings() {
             <Settings className="w-8 h-8 text-primary animate-spin-slow" /> Webmaster Control & Settings
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Platform configuration, Homepage layout, Public CMS pages, Global SEO defaults, System toggles &amp; Audit logs.
+            Full platform settings, Homepage sections, Legal docs, SEO tags, System toggles & Audit logs.
           </p>
         </div>
-        {isSiteSettingsTab && (
-          <button
-            type="button"
-            onClick={() => handleSaveSettings()}
-            disabled={saving}
-            className="px-6 py-2.5 bg-primary text-primary-foreground font-bold text-xs rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-primary/20 hover:bg-primary/90 transition-all self-start sm:self-auto"
-          >
-            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-            Save Global Settings
-          </button>
-        )}
+        <button
+          onClick={() => handleSaveSettings()}
+          disabled={saving}
+          className="px-6 py-2.5 bg-primary text-primary-foreground font-bold text-xs rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-primary/20 hover:bg-primary/90 transition-all self-start sm:self-auto"
+        >
+          {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+          Save All Settings
+        </button>
       </div>
 
       {/* Admin Nav */}
@@ -1077,12 +881,6 @@ export default function AdminSettings() {
                   onToggle={() => setSettings((s) => ({ ...s, faqSectionEnabled: !s.faqSectionEnabled }))}
                 />
                 <ToggleCard
-                  title="Global Site Footer"
-                  description="Show footer links, socials, and copyright bar"
-                  enabled={settings.footerEnabled !== false}
-                  onToggle={() => setSettings((s) => ({ ...s, footerEnabled: s.footerEnabled === false }))}
-                />
-                <ToggleCard
                   title="Newsletter Subscription"
                   description="Email capture form for weekly group drops"
                   enabled={settings.newsletterSectionEnabled}
@@ -1294,9 +1092,7 @@ export default function AdminSettings() {
                     <button
                       type="button"
                       onClick={() => {
-                        const activeUid = user?.uid || "";
-                        if (!activeUid) return;
-                        navigator.clipboard.writeText(activeUid);
+                        navigator.clipboard.writeText("OXGYTyWBcdYNcHkWyXPbOvVlV2h1");
                         setCopiedUid(true);
                         toast.success("Webmaster UID copied to clipboard");
                         setTimeout(() => setCopiedUid(false), 2000);
@@ -1313,19 +1109,19 @@ export default function AdminSettings() {
                   <div className="p-3.5 rounded-2xl bg-muted/30 border border-border">
                     <span className="text-[11px] font-medium text-muted-foreground block">Webmaster UID</span>
                     <span className="font-mono text-xs font-bold text-foreground block mt-1 select-all truncate">
-                      {user?.uid || "Authenticated Webmaster"}
+                      OXGYTyWBcdYNcHkWyXPbOvVlV2h1
                     </span>
                   </div>
                   <div className="p-3.5 rounded-2xl bg-muted/30 border border-border">
                     <span className="text-[11px] font-medium text-muted-foreground block">Authorized Email</span>
                     <span className="font-mono text-xs font-bold text-foreground block mt-1 select-all truncate">
-                      {user?.email || profile?.email || "Not set"}
+                      linkcloud111@gmail.com
                     </span>
                   </div>
                   <div className="p-3.5 rounded-2xl bg-muted/30 border border-border">
                     <span className="text-[11px] font-medium text-muted-foreground block">Authorized Mobile</span>
                     <span className="font-mono text-xs font-bold text-foreground block mt-1 select-all truncate">
-                      {profile?.phone || user?.phoneNumber || "Not configured"}
+                      +91 79874 10765
                     </span>
                   </div>
                 </div>
@@ -1473,7 +1269,7 @@ export default function AdminSettings() {
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-2xl bg-muted/30 border border-border">
                   <div>
                     <p className="text-xs font-bold text-foreground">
-                      Recipient: <span className="font-mono text-primary">{user?.email || profile?.email || "Active Webmaster Email"}</span>
+                      Recipient: <span className="font-mono text-primary">linkcloud111@gmail.com</span>
                     </p>
                     <p className="text-[11px] text-muted-foreground mt-0.5">
                       LinkCloud uses Firebase Authentication secure email action handlers (<code className="font-mono">/verify-handler?mode=resetPassword</code>).
@@ -1564,140 +1360,84 @@ export default function AdminSettings() {
           {/* TAB 3: ABOUT & HELP ARTICLES */}
           {tab === "aboutHelp" && (
             <div className="space-y-6">
-              <CmsPagesManager
-                pages={cmsPages}
-                loading={cmsLoading}
-                user={user}
-                filterSlugs={["about", "help", "faq"]}
-                title="Public Info Pages CMS (/about, /help, /faq)"
-                subtitle="Edit structured content blocks, SEO metadata, live previews, and revision history for public information pages."
-                onEditPage={(pg) => setEditingCmsPage(pg)}
-                onRefreshState={refreshCmsAndContent}
-              />
+              <div className="bg-card border border-border rounded-3xl p-6 space-y-4 shadow-sm max-w-3xl">
+                <h2 className="font-bold text-base border-b border-border pb-3 flex items-center gap-2">
+                  <Info className="w-5 h-5 text-blue-500" /> About Us Page Copy
+                </h2>
 
-              <div className="bg-muted/20 border border-border rounded-2xl p-4 flex items-start gap-3 text-xs text-muted-foreground">
-                <Info className="w-4 h-4 text-primary shrink-0 mt-0.5" />
-                <p>
-                  The <strong className="text-foreground">/about</strong>, <strong className="text-foreground">/help</strong>, and <strong className="text-foreground">/faq</strong> pages are managed authoritatively through the CMS Pages Manager above. Legacy Firestore summary fields are preserved untouched for backward compatibility and sync automatically only when publishing <code className="font-mono text-foreground">/about</code>.
-                </p>
+                <div>
+                  <label className={labelClass}>Page Header Title</label>
+                  <input
+                    value={settings.aboutTitle || ""}
+                    onChange={(e) => setSettings((s) => ({ ...s, aboutTitle: e.target.value }))}
+                    className={inputClass}
+                  />
+                </div>
+
+                <div>
+                  <label className={labelClass}>Main Description</label>
+                  <textarea
+                    value={settings.aboutDescription || ""}
+                    onChange={(e) => setSettings((s) => ({ ...s, aboutDescription: e.target.value }))}
+                    className="w-full h-24 p-3 bg-muted/30 border border-border rounded-xl text-xs font-mono outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className={labelClass}>Our Mission Statement</label>
+                  <textarea
+                    value={settings.aboutMission || ""}
+                    onChange={(e) => setSettings((s) => ({ ...s, aboutMission: e.target.value }))}
+                    className="w-full h-20 p-3 bg-muted/30 border border-border rounded-xl text-xs font-mono outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className={labelClass}>Our Vision Statement</label>
+                  <textarea
+                    value={settings.aboutVision || ""}
+                    onChange={(e) => setSettings((s) => ({ ...s, aboutVision: e.target.value }))}
+                    className="w-full h-20 p-3 bg-muted/30 border border-border rounded-xl text-xs font-mono outline-none"
+                  />
+                </div>
               </div>
 
-              {/* Help Center Articles (Full Server-Authorized CRUD) */}
+              {/* Help Center Articles */}
               <div className="bg-card border border-border rounded-3xl p-6 space-y-4 shadow-sm">
                 <div className="flex items-center justify-between border-b border-border pb-3">
                   <div>
                     <h2 className="font-bold text-base flex items-center gap-2">
                       <HelpCircle className="w-5 h-5 text-emerald-500" /> Help Center Articles
                     </h2>
-                    <p className="text-xs text-muted-foreground">
-                      Full CRUD, enable/disable, reorder, categories, step-by-step guides, and draft/published control for /help.
-                    </p>
+                    <p className="text-xs text-muted-foreground">Articles shown in Help Center (/help)</p>
                   </div>
                   <button
                     type="button"
-                    onClick={handleOpenCreateArticle}
+                    onClick={() => setArticleModalOpen(true)}
                     className="px-3.5 py-1.5 bg-primary text-primary-foreground font-bold text-xs rounded-xl flex items-center gap-1.5"
                   >
                     <Plus className="w-4 h-4" /> Add Article
                   </button>
                 </div>
 
-                {helpArticles.length === 0 ? (
-                  <p className="text-xs text-muted-foreground py-6 text-center border border-dashed border-border rounded-2xl">
-                    No Help Center articles created yet. Click "Add Article" to create your first guide.
-                  </p>
-                ) : (
-                  <div className="space-y-3">
-                    {helpArticles.map((article, idx) => (
-                      <div
-                        key={article.id}
-                        className={`p-4 bg-muted/20 border border-border rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-4 ${
-                          article.enabled === false ? "opacity-60" : ""
-                        }`}
-                      >
-                        <div className="space-y-1 flex-1 min-w-0">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span className="text-[10px] font-extrabold bg-primary/10 text-primary px-2 py-0.5 rounded-full">
-                              #{article.sortOrder || idx + 1}
-                            </span>
-                            <span className="text-[10px] font-bold text-primary uppercase tracking-wider">
-                              {article.category}
-                            </span>
-                            <span
-                              className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ${
-                                article.status === "draft"
-                                  ? "bg-amber-500/10 text-amber-500"
-                                  : "bg-emerald-500/10 text-emerald-500"
-                              }`}
-                            >
-                              {article.status === "draft" ? "Draft" : "Published"}
-                            </span>
-                            {article.enabled === false && (
-                              <span className="text-[10px] bg-rose-500/10 text-rose-500 px-2 py-0.5 rounded-full font-bold">
-                                Disabled
-                              </span>
-                            )}
-                            {Array.isArray(article.steps) && article.steps.length > 0 && (
-                              <span className="text-[10px] bg-muted text-muted-foreground px-2 py-0.5 rounded-full font-mono">
-                                {article.steps.length} steps
-                              </span>
-                            )}
-                          </div>
-                          <h3 className="font-bold text-sm text-foreground">{article.title}</h3>
-                          <p className="text-xs text-muted-foreground line-clamp-2">{article.content}</p>
-                        </div>
-
-                        <div className="flex items-center gap-1.5 self-end sm:self-auto shrink-0">
-                          <button
-                            type="button"
-                            onClick={() => handleMoveArticle(idx, -1)}
-                            disabled={idx === 0}
-                            className="p-2 rounded-xl bg-muted hover:bg-muted/80 disabled:opacity-30"
-                            title="Move Up"
-                          >
-                            <MoveUp className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleMoveArticle(idx, 1)}
-                            disabled={idx === helpArticles.length - 1}
-                            className="p-2 rounded-xl bg-muted hover:bg-muted/80 disabled:opacity-30"
-                            title="Move Down"
-                          >
-                            <MoveDown className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleToggleArticleEnabled(article)}
-                            className={`px-2.5 py-1.5 rounded-xl text-[11px] font-bold border ${
-                              article.enabled !== false
-                                ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/25"
-                                : "bg-muted text-muted-foreground border-border"
-                            }`}
-                          >
-                            {article.enabled !== false ? "Enabled" : "Disabled"}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleOpenEditArticle(article)}
-                            className="p-2 rounded-xl bg-muted hover:bg-muted/80 text-foreground"
-                            title="Edit Article"
-                          >
-                            <Edit2 className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteArticle(article.id)}
-                            className="p-2 rounded-xl bg-destructive/10 text-destructive hover:bg-destructive/20"
-                            title="Delete Article"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {helpArticles.map((article) => (
+                    <div key={article.id} className="p-4 bg-muted/20 border border-border rounded-2xl flex justify-between items-start">
+                      <div>
+                        <span className="text-[10px] font-bold text-primary uppercase tracking-wider">{article.category}</span>
+                        <h3 className="font-bold text-sm text-foreground">{article.title}</h3>
+                        <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{article.content}</p>
                       </div>
-                    ))}
-                  </div>
-                )}
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteArticle(article.id)}
+                        className="text-muted-foreground hover:text-destructive p-1"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
           )}
@@ -1711,22 +1451,14 @@ export default function AdminSettings() {
                     <HelpCircle className="w-5 h-5 text-primary" /> FAQ Management
                   </h2>
                   <p className="text-xs text-muted-foreground">
-                    Create, edit, preview, enable/disable, and reorder FAQs (duplicate questions rejected server-side).
+                    Add, edit, enable, and sort frequently asked questions across the directory.
                   </p>
                 </div>
                 <button
                   type="button"
                   onClick={() => {
                     setEditingFaq(null);
-                    setFaqPreviewMode(false);
-                    setFaqForm({
-                      question: "",
-                      answer: "",
-                      category: "General",
-                      sortOrder: faqs.length + 1,
-                      enabled: true,
-                      status: "published",
-                    });
+                    setFaqForm({ question: "", answer: "", category: "General", sortOrder: faqs.length + 1, enabled: true });
                     setFaqModalOpen(true);
                   }}
                   className="px-4 py-2 bg-primary text-primary-foreground font-bold text-xs rounded-xl flex items-center gap-2 shadow-sm"
@@ -1735,107 +1467,54 @@ export default function AdminSettings() {
                 </button>
               </div>
 
-              {faqs.length === 0 ? (
-                <p className="text-xs text-muted-foreground py-8 text-center border border-dashed border-border rounded-2xl">
-                  No FAQ entries yet. Add your first question to publish on /faq.
-                </p>
-              ) : (
-                <div className="space-y-3">
-                  {faqs.map((f, i) => (
-                    <div
-                      key={f.id}
-                      className={`p-4 bg-muted/20 border border-border rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-4 ${
-                        f.enabled === false ? "opacity-60" : ""
-                      }`}
-                    >
-                      <div className="space-y-1 flex-1">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="text-[10px] font-extrabold bg-primary/10 text-primary px-2 py-0.5 rounded-full">
-                            #{f.sortOrder || i + 1}
+              <div className="space-y-3">
+                {faqs.map((f, i) => (
+                  <div key={f.id} className="p-4 bg-muted/20 border border-border rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div className="space-y-1 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-extrabold bg-primary/10 text-primary px-2 py-0.5 rounded-full">
+                          #{f.sortOrder || i + 1}
+                        </span>
+                        <span className="text-[10px] font-bold text-muted-foreground uppercase">{f.category}</span>
+                        {!f.enabled && (
+                          <span className="text-[10px] bg-rose-500/10 text-rose-500 px-2 py-0.5 rounded-full font-bold">
+                            Disabled
                           </span>
-                          <span className="text-[10px] font-bold text-muted-foreground uppercase">{f.category}</span>
-                          <span
-                            className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ${
-                              f.status === "draft"
-                                ? "bg-amber-500/10 text-amber-500"
-                                : "bg-emerald-500/10 text-emerald-500"
-                            }`}
-                          >
-                            {f.status === "draft" ? "Draft" : "Published"}
-                          </span>
-                          {!f.enabled && (
-                            <span className="text-[10px] bg-rose-500/10 text-rose-500 px-2 py-0.5 rounded-full font-bold">
-                              Disabled
-                            </span>
-                          )}
-                        </div>
-                        <h3 className="font-bold text-sm text-foreground">{f.question}</h3>
-                        <p className="text-xs text-muted-foreground line-clamp-2">{f.answer}</p>
+                        )}
                       </div>
-
-                      <div className="flex items-center gap-1.5 self-end sm:self-auto">
-                        <button
-                          type="button"
-                          onClick={() => handleMoveFaq(i, -1)}
-                          disabled={i === 0}
-                          className="p-2 rounded-xl bg-muted hover:bg-muted/80 disabled:opacity-30"
-                          title="Move Up"
-                        >
-                          <MoveUp className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleMoveFaq(i, 1)}
-                          disabled={i === faqs.length - 1}
-                          className="p-2 rounded-xl bg-muted hover:bg-muted/80 disabled:opacity-30"
-                          title="Move Down"
-                        >
-                          <MoveDown className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleToggleFaqEnabled(f)}
-                          className={`px-2.5 py-1.5 rounded-xl text-[11px] font-bold border ${
-                            f.enabled !== false
-                              ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/25"
-                              : "bg-muted text-muted-foreground border-border"
-                          }`}
-                        >
-                          {f.enabled !== false ? "Enabled" : "Disabled"}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setEditingFaq(f);
-                            setFaqPreviewMode(false);
-                            setFaqForm({
-                              question: f.question,
-                              answer: f.answer,
-                              category: f.category || "General",
-                              sortOrder: f.sortOrder || i + 1,
-                              enabled: f.enabled !== false,
-                              status: f.status === "draft" ? "draft" : "published",
-                            });
-                            setFaqModalOpen(true);
-                          }}
-                          className="p-2 rounded-xl bg-muted hover:bg-muted/80 text-foreground transition-colors"
-                          title="Edit FAQ"
-                        >
-                          <Edit2 className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteFaq(f.id)}
-                          className="p-2 rounded-xl bg-destructive/10 text-destructive hover:bg-destructive/20 transition-colors"
-                          title="Delete FAQ"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
+                      <h3 className="font-bold text-sm text-foreground">{f.question}</h3>
+                      <p className="text-xs text-muted-foreground">{f.answer}</p>
                     </div>
-                  ))}
-                </div>
-              )}
+
+                    <div className="flex items-center gap-2 self-end sm:self-auto">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingFaq(f);
+                          setFaqForm({
+                            question: f.question,
+                            answer: f.answer,
+                            category: f.category || "General",
+                            sortOrder: f.sortOrder || i + 1,
+                            enabled: f.enabled !== false,
+                          });
+                          setFaqModalOpen(true);
+                        }}
+                        className="p-2 rounded-xl bg-muted hover:bg-muted/80 text-foreground transition-colors"
+                      >
+                        <Edit2 className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteFaq(f.id)}
+                        className="p-2 rounded-xl bg-destructive/10 text-destructive hover:bg-destructive/20 transition-colors"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 
@@ -1915,206 +1594,143 @@ export default function AdminSettings() {
 
           {/* TAB 6: LEGAL PAGES */}
           {tab === "legal" && (
-            <div className="space-y-5">
-              <CmsPagesManager
-                pages={cmsPages}
-                loading={cmsLoading}
-                user={user}
-                filterSlugs={["privacy", "terms", "dmca", "disclaimer"]}
-                title="Legal & Compliance Pages CMS"
-                subtitle="Single authoritative source for /privacy, /terms, /dmca, and /disclaimer. Legal pages remain unpublished drafts until explicitly reviewed and published by the Website Owner."
-                onEditPage={(pg) => setEditingCmsPage(pg)}
-                onRefreshState={refreshCmsAndContent}
-              />
+            <div className="bg-card border border-border rounded-3xl p-6 space-y-5 shadow-sm">
+              <h2 className="font-bold text-base border-b border-border pb-3 flex items-center gap-2">
+                <FileText className="w-5 h-5 text-primary" /> Static Legal Pages Copy
+              </h2>
 
-              <div className="bg-muted/20 border border-border rounded-2xl p-4 flex items-start gap-3 text-xs text-muted-foreground">
-                <ShieldAlert className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
-                <p>
-                  <strong className="text-foreground">Single Authoritative Legal Source:</strong> All legal copy, publication status, version history, and per-page SEO for Legal routes are managed strictly inside the CMS Pages Manager above. Legacy compatibility fields in Firestore are preserved untouched and update automatically only on explicit CMS Publish.
-                </p>
+              <div>
+                <label className={labelClass}>Privacy Policy Content</label>
+                <textarea
+                  value={settings.privacyPolicyContent || ""}
+                  onChange={(e) => setSettings((s) => ({ ...s, privacyPolicyContent: e.target.value }))}
+                  className="w-full h-36 p-3 bg-muted/30 border border-border rounded-xl text-xs font-mono outline-none"
+                />
+              </div>
+
+              <div>
+                <label className={labelClass}>Terms of Service Content</label>
+                <textarea
+                  value={settings.termsContent || ""}
+                  onChange={(e) => setSettings((s) => ({ ...s, termsContent: e.target.value }))}
+                  className="w-full h-36 p-3 bg-muted/30 border border-border rounded-xl text-xs font-mono outline-none"
+                />
+              </div>
+
+              <div>
+                <label className={labelClass}>DMCA Copyright Policy Content</label>
+                <textarea
+                  value={settings.dmcaContent || ""}
+                  onChange={(e) => setSettings((s) => ({ ...s, dmcaContent: e.target.value }))}
+                  className="w-full h-36 p-3 bg-muted/30 border border-border rounded-xl text-xs font-mono outline-none"
+                />
+              </div>
+
+              <div>
+                <label className={labelClass}>General Legal Disclaimer</label>
+                <textarea
+                  value={settings.disclaimerContent || ""}
+                  onChange={(e) => setSettings((s) => ({ ...s, disclaimerContent: e.target.value }))}
+                  className="w-full h-28 p-3 bg-muted/30 border border-border rounded-xl text-xs font-mono outline-none"
+                />
               </div>
             </div>
           )}
 
-          {/* TAB 7: GLOBAL SEO MANAGEMENT */}
+          {/* TAB 7: SEO MANAGEMENT */}
           {tab === "seo" && (
-            <div className="space-y-6">
-              <div className="bg-muted/20 border border-border rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <div className="space-y-1">
-                  <p className="text-xs font-bold text-foreground flex items-center gap-1.5">
-                    <Globe className="w-4 h-4 text-primary" /> Global Website SEO Defaults vs. Per-Page CMS SEO
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    Configure sitewide defaults, canonical domain origin, social fallback tags, and global WebSite JSON-LD here. To edit per-page SEO &amp; <code className="font-mono">noindex</code> for individual public pages, use the dedicated CMS tabs.
-                  </p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="bg-card border border-border rounded-3xl p-6 space-y-4 shadow-sm">
+                <h2 className="font-bold text-base border-b border-border pb-3 flex items-center gap-2">
+                  <Search className="w-5 h-5 text-primary" /> Meta Tags & Open Graph
+                </h2>
+
+                <div>
+                  <label className={labelClass}>Website Default Meta Title</label>
+                  <input
+                    value={settings.metaTitle || ""}
+                    onChange={(e) => setSettings((s) => ({ ...s, metaTitle: e.target.value }))}
+                    className={inputClass}
+                  />
                 </div>
-                <div className="flex flex-wrap items-center gap-2 shrink-0">
-                  <button
-                    type="button"
-                    onClick={() => setTab("aboutHelp")}
-                    className="px-3 py-1.5 rounded-xl bg-card border border-border hover:border-primary/40 text-xs font-bold text-foreground transition"
-                  >
-                    About / Help / FAQ SEO
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setTab("legal")}
-                    className="px-3 py-1.5 rounded-xl bg-card border border-border hover:border-primary/40 text-xs font-bold text-foreground transition"
-                  >
-                    Legal Pages SEO
-                  </button>
+
+                <div>
+                  <label className={labelClass}>Website Default Meta Description</label>
+                  <textarea
+                    value={settings.metaDescription || ""}
+                    onChange={(e) => setSettings((s) => ({ ...s, metaDescription: e.target.value }))}
+                    className="w-full h-24 p-3 bg-muted/30 border border-border rounded-xl text-xs font-mono outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className={labelClass}>Meta Keywords (comma separated)</label>
+                  <input
+                    value={settings.metaKeywords || ""}
+                    onChange={(e) => setSettings((s) => ({ ...s, metaKeywords: e.target.value }))}
+                    className={inputClass}
+                  />
+                </div>
+
+                <div>
+                  <label className={labelClass}>Canonical URL Base</label>
+                  <input
+                    value={settings.canonicalUrl || ""}
+                    onChange={(e) => setSettings((s) => ({ ...s, canonicalUrl: e.target.value }))}
+                    className={inputClass}
+                  />
+                </div>
+
+                <div>
+                  <label className={labelClass}>Open Graph Banner Image URL</label>
+                  <input
+                    value={settings.ogImage || ""}
+                    onChange={(e) => setSettings((s) => ({ ...s, ogImage: e.target.value }))}
+                    className={inputClass}
+                  />
+                </div>
+
+                <div>
+                  <label className={labelClass}>Twitter Card Image URL</label>
+                  <input
+                    value={settings.twitterCardImage || ""}
+                    onChange={(e) => setSettings((s) => ({ ...s, twitterCardImage: e.target.value }))}
+                    className={inputClass}
+                  />
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="bg-card border border-border rounded-3xl p-6 space-y-4 shadow-sm">
-                  <h2 className="font-bold text-base border-b border-border pb-3 flex items-center gap-2">
-                    <Search className="w-5 h-5 text-primary" /> Global Meta Tags &amp; Open Graph Defaults
-                  </h2>
+              {/* Robots.txt & Sitemap.xml */}
+              <div className="bg-card border border-border rounded-3xl p-6 space-y-4 shadow-sm">
+                <h2 className="font-bold text-base border-b border-border pb-3 flex items-center gap-2">
+                  <Code2 className="w-5 h-5 text-emerald-500" /> Crawlers & Schema Markup
+                </h2>
 
-                  <div>
-                    <label className={labelClass}>Website Default Meta Title</label>
-                    <input
-                      value={settings.metaTitle || ""}
-                      onChange={(e) => setSettings((s) => ({ ...s, metaTitle: e.target.value }))}
-                      maxLength={200}
-                      className={inputClass}
-                    />
-                  </div>
-
-                  <div>
-                    <label className={labelClass}>Website Default Meta Description</label>
-                    <textarea
-                      value={settings.metaDescription || ""}
-                      onChange={(e) => setSettings((s) => ({ ...s, metaDescription: e.target.value }))}
-                      maxLength={500}
-                      className="w-full h-24 p-3 bg-muted/30 border border-border rounded-xl text-xs font-mono outline-none"
-                    />
-                  </div>
-
-                  <div>
-                    <label className={labelClass}>Meta Keywords (comma separated)</label>
-                    <input
-                      value={settings.metaKeywords || ""}
-                      onChange={(e) => setSettings((s) => ({ ...s, metaKeywords: e.target.value }))}
-                      maxLength={500}
-                      className={inputClass}
-                    />
-                  </div>
-
-                  <div>
-                    <label className={labelClass}>Canonical URL Base (Origin)</label>
-                    <input
-                      value={settings.canonicalUrl || ""}
-                      onChange={(e) => setSettings((s) => ({ ...s, canonicalUrl: e.target.value }))}
-                      placeholder="https://linkcloud.in"
-                      className={inputClass}
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-border/50">
-                    <div>
-                      <label className={labelClass}>Default Open Graph Title</label>
-                      <input
-                        value={settings.ogTitle || ""}
-                        onChange={(e) => setSettings((s) => ({ ...s, ogTitle: e.target.value }))}
-                        maxLength={200}
-                        placeholder="Homepage / fallback og:title"
-                        className={inputClass}
-                      />
-                    </div>
-                    <div>
-                      <label className={labelClass}>Default Twitter Card Title</label>
-                      <input
-                        value={settings.twitterCardTitle || ""}
-                        onChange={(e) => setSettings((s) => ({ ...s, twitterCardTitle: e.target.value }))}
-                        maxLength={200}
-                        placeholder="Fallback twitter:title"
-                        className={inputClass}
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className={labelClass}>Default Open Graph Description</label>
-                    <textarea
-                      value={settings.ogDescription || ""}
-                      onChange={(e) => setSettings((s) => ({ ...s, ogDescription: e.target.value }))}
-                      maxLength={500}
-                      placeholder="Fallback og:description when a route does not specify one"
-                      className="w-full h-16 p-3 bg-muted/30 border border-border rounded-xl text-xs font-mono outline-none"
-                    />
-                  </div>
-
-                  <div>
-                    <label className={labelClass}>Default Twitter Card Description</label>
-                    <textarea
-                      value={settings.twitterCardDescription || ""}
-                      onChange={(e) => setSettings((s) => ({ ...s, twitterCardDescription: e.target.value }))}
-                      maxLength={500}
-                      placeholder="Fallback twitter:description"
-                      className="w-full h-16 p-3 bg-muted/30 border border-border rounded-xl text-xs font-mono outline-none"
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div>
-                      <label className={labelClass}>Open Graph Banner Image URL</label>
-                      <input
-                        value={settings.ogImage || ""}
-                        onChange={(e) => setSettings((s) => ({ ...s, ogImage: e.target.value }))}
-                        placeholder="https://... or /og-banner.png"
-                        className={inputClass}
-                      />
-                    </div>
-                    <div>
-                      <label className={labelClass}>Twitter Card Image URL</label>
-                      <input
-                        value={settings.twitterCardImage || ""}
-                        onChange={(e) => setSettings((s) => ({ ...s, twitterCardImage: e.target.value }))}
-                        placeholder="https://... or /twitter-card.png"
-                        className={inputClass}
-                      />
-                    </div>
-                  </div>
+                <div>
+                  <label className={labelClass}>robots.txt Content</label>
+                  <textarea
+                    value={settings.robotsTxtContent || ""}
+                    onChange={(e) => setSettings((s) => ({ ...s, robotsTxtContent: e.target.value }))}
+                    className="w-full h-28 p-3 bg-muted/30 border border-border rounded-xl text-xs font-mono outline-none"
+                  />
                 </div>
 
-                {/* Robots.txt & Sitemap.xml Templates & Schema Markup */}
-                <div className="bg-card border border-border rounded-3xl p-6 space-y-4 shadow-sm">
-                  <h2 className="font-bold text-base border-b border-border pb-3 flex items-center gap-2">
-                    <Code2 className="w-5 h-5 text-emerald-500" /> Crawlers &amp; Global Schema Markup
-                  </h2>
+                <div>
+                  <label className={labelClass}>sitemap.xml Template</label>
+                  <textarea
+                    value={settings.sitemapXmlContent || ""}
+                    onChange={(e) => setSettings((s) => ({ ...s, sitemapXmlContent: e.target.value }))}
+                    className="w-full h-32 p-3 bg-muted/30 border border-border rounded-xl text-xs font-mono outline-none"
+                  />
+                </div>
 
-                  <p className="text-[11px] text-muted-foreground bg-muted/30 p-2.5 rounded-xl border border-border">
-                    Note: Global JSON-LD updates the live runtime <code className="font-mono">&lt;head&gt;</code> tag immediately. Static <code className="font-mono">robots.txt</code> and <code className="font-mono">sitemap.xml</code> templates stored here are reference templates for static deployment sync.
-                  </p>
-
-                  <div>
-                    <label className={labelClass}>robots.txt Template Content</label>
-                    <textarea
-                      value={settings.robotsTxtContent || ""}
-                      onChange={(e) => setSettings((s) => ({ ...s, robotsTxtContent: e.target.value }))}
-                      className="w-full h-24 p-3 bg-muted/30 border border-border rounded-xl text-xs font-mono outline-none"
-                    />
-                  </div>
-
-                  <div>
-                    <label className={labelClass}>sitemap.xml Template</label>
-                    <textarea
-                      value={settings.sitemapXmlContent || ""}
-                      onChange={(e) => setSettings((s) => ({ ...s, sitemapXmlContent: e.target.value }))}
-                      className="w-full h-28 p-3 bg-muted/30 border border-border rounded-xl text-xs font-mono outline-none"
-                    />
-                  </div>
-
-                  <div>
-                    <label className={labelClass}>Global WebSite Structured Data (JSON-LD)</label>
-                    <textarea
-                      value={settings.structuredDataJson || ""}
-                      onChange={(e) => setSettings((s) => ({ ...s, structuredDataJson: e.target.value }))}
-                      className="w-full h-28 p-3 bg-muted/30 border border-border rounded-xl text-xs font-mono outline-none"
-                    />
-                  </div>
+                <div>
+                  <label className={labelClass}>Structured Data (JSON-LD Schema)</label>
+                  <textarea
+                    value={settings.structuredDataJson || ""}
+                    onChange={(e) => setSettings((s) => ({ ...s, structuredDataJson: e.target.value }))}
+                    className="w-full h-28 p-3 bg-muted/30 border border-border rounded-xl text-xs font-mono outline-none"
+                  />
                 </div>
               </div>
             </div>
@@ -2160,25 +1776,24 @@ export default function AdminSettings() {
                 <ToggleCard
                   title="Group Link Submissions"
                   description="Master platform switch to enable or pause community submissions"
-                  enabled={settings.groupSubmissionEnabled === true}
+                  enabled={settings.groupSubmissionEnabled !== false}
                   onToggle={() =>
                     setSettings((s) => ({
                       ...s,
-                      groupSubmissionEnabled: s.groupSubmissionEnabled !== true,
+                      groupSubmissionEnabled: s.groupSubmissionEnabled === false ? true : false,
                     }))
                   }
                 />
                 <ToggleCard
-                  title="Guest & Public Submissions (Disabled)"
-                  description="Sign-in is permanently required to submit communities; anonymous guest submissions cannot be enabled."
-                  enabled={false}
-                  onToggle={() => {
-                    toast.info("Sign-in is required for all community submissions by security policy.");
+                  title="Guest & Public Submissions"
+                  description="Allow unregistered visitors to submit links without signing in"
+                  enabled={settings.allowPublicSubmissions !== false}
+                  onToggle={() =>
                     setSettings((s) => ({
                       ...s,
-                      allowPublicSubmissions: false,
-                    }));
-                  }}
+                      allowPublicSubmissions: s.allowPublicSubmissions === false ? true : false,
+                    }))
+                  }
                 />
                 <ToggleCard
                   title="Bookmark & Favorites"
@@ -2203,50 +1818,6 @@ export default function AdminSettings() {
                   description="Enable public webmaster contact page"
                   enabled={settings.contactFormEnabled}
                   onToggle={() => setSettings((s) => ({ ...s, contactFormEnabled: !s.contactFormEnabled }))}
-                />
-                <ToggleCard
-                  title="Website Announcements Banner"
-                  description="Show active global announcements banner across the site"
-                  enabled={settings.announcementsEnabled !== false}
-                  onToggle={() =>
-                    setSettings((s) => ({
-                      ...s,
-                      announcementsEnabled: s.announcementsEnabled === false,
-                    }))
-                  }
-                />
-                <ToggleCard
-                  title="Global Directory Search"
-                  description="Enable search bars on homepage and community directory"
-                  enabled={settings.searchEnabled !== false}
-                  onToggle={() =>
-                    setSettings((s) => ({
-                      ...s,
-                      searchEnabled: s.searchEnabled === false,
-                    }))
-                  }
-                />
-                <ToggleCard
-                  title="Public Group Directory"
-                  description="Allow public visitors to browse approved communities"
-                  enabled={settings.publicDirectoryEnabled !== false}
-                  onToggle={() =>
-                    setSettings((s) => ({
-                      ...s,
-                      publicDirectoryEnabled: s.publicDirectoryEnabled === false,
-                    }))
-                  }
-                />
-                <ToggleCard
-                  title="Member Profile Editing"
-                  description="Allow signed-in members to edit profile details and avatar"
-                  enabled={settings.profileEditingEnabled !== false}
-                  onToggle={() =>
-                    setSettings((s) => ({
-                      ...s,
-                      profileEditingEnabled: s.profileEditingEnabled === false,
-                    }))
-                  }
                 />
                 <ToggleCard
                   title="Maintenance Mode"
@@ -2769,30 +2340,20 @@ export default function AdminSettings() {
                 </div>
 
                 <div className="space-y-2">
-                  {auditLogs.map((log) => {
-                    const formattedDate =
-                      typeof log.createdAt?.toDate === "function"
-                        ? log.createdAt.toDate().toLocaleString()
-                        : log.createdAt || log.timestamp
-                        ? new Date(log.createdAt || log.timestamp).toLocaleString()
-                        : "Recently";
-                    return (
-                      <div key={log.id} className="p-3 bg-muted/20 border border-border rounded-xl flex items-center justify-between text-xs">
-                        <div className="space-y-0.5">
-                          <div className="flex items-center gap-2">
-                            <span className="font-bold text-primary">{log.action}</span>
-                            <span className="text-[10px] text-muted-foreground">
-                              by {log.adminEmail || log.actorEmail || "webmaster"}
-                            </span>
-                          </div>
-                          <p className="text-muted-foreground">{log.details}</p>
+                  {auditLogs.map((log) => (
+                    <div key={log.id} className="p-3 bg-muted/20 border border-border rounded-xl flex items-center justify-between text-xs">
+                      <div className="space-y-0.5">
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-primary">{log.action}</span>
+                          <span className="text-[10px] text-muted-foreground">by {log.adminEmail}</span>
                         </div>
-                        <span className="text-[10px] text-muted-foreground font-mono">
-                          {formattedDate}
-                        </span>
+                        <p className="text-muted-foreground">{log.details}</p>
                       </div>
-                    );
-                  })}
+                      <span className="text-[10px] text-muted-foreground font-mono">
+                        {log.createdAt?.toDate ? log.createdAt.toDate().toLocaleString() : "Recently"}
+                      </span>
+                    </div>
+                  ))}
                 </div>
               </div>
             </div>
@@ -2832,41 +2393,28 @@ export default function AdminSettings() {
             </div>
           )}
 
-          {isSiteSettingsTab && (
-            <div className="pt-3 border-t border-border flex items-center justify-between text-xs text-muted-foreground">
-              <span>
-                Global platform settings save via the single <strong className="text-foreground">Save Global Settings</strong> button above to <code className="text-primary font-mono">/settings/site</code>.
-              </span>
-            </div>
-          )}
+          {/* Sticky Footer Save Action */}
+          <div className="pt-4 border-t border-border flex items-center justify-between">
+            <p className="text-xs text-muted-foreground">
+              All settings are synced directly to Firestore collection <code className="text-primary font-mono">/settings/site</code>
+            </p>
+            <button
+              type="submit"
+              disabled={saving}
+              className="px-8 py-3 bg-primary text-primary-foreground font-bold text-xs rounded-xl flex items-center gap-2 shadow-lg shadow-primary/20 hover:bg-primary/90 transition-all"
+            >
+              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+              Save All Webmaster Settings
+            </button>
+          </div>
         </form>
       )}
 
-      {/* FAQ Add/Edit/Preview Modal */}
+      {/* FAQ Add/Edit Modal */}
       {faqModalOpen && (
         <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-card border border-border rounded-3xl p-6 max-w-lg w-full space-y-4 shadow-2xl max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between border-b border-border pb-3">
-              <h2 className="font-bold text-lg">{editingFaq ? "Edit FAQ Item" : "Create New FAQ Item"}</h2>
-              <button
-                type="button"
-                onClick={() => setFaqPreviewMode((v) => !v)}
-                className="px-3 py-1 rounded-xl bg-muted text-xs font-bold flex items-center gap-1"
-              >
-                <Eye className="w-3.5 h-3.5" /> {faqPreviewMode ? "Edit" : "Preview"}
-              </button>
-            </div>
-
-            {faqPreviewMode ? (
-              <div className="space-y-3 p-4 rounded-2xl border border-border bg-muted/20">
-                <span className="text-[10px] font-bold uppercase text-primary">{faqForm.category}</span>
-                <h3 className="font-bold text-base">{faqForm.question || "Untitled FAQ question"}</h3>
-                <p className="text-xs text-muted-foreground whitespace-pre-line leading-relaxed">
-                  {faqForm.answer || "FAQ answer preview..."}
-                </p>
-              </div>
-            ) : null}
-
+          <div className="bg-card border border-border rounded-3xl p-6 max-w-lg w-full space-y-4 shadow-2xl">
+            <h2 className="font-bold text-lg">{editingFaq ? "Edit FAQ Item" : "Create New FAQ Item"}</h2>
             <form onSubmit={handleSaveFaq} className="space-y-4">
               <div>
                 <label className={labelClass}>Question</label>
@@ -2888,7 +2436,7 @@ export default function AdminSettings() {
                 />
               </div>
 
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+              <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className={labelClass}>Category</label>
                   <input
@@ -2906,30 +2454,7 @@ export default function AdminSettings() {
                     className={inputClass}
                   />
                 </div>
-                <div>
-                  <label className={labelClass}>Publish Status</label>
-                  <select
-                    value={faqForm.status}
-                    onChange={(e) =>
-                      setFaqForm((f) => ({ ...f, status: e.target.value === "draft" ? "draft" : "published" }))
-                    }
-                    className={inputClass}
-                  >
-                    <option value="published">Published</option>
-                    <option value="draft">Draft</option>
-                  </select>
-                </div>
               </div>
-
-              <label className="flex items-center gap-2 text-xs font-semibold cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={faqForm.enabled}
-                  onChange={(e) => setFaqForm((f) => ({ ...f, enabled: e.target.checked }))}
-                  className="w-4 h-4 accent-primary"
-                />
-                <span>Enabled (visible on public /faq when published)</span>
-              </label>
 
               <div className="flex justify-end gap-2 pt-2">
                 <button
@@ -2943,7 +2468,7 @@ export default function AdminSettings() {
                   type="submit"
                   className="px-5 py-2 bg-primary text-primary-foreground text-xs font-bold rounded-xl"
                 >
-                  {editingFaq ? "Update FAQ" : "Save FAQ"}
+                  Save FAQ
                 </button>
               </div>
             </form>
@@ -2951,40 +2476,11 @@ export default function AdminSettings() {
         </div>
       )}
 
-      {/* Help Article Create/Edit/Preview Modal */}
+      {/* Help Article Modal */}
       {articleModalOpen && (
         <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-card border border-border rounded-3xl p-6 max-w-xl w-full space-y-4 shadow-2xl max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between border-b border-border pb-3">
-              <h2 className="font-bold text-lg">
-                {editingArticle ? "Edit Help Center Article" : "Create Help Center Article"}
-              </h2>
-              <button
-                type="button"
-                onClick={() => setArticlePreviewMode((v) => !v)}
-                className="px-3 py-1 rounded-xl bg-muted text-xs font-bold flex items-center gap-1"
-              >
-                <Eye className="w-3.5 h-3.5" /> {articlePreviewMode ? "Edit" : "Preview"}
-              </button>
-            </div>
-
-            {articlePreviewMode ? (
-              <div className="space-y-3 p-4 rounded-2xl border border-border bg-muted/20">
-                <span className="text-[10px] font-bold uppercase text-primary">{articleForm.category}</span>
-                <h3 className="font-bold text-base">{articleForm.title || "Untitled Article"}</h3>
-                <p className="text-xs text-muted-foreground whitespace-pre-line leading-relaxed">
-                  {articleForm.content}
-                </p>
-                {articleForm.steps.length > 0 && (
-                  <ol className="list-decimal pl-5 space-y-1 text-xs text-muted-foreground">
-                    {articleForm.steps.map((s, idx) => (
-                      <li key={idx}>{s}</li>
-                    ))}
-                  </ol>
-                )}
-              </div>
-            ) : null}
-
+          <div className="bg-card border border-border rounded-3xl p-6 max-w-lg w-full space-y-4 shadow-2xl">
+            <h2 className="font-bold text-lg">Create Help Center Article</h2>
             <form onSubmit={handleSaveArticle} className="space-y-4">
               <div>
                 <label className={labelClass}>Article Title</label>
@@ -2996,79 +2492,25 @@ export default function AdminSettings() {
                 />
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div>
-                  <label className={labelClass}>Category</label>
-                  <input
-                    value={articleForm.category}
-                    onChange={(e) => setArticleForm((a) => ({ ...a, category: e.target.value }))}
-                    className={inputClass}
-                    required
-                  />
-                </div>
-                <div>
-                  <label className={labelClass}>Sort Order</label>
-                  <input
-                    type="number"
-                    value={articleForm.sortOrder}
-                    onChange={(e) =>
-                      setArticleForm((a) => ({ ...a, sortOrder: parseInt(e.target.value) || 1 }))
-                    }
-                    className={inputClass}
-                  />
-                </div>
-                <div>
-                  <label className={labelClass}>Publish Status</label>
-                  <select
-                    value={articleForm.status}
-                    onChange={(e) =>
-                      setArticleForm((a) => ({
-                        ...a,
-                        status: e.target.value === "draft" ? "draft" : "published",
-                      }))
-                    }
-                    className={inputClass}
-                  >
-                    <option value="published">Published</option>
-                    <option value="draft">Draft</option>
-                  </select>
-                </div>
-              </div>
-
               <div>
-                <label className={labelClass}>Summary / Body Content</label>
-                <textarea
-                  value={articleForm.content}
-                  onChange={(e) => setArticleForm((a) => ({ ...a, content: e.target.value }))}
-                  className="w-full h-28 p-3 bg-muted/30 border border-border rounded-xl text-xs outline-none"
+                <label className={labelClass}>Category</label>
+                <input
+                  value={articleForm.category}
+                  onChange={(e) => setArticleForm((a) => ({ ...a, category: e.target.value }))}
+                  className={inputClass}
                   required
                 />
               </div>
 
               <div>
-                <label className={labelClass}>Step-by-Step Instructions (Optional, 1 step per line)</label>
+                <label className={labelClass}>Content / Instructions</label>
                 <textarea
-                  value={articleForm.steps.join("\n")}
-                  onChange={(e) =>
-                    setArticleForm((a) => ({
-                      ...a,
-                      steps: e.target.value.split("\n"),
-                    }))
-                  }
-                  placeholder="Step 1: Open the community page...\nStep 2: Click Submit Community..."
-                  className="w-full h-24 p-3 bg-muted/30 border border-border rounded-xl text-xs font-mono outline-none"
+                  value={articleForm.content}
+                  onChange={(e) => setArticleForm((a) => ({ ...a, content: e.target.value }))}
+                  className="w-full h-32 p-3 bg-muted/30 border border-border rounded-xl text-xs outline-none"
+                  required
                 />
               </div>
-
-              <label className="flex items-center gap-2 text-xs font-semibold cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={articleForm.enabled}
-                  onChange={(e) => setArticleForm((a) => ({ ...a, enabled: e.target.checked }))}
-                  className="w-4 h-4 accent-primary"
-                />
-                <span>Enabled (visible on public /help when published)</span>
-              </label>
 
               <div className="flex justify-end gap-2 pt-2">
                 <button
@@ -3082,23 +2524,13 @@ export default function AdminSettings() {
                   type="submit"
                   className="px-5 py-2 bg-primary text-primary-foreground text-xs font-bold rounded-xl"
                 >
-                  {editingArticle ? "Update Article" : "Save Article"}
+                  Publish Article
                 </button>
               </div>
             </form>
           </div>
         </div>
       )}
-
-      {/* CMS Structured Page Editor Modal */}
-      <CmsPageEditorModal
-        open={!!editingCmsPage}
-        overview={editingCmsPage}
-        user={user}
-        supportEmail={settings.supportEmail || settings.contactEmail || "support@linkcloud.in"}
-        onClose={() => setEditingCmsPage(null)}
-        onChanged={refreshCmsAndContent}
-      />
 
       {/* Announcement Modal with Live Device Preview */}
       {announcementModalOpen && (

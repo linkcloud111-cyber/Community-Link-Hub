@@ -2,8 +2,6 @@ User-agent: *
 Allow: /
 Disallow: /webmaster
 Disallow: /webmaster/*
-Disallow: /admin
-Disallow: /admin/*
 Disallow: /dashboard
 Disallow: /dashboard/*
 Disallow: /submit

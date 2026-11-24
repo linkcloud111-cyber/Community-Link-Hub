@@ -19,13 +19,6 @@ import {
   getUserProfile,
   getUserGroups,
 } from "@/lib/firestore";
-import {
-  parseAndValidateTags,
-  getLiveTagStats,
-  MAX_GROUP_TAGS,
-  MAX_TAG_LENGTH,
-  MAX_GROUP_DESCRIPTION_LENGTH,
-} from "@/lib/group-validation";
 import type { Group, GroupStatus, UserProfile } from "@/lib/types";
 import { useTaxonomy } from "@/contexts/TaxonomyContext";
 import { useLocation as useAppLocation } from "@/contexts/LocationContext";
@@ -89,7 +82,6 @@ export default function AdminGroups() {
 
   // Modals state
   const [editGroup, setEditGroup] = useState<Group | null>(null);
-  const [editTagsInput, setEditTagsInput] = useState("");
   const [viewGroup, setViewGroup] = useState<Group | null>(null);
   const [changesGroup, setChangesGroup] = useState<Group | null>(null);
   const [changesMsg, setChangesMsg] = useState("");
@@ -379,18 +371,11 @@ export default function AdminGroups() {
   const handleSaveGroupEdit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editGroup) return;
-    if ((editGroup.description || "").trim().length > MAX_GROUP_DESCRIPTION_LENGTH) {
-      toast.error(`Description must not exceed ${MAX_GROUP_DESCRIPTION_LENGTH} characters.`);
-      return;
-    }
-    const tagCheck = parseAndValidateTags(editTagsInput, { required: false });
-    if (!tagCheck.valid) {
-      toast.error(tagCheck.error || "Please enter valid tags.");
-      return;
-    }
-
     setActionLoading(editGroup.id);
     try {
+      const normalizedTags = Array.isArray(editGroup.tags)
+        ? editGroup.tags.map((t) => t.trim().toLowerCase()).filter(Boolean)
+        : [];
       await updateGroup(editGroup.id, {
         name: editGroup.name.trim(),
         platform: editGroup.platform,
@@ -400,10 +385,10 @@ export default function AdminGroups() {
         language: editGroup.language || "Hindi",
         joinUrl: editGroup.joinUrl.trim(),
         logoUrl: editGroup.logoUrl || "",
-        description: editGroup.description.trim(),
+        description: editGroup.description,
         rules: editGroup.rules || "",
         minimumAge: editGroup.minimumAge || "All Ages",
-        tags: tagCheck.tags,
+        tags: normalizedTags,
         status: editGroup.status,
         linkStatus: editGroup.linkStatus || "active",
         state: editGroup.state || "",
@@ -416,8 +401,8 @@ export default function AdminGroups() {
       toast.success("Group updated successfully");
       setEditGroup(null);
       await loadGroups();
-    } catch (err: any) {
-      toast.error(err?.message || "Failed to update group");
+    } catch {
+      toast.error("Failed to update group");
     } finally {
       setActionLoading(null);
     }
@@ -741,10 +726,7 @@ export default function AdminGroups() {
                           </button>
 
                           <button
-                            onClick={() => {
-                              setEditGroup(group);
-                              setEditTagsInput(Array.isArray(group.tags) ? group.tags.join(", ") : "");
-                            }}
+                            onClick={() => setEditGroup(group)}
                             className="p-1.5 hover:bg-muted rounded-lg text-muted-foreground hover:text-primary"
                             title="Edit Group"
                           >
@@ -1150,59 +1132,24 @@ export default function AdminGroups() {
                 </div>
 
                 <div className="md:col-span-2">
-                  {(() => {
-                    const tagStats = getLiveTagStats(editTagsInput);
-                    const tagCheck = editTagsInput.trim()
-                      ? parseAndValidateTags(editTagsInput, { required: false })
-                      : null;
-                    return (
-                      <>
-                        <div className="flex items-center justify-between mb-1">
-                          <label className="font-bold text-muted-foreground block">
-                            Tags (Comma-separated)
-                          </label>
-                          <span
-                            className={`text-[11px] font-bold ${
-                              tagStats.count > MAX_GROUP_TAGS || (tagCheck && !tagCheck.valid)
-                                ? "text-destructive"
-                                : "text-muted-foreground"
-                            }`}
-                          >
-                            {tagStats.count} / {MAX_GROUP_TAGS} Tags ({tagStats.remaining} remaining)
-                          </span>
-                        </div>
-                        <input
-                          value={editTagsInput}
-                          onChange={(e) => setEditTagsInput(e.target.value)}
-                          placeholder="jobs, tech, news"
-                          className={`w-full p-2.5 bg-muted/30 border rounded-xl outline-none ${
-                            tagCheck && !tagCheck.valid ? "border-destructive" : "border-border"
-                          }`}
-                        />
-                        {tagCheck && !tagCheck.valid ? (
-                          <p className="text-[11px] font-medium text-destructive mt-1">
-                            {tagCheck.error}
-                          </p>
-                        ) : (
-                          <p className="text-[11px] text-muted-foreground mt-1">
-                            Max {MAX_GROUP_TAGS} tags, max {MAX_TAG_LENGTH} characters each, no empty or duplicate tags.
-                          </p>
-                        )}
-                      </>
-                    );
-                  })()}
+                  <label className="font-bold text-muted-foreground mb-1 block">Tags (Comma-separated)</label>
+                  <input
+                    value={Array.isArray(editGroup.tags) ? editGroup.tags.join(", ") : ""}
+                    onChange={(e) =>
+                      setEditGroup({
+                        ...editGroup,
+                        tags: e.target.value.split(",").map((t) => t.trim()),
+                      })
+                    }
+                    placeholder="jobs, tech, news"
+                    className="w-full p-2.5 bg-muted/30 border border-border rounded-xl outline-none"
+                  />
                 </div>
 
                 <div className="md:col-span-2">
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="font-bold text-muted-foreground block">Description</label>
-                    <span className="text-[11px] text-muted-foreground font-semibold">
-                      {(editGroup.description || "").length} / {MAX_GROUP_DESCRIPTION_LENGTH}
-                    </span>
-                  </div>
+                  <label className="font-bold text-muted-foreground mb-1 block">Description</label>
                   <textarea
                     value={editGroup.description}
-                    maxLength={MAX_GROUP_DESCRIPTION_LENGTH}
                     onChange={(e) => setEditGroup({ ...editGroup, description: e.target.value })}
                     className="w-full h-24 p-2.5 bg-muted/30 border border-border rounded-xl outline-none"
                   />

@@ -15,7 +15,6 @@ import {
   Play,
 } from "lucide-react";
 import { subscribeActiveAnnouncements } from "@/lib/firestore";
-import { useSiteSettings } from "@/contexts/SiteSettingsContext";
 import type { Announcement, AnnouncementType } from "@/lib/types";
 
 // Safe URL validator: blocks javascript:, data:, vbscript:, file: with obfuscation hardening
@@ -148,7 +147,6 @@ export default function AnnouncementBanner({
   onDismissPreview,
 }: AnnouncementBannerProps = {}) {
   const [location] = useLocation();
-  const { settings } = useSiteSettings();
   const [allAnnouncements, setAllAnnouncements] = useState<Announcement[]>([]);
   const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set());
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -231,11 +229,6 @@ export default function AnnouncementBanner({
     },
     [previewItem, onDismissPreview]
   );
-
-  // Respect Webmaster master announcements toggle (allow isolated preview inside Webmaster panel)
-  if (!previewItem && settings?.announcementsEnabled === false) {
-    return null;
-  }
 
   // If no visible announcements, return nothing
   if (visibleItems.length === 0) {

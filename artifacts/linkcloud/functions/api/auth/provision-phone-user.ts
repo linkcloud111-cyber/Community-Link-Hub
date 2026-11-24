@@ -40,8 +40,7 @@ export async function onRequestPost(context: {
   try {
     decoded = await verifyFirebaseIdToken(idToken, env);
   } catch (err: any) {
-    console.warn("[Cloudflare Auth] Phone token verification failed:", err?.message);
-    return errorResponse("Invalid or expired authentication token.", 401);
+    return errorResponse(err?.message || "Failed to verify ID token", 401);
   }
 
   const phoneNumber = (decoded.phone_number || "").trim();
@@ -49,23 +48,14 @@ export async function onRequestPost(context: {
     return errorResponse("Phone number not verified in authentication token.", 400);
   }
 
-  // Check existing user in mobileIndex (+91 canonical, +91 spaced, and legacy 10-digit formats)
-  let existingIndex = await firestoreGetDoc(`mobileIndex/${phoneNumber}`, env);
-  if (!existingIndex && phoneNumber.startsWith("+91")) {
-    const raw10 = phoneNumber.slice(3).trim();
-    existingIndex =
-      (await firestoreGetDoc(`mobileIndex/${encodeURIComponent(`+91 ${raw10}`)}`, env)) ||
-      (await firestoreGetDoc(`mobileIndex/${raw10}`, env));
-  }
-  if (!existingIndex && !phoneNumber.startsWith("+")) {
-    existingIndex = await firestoreGetDoc(`mobileIndex/+91${phoneNumber}`, env);
-  }
+  // Check existing user in mobileIndex
+  const existingIndex = await firestoreGetDoc(`mobileIndex/${phoneNumber}`, env);
   if (existingIndex && existingIndex.uid) {
     const customToken = await adminCreateCustomToken(env, existingIndex.uid);
     return jsonResponse({
       success: true,
       uid: existingIndex.uid,
-      accountUid: existingIndex.accountUid || existingIndex.uid,
+      accountUid: existingIndex.uid,
       customToken,
       isNew: false,
     });
@@ -86,17 +76,6 @@ export async function onRequestPost(context: {
         isNew: false,
       });
     }
-  }
-
-  // Enforce Webmaster userRegistrationEnabled before creating a new phone user (strict fail-closed)
-  try {
-    const siteSettings = await firestoreGetDoc("settings/site", env);
-    if (!siteSettings || typeof siteSettings !== "object" || siteSettings.userRegistrationEnabled !== true) {
-      return errorResponse("New user registrations are currently closed by the webmaster.", 403);
-    }
-  } catch (err) {
-    console.error("[Cloudflare Auth] Failed to verify userRegistrationEnabled for phone signup:", err);
-    return errorResponse("Unable to verify registration availability. Please try again.", 503);
   }
 
   // Allocate sequential UID

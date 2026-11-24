@@ -1,20 +1,126 @@
-import PublishedCmsPageView from "@/components/cms/PublishedCmsPageView";
+import { useState, useEffect } from "react";
+import { ShieldCheck, Users, Globe2, CheckCircle, ArrowRight } from "lucide-react";
+import { Link } from "wouter";
+import { getSiteSettings } from "@/lib/firestore";
+import { usePageSEO } from "@/lib/page-meta";
+import type { SiteSettings } from "@/lib/types";
 
 export default function AboutPage() {
+  const [settings, setSettings] = useState<SiteSettings | null>(null);
+
+  usePageSEO({
+    title: "About Us",
+    subtitle: "Connecting India's Digital Communities",
+    description: "Learn more about LinkCloud, India's premier community discovery index for WhatsApp, Telegram, and Discord.",
+    canonicalPath: "/about",
+  });
+
+  useEffect(() => {
+    getSiteSettings().then(setSettings).catch(console.error);
+  }, []);
+
+  const title = settings?.aboutTitle || "Connecting India's Digital Communities";
+  const description =
+    settings?.aboutDescription ||
+    "LinkCloud is India's premier community discovery index, providing verified invite links for WhatsApp, Telegram, Discord, and leading social channels.";
+  const mission =
+    settings?.aboutMission ||
+    "In an era of fragmented messaging apps, finding high-quality, safe, and relevant community groups can be frustrating. LinkCloud eliminates spam, broken links, and fake groups by hosting a centralized, human-curated directory. Whether you are seeking tech discussions, local study groups, job updates, hobbies, or regional news, LinkCloud connects you safely.";
+
   return (
-    <PublishedCmsPageView
-      slug="about"
-      badgeLabel="About LinkCloud"
-      defaultTitle="About LinkCloud"
-      defaultSubtitle="Community Discovery Directory"
-      defaultDescription="Learn about LinkCloud, how communities are curated, and our platform safety approach."
-      canonicalPath="/about"
-      unavailableTitle="About Page Pending Publication"
-      unavailableMessage="Our About page details are currently in draft or being updated by the Webmaster. Please browse public communities or contact support for assistance."
-      footerAction={{
-        href: "/submit",
-        label: "Submit Your Community",
-      }}
-    />
+    <div className="max-w-4xl mx-auto space-y-12 pb-20">
+      {/* Hero */}
+      <div className="text-center space-y-4">
+        <span className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-primary/10 text-primary text-xs font-semibold uppercase tracking-wider">
+          About LinkCloud
+        </span>
+        <h1 className="text-3xl sm:text-5xl font-extrabold tracking-tight">
+          {title}
+        </h1>
+        <p className="text-base sm:text-lg text-muted-foreground max-w-2xl mx-auto leading-relaxed">
+          {description}
+        </p>
+      </div>
+
+      {/* Grid Features */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="p-6 rounded-3xl bg-card border border-border/80 shadow-sm space-y-3">
+          <div className="w-12 h-12 rounded-2xl bg-primary/10 text-primary flex items-center justify-center">
+            <ShieldCheck className="w-6 h-6" />
+          </div>
+          <h3 className="text-lg font-bold">100% Moderated</h3>
+          <p className="text-xs text-muted-foreground leading-relaxed">
+            Every community listing is verified by our moderation team before public approval to maintain safety and combat spam.
+          </p>
+        </div>
+
+        <div className="p-6 rounded-3xl bg-card border border-border/80 shadow-sm space-y-3">
+          <div className="w-12 h-12 rounded-2xl bg-blue-500/10 text-blue-500 flex items-center justify-center">
+            <Globe2 className="w-6 h-6" />
+          </div>
+          <h3 className="text-lg font-bold">Localized Discovery</h3>
+          <p className="text-xs text-muted-foreground leading-relaxed">
+            Discover localized groups by State, District, City, and regional languages across all major Indian territories.
+          </p>
+        </div>
+
+        <div className="p-6 rounded-3xl bg-card border border-border/80 shadow-sm space-y-3">
+          <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 text-emerald-500 flex items-center justify-center">
+            <Users className="w-6 h-6" />
+          </div>
+          <h3 className="text-lg font-bold">Multi-Platform Support</h3>
+          <p className="text-xs text-muted-foreground leading-relaxed">
+            Seamless support for WhatsApp, Telegram, Discord, Facebook Groups, Instagram Broadcast, X, LinkedIn, YouTube, and Reddit.
+          </p>
+        </div>
+      </div>
+
+      {/* Mission */}
+      <div className="bg-card border border-border/80 rounded-3xl p-8 sm:p-12 space-y-6">
+        <h2 className="text-2xl font-bold">Our Mission</h2>
+        <p className="text-sm sm:text-base text-muted-foreground leading-relaxed">
+          {mission}
+        </p>
+
+        {settings?.aboutVision && (
+          <div className="pt-2">
+            <h3 className="text-lg font-bold text-foreground mb-1">Our Vision</h3>
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              {settings.aboutVision}
+            </p>
+          </div>
+        )}
+
+        <div className="pt-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {[
+            "Realtime link status validation",
+            "Zero fees for public browsing & submitting",
+            "Robust complaint & DMCA reporting desk",
+            "Granular regional & language categorization",
+          ].map((item, i) => (
+            <div key={i} className="flex items-center gap-2.5 text-sm font-semibold">
+              <CheckCircle className="w-4 h-4 text-emerald-500 flex-shrink-0" />
+              <span>{item}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* CTA */}
+      <div className="bg-gradient-to-r from-primary/10 via-primary/5 to-blue-500/10 border border-primary/20 rounded-3xl p-8 text-center space-y-4">
+        <h3 className="text-2xl font-bold">Want to feature your community?</h3>
+        <p className="text-sm text-muted-foreground max-w-md mx-auto">
+          Submit your WhatsApp, Telegram, or Discord community today and reach thousands of active members across India.
+        </p>
+        <div className="pt-2">
+          <Link
+            href="/submit"
+            className="inline-flex items-center gap-2 px-6 py-3 bg-primary text-primary-foreground font-bold text-sm rounded-xl hover:bg-primary/90 transition shadow-lg shadow-primary/20"
+          >
+            Submit Your Community <ArrowRight className="w-4 h-4" />
+          </Link>
+        </div>
+      </div>
+    </div>
   );
 }

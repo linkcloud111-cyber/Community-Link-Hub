@@ -8,13 +8,6 @@ import {
   createGroup,
   checkDuplicateGroup,
 } from "@/lib/firestore";
-import {
-  parseAndValidateTags,
-  getLiveTagStats,
-  MAX_GROUP_TAGS,
-  MAX_TAG_LENGTH,
-  MAX_GROUP_DESCRIPTION_LENGTH,
-} from "@/lib/group-validation";
 import { uploadToCloudinary } from "@/lib/cloudinary";
 import { getPlatformLinkHints, normalizePlatformKey, validateInviteLink } from "@/lib/utils";
 import { toast } from "sonner";
@@ -51,10 +44,12 @@ interface FormData {
   rules: string;
   minimumAge: string;
   joinUrl: string;
+  submitterName: string;
+  submitterEmail: string;
 }
 
 export default function Submit() {
-  const { user, profile, isWebmaster, loading: authLoading } = useAuth();
+  const { user, profile, isWebmaster } = useAuth();
   const { settings } = useSiteSettings();
   const {
     activeCategories: categories,
@@ -88,6 +83,8 @@ export default function Submit() {
     rules: "",
     minimumAge: "All Ages",
     joinUrl: "",
+    submitterName: profile?.displayName || user?.displayName || "",
+    submitterEmail: user?.email || "",
   });
 
   const districts = form.state ? getDistrictsForState(form.state) : [];
@@ -102,6 +99,17 @@ export default function Submit() {
     activePlatform?.helpText,
     activePlatform?.errorText
   );
+
+  // Sync submitter details if auth/profile settles after initial mount
+  useEffect(() => {
+    if (user || profile) {
+      setForm((f) => ({
+        ...f,
+        submitterName: f.submitterName || profile?.displayName || user?.displayName || "",
+        submitterEmail: f.submitterEmail || profile?.email || user?.email || "",
+      }));
+    }
+  }, [user, profile]);
 
   // Sync form defaults with active taxonomy items when loaded
   useEffect(() => {
@@ -137,8 +145,8 @@ export default function Submit() {
     try {
       const uploadedUrl = await uploadToCloudinary(
         file,
-        settings?.cloudinaryUploadPreset || settings?.cloudinarySettings?.uploadPreset,
-        settings?.cloudinaryCloudName || settings?.cloudinarySettings?.cloudName
+        settings?.cloudinaryUploadPreset,
+        settings?.cloudinaryCloudName
       );
       update("logoUrl", uploadedUrl);
       toast.success("Logo uploaded successfully!");
@@ -151,17 +159,13 @@ export default function Submit() {
   };
 
   const validate = (): string | null => {
-    if (!user) return "Please sign in to submit a community listing.";
     if (!form.name.trim()) return "1. Group Name is required";
     if (form.name.trim().length < 3) return "Group Name must be at least 3 characters";
     if (!form.categoryId) return "3. Category is required";
     if (!form.description.trim()) return "6. Description is required";
     if (form.description.trim().length < 20) return "Description must be at least 20 characters";
-    if (form.description.trim().length > MAX_GROUP_DESCRIPTION_LENGTH) {
-      return `Description must not exceed ${MAX_GROUP_DESCRIPTION_LENGTH} characters`;
-    }
-    const tagCheck = parseAndValidateTags(form.tagsInput, { required: true });
-    if (!tagCheck.valid) return tagCheck.error || "7. Enter valid comma-separated tags.";
+    if (form.description.trim().length > 500) return "Description must not exceed 500 characters";
+    if (!form.tagsInput.trim()) return "7. Tags are required. Enter keywords separated by commas.";
     if (!form.state) return "9. State is required";
     if (!form.district) return "10. District is required";
     if (!form.city.trim()) return "11. City is required";
@@ -169,6 +173,10 @@ export default function Submit() {
     const linkCheck = validateInviteLink(form.joinUrl, form.platform, activePlatform?.invitePattern);
     if (!linkCheck.valid) return linkCheck.error || linkHints.exampleError;
     if (!termsAccepted) return "15. Please confirm the Terms & Conditions checkbox";
+    if (!user && !form.submitterName.trim()) return "Your name is required";
+    if (!user && !form.submitterEmail.trim()) return "Your email is required";
+    if (!user && form.submitterEmail && !/\S+@\S+\.\S+/.test(form.submitterEmail))
+      return "Please enter a valid email address";
     return null;
   };
 
@@ -197,24 +205,22 @@ export default function Submit() {
   };
 
   const handleFinalSubmit = async () => {
-    if (!user) {
-      toast.error("Please sign in to submit a community listing.");
-      return;
-    }
     const error = validate();
     if (error) {
       toast.error(error);
       return;
     }
-    const tagCheck = parseAndValidateTags(form.tagsInput, { required: true });
-    if (!tagCheck.valid) {
-      toast.error(tagCheck.error || "Please enter valid tags.");
-      return;
-    }
-
     setSubmitting(true);
     try {
       const categoryName = categories.find((c) => c.id === form.categoryId)?.name || "";
+      const tags = Array.from(
+        new Set(
+          form.tagsInput
+            .split(",")
+            .map((t) => t.trim().toLowerCase())
+            .filter(Boolean)
+        )
+      );
 
       await createGroup({
         name: form.name.trim(),
@@ -229,12 +235,15 @@ export default function Submit() {
         description: form.description.trim(),
         rules: form.rules.trim(),
         minimumAge: form.minimumAge || "All Ages",
-        tags: tagCheck.tags,
+        tags,
         joinUrl: form.joinUrl.trim(),
         logoUrl: form.logoUrl.trim(),
-        submittedBy: user.uid,
-        submittedByName: profile?.displayName || user.displayName || user.email || "User",
-        submittedByEmail: user.email || "",
+        submittedBy: user?.uid || "",
+        submittedByName:
+          user
+            ? profile?.displayName || user.displayName || user.email || "User"
+            : form.submitterName.trim(),
+        submittedByEmail: user?.email || form.submitterEmail.trim(),
         status: (isWebmaster || profile?.role === "webmaster") ? "approved" : "pending",
         featured: false,
         trending: false,
@@ -303,44 +312,6 @@ export default function Submit() {
     );
   }
 
-  // Wait for auth settlement before showing Sign In Required or form
-  if (authLoading) {
-    return (
-      <div className="flex justify-center py-24">
-        <Loader2 className="w-8 h-8 animate-spin text-primary" />
-      </div>
-    );
-  }
-
-  // Authentication Required for all community submissions (no guest bypass)
-  if (!user) {
-    return (
-      <div className="max-w-xl mx-auto py-20 px-4 text-center space-y-5">
-        <div className="w-16 h-16 rounded-2xl bg-primary/10 text-primary flex items-center justify-center mx-auto border border-primary/20 shadow-lg">
-          <Shield className="w-8 h-8" />
-        </div>
-        <h1 className="text-2xl sm:text-3xl font-extrabold text-foreground">Sign In Required</h1>
-        <p className="text-sm text-muted-foreground leading-relaxed">
-          Community submissions require a signed-in LinkCloud account. Please sign in or create an account to submit your group listing.
-        </p>
-        <div className="pt-2 flex items-center justify-center gap-3">
-          <Link
-            href="/login?redirect=%2Fsubmit"
-            className="px-6 py-2.5 bg-primary text-primary-foreground font-semibold text-sm rounded-xl hover:bg-primary/90 transition inline-block shadow-sm"
-          >
-            Sign In
-          </Link>
-          <Link
-            href="/register?redirect=%2Fsubmit"
-            className="px-6 py-2.5 bg-muted text-foreground font-semibold text-sm rounded-xl hover:bg-muted/80 transition inline-block border border-border"
-          >
-            Create Account
-          </Link>
-        </div>
-      </div>
-    );
-  }
-
   // Feature Flag: Group Submissions Disabled (Fail-Closed)
   if (settings?.groupSubmissionEnabled !== true && !isWebmaster && profile?.role !== "webmaster") {
     return (
@@ -364,10 +335,34 @@ export default function Submit() {
     );
   }
 
-  const tagStats = getLiveTagStats(form.tagsInput);
-  const tagValidation = form.tagsInput.trim()
-    ? parseAndValidateTags(form.tagsInput, { required: true })
-    : null;
+  // Feature Flag: Public Guest Submissions Disabled (Sign In Required - Fail-Closed)
+  if (!user && settings?.allowPublicSubmissions !== true) {
+    return (
+      <div className="max-w-xl mx-auto py-20 px-4 text-center space-y-5">
+        <div className="w-16 h-16 rounded-2xl bg-primary/10 text-primary flex items-center justify-center mx-auto border border-primary/20 shadow-lg">
+          <Shield className="w-8 h-8" />
+        </div>
+        <h1 className="text-2xl sm:text-3xl font-extrabold text-foreground">Sign In Required</h1>
+        <p className="text-sm text-muted-foreground leading-relaxed">
+          Guest submissions are disabled. Please sign in or create an account to submit a community listing.
+        </p>
+        <div className="pt-2 flex items-center justify-center gap-3">
+          <Link
+            href="/login"
+            className="px-6 py-2.5 bg-primary text-primary-foreground font-semibold text-sm rounded-xl hover:bg-primary/90 transition inline-block shadow-sm"
+          >
+            Sign In
+          </Link>
+          <Link
+            href="/register"
+            className="px-6 py-2.5 bg-muted text-foreground font-semibold text-sm rounded-xl hover:bg-muted/80 transition inline-block border border-border"
+          >
+            Create Account
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   const inputClass =
     "w-full px-4 py-3 bg-background border border-border rounded-xl text-sm focus:ring-2 focus:ring-primary outline-none transition-all placeholder:text-muted-foreground";
@@ -386,7 +381,7 @@ export default function Submit() {
         <h1 className="text-3xl font-extrabold tracking-tight">Submit Your Community</h1>
         <p className="text-muted-foreground mt-2">
           Add your WhatsApp, Telegram, Discord, or other group to India's community
-          directory.
+          directory. Completely free — no account required.
         </p>
       </div>
 
@@ -573,36 +568,17 @@ export default function Submit() {
 
             {/* FIELD 7: Tags * */}
             <div>
-              <div className="flex justify-between items-center mb-1.5">
-                <label className={labelClass}>7. Tags *</label>
-                <span
-                  className={`text-xs font-bold ${
-                    tagStats.count > MAX_GROUP_TAGS || (tagValidation && !tagValidation.valid)
-                      ? "text-destructive"
-                      : "text-muted-foreground"
-                  }`}
-                >
-                  {tagStats.count} / {MAX_GROUP_TAGS} Tags ({tagStats.remaining} remaining)
-                </span>
-              </div>
+              <label className={labelClass}>7. Tags *</label>
               <input
                 required
                 value={form.tagsInput}
                 onChange={(e) => update("tagsInput", e.target.value)}
-                className={`${inputClass} ${
-                  tagValidation && !tagValidation.valid ? "border-destructive focus:ring-destructive" : ""
-                }`}
+                className={inputClass}
                 placeholder="jobs, electrician, whatsapp, cg, room rent"
               />
-              {tagValidation && !tagValidation.valid ? (
-                <p className="text-xs font-medium text-destructive mt-1 flex items-center gap-1">
-                  <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" /> {tagValidation.error}
-                </p>
-              ) : (
-                <p className="text-[11px] text-muted-foreground mt-1">
-                  Up to {MAX_GROUP_TAGS} comma-separated tags (max {MAX_TAG_LENGTH} characters per tag, no empty or duplicate tags).
-                </p>
-              )}
+              <p className="text-[11px] text-muted-foreground mt-1">
+                Enter keywords separated by commas (e.g. jobs, electrician, whatsapp, cg, room rent)
+              </p>
             </div>
 
             {/* FIELD 8: Group Logo (Optional) */}
@@ -810,6 +786,44 @@ export default function Submit() {
             </p>
           </div>
         </div>
+
+        {/* Submitter Details for Guest Submissions */}
+        {!user && (
+          <div className="bg-card border border-border/80 rounded-3xl p-6 sm:p-8 shadow-sm space-y-5">
+            <h2 className="text-base font-bold text-foreground">Your Submitter Details</h2>
+            <p className="text-xs text-muted-foreground">
+              Optional:{" "}
+              <Link href="/login" className="text-primary hover:underline">
+                sign in
+              </Link>{" "}
+              to track your submissions and manage communities in your dashboard.
+            </p>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+              <div>
+                <label className={labelClass}>Your Name *</label>
+                <input
+                  required
+                  value={form.submitterName}
+                  onChange={(e) => update("submitterName", e.target.value)}
+                  className={inputClass}
+                  placeholder="Your full name"
+                />
+              </div>
+              <div>
+                <label className={labelClass}>Your Email *</label>
+                <input
+                  required
+                  type="email"
+                  value={form.submitterEmail}
+                  onChange={(e) => update("submitterEmail", e.target.value)}
+                  className={inputClass}
+                  placeholder="your@email.com"
+                />
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* SECTION 6: CONFIRMATION */}
         <div className="bg-card border border-border/80 rounded-3xl p-6 sm:p-8 shadow-sm space-y-6">

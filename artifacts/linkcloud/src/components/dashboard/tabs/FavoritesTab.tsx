@@ -1,7 +1,6 @@
 import { Link } from "wouter";
 import { Heart, ExternalLink, Trash2, Users, Layers } from "lucide-react";
 import { PlatformIcon } from "@/components/platform-icon";
-import { useSiteSettings } from "@/contexts/SiteSettingsContext";
 import type { Group } from "@/lib/types";
 
 interface FavoritesTabProps {
@@ -10,24 +9,6 @@ interface FavoritesTabProps {
 }
 
 export function FavoritesTab({ favorites, onRemoveFavorite }: FavoritesTabProps) {
-  const { settings } = useSiteSettings();
-
-  if (settings?.favoritesEnabled === false) {
-    return (
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-10 text-center space-y-3">
-        <div className="w-12 h-12 rounded-2xl bg-amber-50 dark:bg-amber-950 text-amber-600 dark:text-amber-400 mx-auto flex items-center justify-center">
-          <Heart className="w-6 h-6" />
-        </div>
-        <h3 className="text-base font-bold text-slate-900 dark:text-white">
-          Bookmarks & Favorites Disabled
-        </h3>
-        <p className="text-xs text-slate-500 dark:text-slate-400 max-w-sm mx-auto">
-          The bookmark and favorites feature is currently paused by the webmaster.
-        </p>
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-6">
       {/* Header */}

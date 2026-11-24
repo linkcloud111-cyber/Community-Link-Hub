@@ -5,7 +5,7 @@ import type { User, ConfirmationResult } from "firebase/auth";
 import type { UserProfile } from "@/lib/types";
 import { validateNewMobile, cleanMobileInput, extract10DigitMobile } from "@/lib/utils";
 import { signInWithMobileOTP, verifyOTP } from "@/lib/auth";
-import { updateUserProfile } from "@/lib/firestore";
+import { checkDuplicateUser, updateUserProfile } from "@/lib/firestore";
 
 interface VerifyPhoneModalProps {
   isOpen: boolean;
@@ -150,6 +150,14 @@ export function VerifyPhoneModal({
 
     setLoading(true);
     try {
+      // Check duplicate user in Firestore
+      const duplicates = await checkDuplicateUser("", check.formatted);
+      if (duplicates.phoneExists && current10Digit !== check.raw10) {
+        toast.error("This mobile number is already registered with another account.");
+        setLoading(false);
+        return;
+      }
+
       const res = await signInWithMobileOTP(check.formatted, "phone-modal-recaptcha");
       setConfirmationResult(res);
       setOtpSent(true);
@@ -213,12 +221,7 @@ export function VerifyPhoneModal({
       toast.success("Mobile number verified successfully!");
       handleClose();
     } catch (err: any) {
-      const code = err?.code || "";
-      if (code === "auth/credential-already-in-use" || code === "auth/phone-number-already-exists") {
-        toast.error("This mobile number is already registered with another account.");
-      } else {
-        toast.error(err?.message || "Invalid OTP. Please try again.");
-      }
+      toast.error(err?.message || "Invalid OTP. Please try again.");
     } finally {
       setLoading(false);
     }

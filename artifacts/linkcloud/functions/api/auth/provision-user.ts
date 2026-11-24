@@ -30,17 +30,6 @@ export async function onRequestPost(context: {
     return errorResponse("Invalid JSON payload", 400);
   }
 
-  // Enforce Webmaster userRegistrationEnabled flag server-side (strict fail-closed)
-  try {
-    const siteSettings = await firestoreGetDoc("settings/site", env);
-    if (!siteSettings || typeof siteSettings !== "object" || siteSettings.userRegistrationEnabled !== true) {
-      return errorResponse("New user registrations are currently closed by the webmaster.", 403);
-    }
-  } catch (err) {
-    console.error("[Cloudflare Auth] Failed to verify userRegistrationEnabled setting:", err);
-    return errorResponse("Unable to verify registration availability. Please try again.", 503);
-  }
-
   const { fullName, dob, email, phone, password } = body;
 
   const cleanName = typeof fullName === "string" ? fullName.trim() : "";
@@ -83,18 +72,15 @@ export async function onRequestPost(context: {
     return errorResponse("Password must be at least 8 characters long.", 400);
   }
 
-  // 1. Check duplicates (unified safe 409 prevents email/phone enumeration)
-  const SAFE_CONFLICT_MSG =
-    "Unable to complete registration with the provided details. If you already have an account, please sign in.";
-
+  // 1. Check duplicates
   const existingEmail = await firestoreGetDoc(`emailIndex/${cleanEmail}`, env);
   if (existingEmail) {
-    return errorResponse(SAFE_CONFLICT_MSG, 409);
+    return errorResponse("This Gmail address is already registered.", 409);
   }
 
   const existingPhone = await firestoreGetDoc(`mobileIndex/${cleanPhone}`, env);
   if (existingPhone) {
-    return errorResponse(SAFE_CONFLICT_MSG, 409);
+    return errorResponse("An account with this Mobile Number is already registered.", 409);
   }
 
   // 2. Allocate sequential UID

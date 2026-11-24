@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { AlertOctagon, Send, Clock, CheckCircle2, ShieldAlert, Loader2 } from "lucide-react";
 import { toast } from "sonner";
-import { useSiteSettings } from "@/contexts/SiteSettingsContext";
 import type { Complaint } from "@/lib/types";
 
 interface ComplaintTabProps {
@@ -10,26 +9,15 @@ interface ComplaintTabProps {
 }
 
 export function ComplaintTab({ complaints, onSubmitComplaint }: ComplaintTabProps) {
-  const { settings } = useSiteSettings();
   const [complaintType, setComplaintType] = useState("Group Listing Issue");
   const [subject, setSubject] = useState("");
   const [description, setDescription] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const complaintEnabled = settings?.complaintSystemEnabled !== false;
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!complaintEnabled) {
-      toast.error("The grievance & complaint portal is currently paused by the webmaster.");
-      return;
-    }
     if (!subject.trim() || !description.trim()) {
       toast.error("Please fill in both Subject and Description.");
-      return;
-    }
-    if (description.trim().length < 20) {
-      toast.error("Detailed description must be at least 20 characters long.");
       return;
     }
 
@@ -92,91 +80,70 @@ export function ComplaintTab({ complaints, onSubmitComplaint }: ComplaintTabProp
             Under Indian IT Rules 2021, all grievances are logged and reviewed by our designated officer.
           </p>
 
-          {!complaintEnabled ? (
-            <div className="p-6 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/50 text-center space-y-2">
-              <ShieldAlert className="w-6 h-6 text-amber-600 dark:text-amber-400 mx-auto" />
-              <p className="text-sm font-bold text-slate-900 dark:text-white">
-                Grievance Submissions Temporarily Paused
-              </p>
-              <p className="text-xs text-slate-600 dark:text-slate-400">
-                Formal complaint submissions are currently paused by the webmaster.
-                {settings?.contactEmail ? ` For urgent legal notices, email ${settings.contactEmail}.` : ""}
-              </p>
-            </div>
-          ) : (
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="space-y-1.5">
-                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
-                  Grievance Category <span className="text-rose-500">*</span>
-                </label>
-                <select
-                  value={complaintType}
-                  onChange={(e) => setComplaintType(e.target.value)}
-                  className="w-full px-3.5 py-2 rounded-xl text-sm border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-purple-600 focus:outline-none"
-                >
-                  <option value="Group Listing Issue">Group Listing / Invite Issue</option>
-                  <option value="Prohibited or Fraudulent Content">Prohibited / Fraudulent Content</option>
-                  <option value="Copyright or Impersonation">Copyright or Impersonation</option>
-                  <option value="Account or Authentication Issue">Account or Security Issue</option>
-                  <option value="Other">Other Grievance</option>
-                </select>
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
-                  Subject <span className="text-rose-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  required
-                  maxLength={150}
-                  value={subject}
-                  onChange={(e) => setSubject(e.target.value)}
-                  placeholder="Brief summary of the issue..."
-                  className="w-full px-3.5 py-2 rounded-xl text-sm border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-purple-600 focus:outline-none"
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
-                    Detailed Description <span className="text-rose-500">*</span>
-                  </label>
-                  <span className={`text-[11px] font-medium ${description.trim().length < 20 ? "text-amber-600 dark:text-amber-400" : "text-emerald-600 dark:text-emerald-400"}`}>
-                    {description.trim().length}/1500 (min 20)
-                  </span>
-                </div>
-                <textarea
-                  required
-                  rows={5}
-                  minLength={20}
-                  maxLength={1500}
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  placeholder="Provide specific URLs, timestamps, or details related to the grievance (minimum 20 characters)..."
-                  className="w-full px-3.5 py-2.5 rounded-xl text-sm border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-purple-600 focus:outline-none resize-none"
-                />
-              </div>
-
-              <button
-                type="submit"
-                disabled={loading || !subject.trim() || description.trim().length < 20}
-                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 disabled:opacity-50 transition shadow-sm"
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="space-y-1.5">
+              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
+                Grievance Category <span className="text-rose-500">*</span>
+              </label>
+              <select
+                value={complaintType}
+                onChange={(e) => setComplaintType(e.target.value)}
+                className="w-full px-3.5 py-2 rounded-xl text-sm border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-purple-600 focus:outline-none"
               >
-                {loading ? (
-                  <>
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    <span>Submitting grievance...</span>
-                  </>
-                ) : (
-                  <>
-                    <Send className="w-3.5 h-3.5" />
-                    <span>Submit Formal Grievance</span>
-                  </>
-                )}
-              </button>
-            </form>
-          )}
+                <option value="Group Listing Issue">Group Listing / Invite Issue</option>
+                <option value="Prohibited or Fraudulent Content">Prohibited / Fraudulent Content</option>
+                <option value="Copyright or Impersonation">Copyright or Impersonation</option>
+                <option value="Account or Authentication Issue">Account or Security Issue</option>
+                <option value="Other">Other Grievance</option>
+              </select>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
+                Subject <span className="text-rose-500">*</span>
+              </label>
+              <input
+                type="text"
+                required
+                value={subject}
+                onChange={(e) => setSubject(e.target.value)}
+                placeholder="Brief summary of the issue..."
+                className="w-full px-3.5 py-2 rounded-xl text-sm border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-purple-600 focus:outline-none"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
+                Detailed Description <span className="text-rose-500">*</span>
+              </label>
+              <textarea
+                required
+                rows={5}
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="Provide specific URLs, timestamps, or details related to the grievance..."
+                className="w-full px-3.5 py-2.5 rounded-xl text-sm border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-purple-600 focus:outline-none resize-none"
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={loading || !subject.trim() || !description.trim()}
+              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 disabled:opacity-50 transition shadow-sm"
+            >
+              {loading ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <span>Submitting grievance...</span>
+                </>
+              ) : (
+                <>
+                  <Send className="w-3.5 h-3.5" />
+                  <span>Submit Formal Grievance</span>
+                </>
+              )}
+            </button>
+          </form>
         </div>
 
         {/* Submitted Grievances History (5 cols) */}

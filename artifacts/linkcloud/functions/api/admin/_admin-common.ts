@@ -54,10 +54,9 @@ export async function requireWebmasterAuth(
       response: errorResponse("Forbidden: Webmaster authority required.", 403),
     };
   } catch (err: any) {
-    console.warn("[Admin Auth] Token verification failed:", err?.message);
     return {
       valid: false,
-      response: errorResponse("Invalid or expired authentication token.", 401),
+      response: errorResponse(err?.message || "Invalid or expired token.", 401),
     };
   }
 }

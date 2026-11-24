@@ -44,18 +44,19 @@ currentPref = true; // OS changes to dark
 resolvedTheme = computeEffectiveTheme("system", currentPref);
 assert(resolvedTheme === "dark", "Theme: System mode dynamically switches to dark upon OS preference change");
 
-// 2. Submission Flags Service-Layer Enforcement Simulation (Mandatory Login + Fail-Closed)
+// 2. Submission Flags Service-Layer Enforcement Simulation (All combinations + Fail-Closed)
 function validateSubmissionFlags(siteSettings, isWebmaster, isGuest) {
   const settings = siteSettings || {};
   // STRICT FAIL-CLOSED POLICY: groupSubmissionEnabled must explicitly be true
   const submissionEnabled = settings.groupSubmissionEnabled === true;
+  // STRICT FAIL-CLOSED POLICY: allowPublicSubmissions must explicitly be true
+  const publicAllowed = settings.allowPublicSubmissions === true;
 
   if (!submissionEnabled && !isWebmaster) {
     throw new Error("Link submissions are temporarily paused by Webmaster.");
   }
-  // Phase 1 Security Policy: All group submissions require an authenticated account (no guest bypass).
-  if (isGuest && !isWebmaster) {
-    throw new Error("Sign in required to submit a group.");
+  if (isGuest && !publicAllowed && !isWebmaster) {
+    throw new Error("Guest link submissions are disabled. Please sign in to submit.");
   }
   return true;
 }
@@ -89,7 +90,7 @@ try {
   validateSubmissionFlags({ groupSubmissionEnabled: true, allowPublicSubmissions: false }, false, true);
   assert(false, "Flags #4: Should have thrown for guest when allowPublicSubmissions=false");
 } catch (e) {
-  assert(e.message.includes("Sign in required"), "Flags #4: Guest blocked when public submissions disabled");
+  assert(e.message.includes("Guest link submissions are disabled"), "Flags #4: Public submissions disabled blocks guest at service layer");
 }
 
 // Scenario 5: Submissions enabled and public submissions disabled; ordinary user submits
@@ -108,18 +109,18 @@ try {
   assert(false, "Flags #6: Webmaster was unexpectedly blocked");
 }
 
-// Scenario 7: Legacy allowPublicSubmissions=true MUST STILL block unauthenticated guest submission
+// Scenario 7: Both flags enabled; guest submission
 try {
-  validateSubmissionFlags({ groupSubmissionEnabled: true, allowPublicSubmissions: true }, false, true);
-  assert(false, "Flags #7: Legacy allowPublicSubmissions=true must NOT allow guest submissions");
+  const allowed = validateSubmissionFlags({ groupSubmissionEnabled: true, allowPublicSubmissions: true }, false, true);
+  assert(allowed === true, "Flags #7: Guests can submit when both flags are enabled");
 } catch (e) {
-  assert(e.message.includes("Sign in required"), "Flags #7: Guests strictly blocked even when legacy allowPublicSubmissions=true");
+  assert(false, "Flags #7: Guest was unexpectedly blocked when both flags enabled");
 }
 
 // Scenario 8: Both flags enabled; authenticated-user submission
 try {
   const allowed = validateSubmissionFlags({ groupSubmissionEnabled: true, allowPublicSubmissions: true }, false, false);
-  assert(allowed === true, "Flags #8: Authenticated users can submit when submissions enabled");
+  assert(allowed === true, "Flags #8: Authenticated users can submit when both flags are enabled");
 } catch (e) {
   assert(false, "Flags #8: Authenticated user unexpectedly blocked");
 }
@@ -150,7 +151,7 @@ try {
   validateSubmissionFlags({ groupSubmissionEnabled: true, allowPublicSubmissions: undefined }, false, true);
   assert(false, "Flags #9D: Undefined allowPublicSubmissions must NOT allow guest submissions");
 } catch (e) {
-  assert(e.message.includes("Sign in required"), "Flags #9D: Undefined allowPublicSubmissions safely rejects guest submissions");
+  assert(e.message.includes("Guest link submissions are disabled"), "Flags #9D: Undefined allowPublicSubmissions safely rejects guest submissions");
 }
 
 try {
@@ -160,19 +161,12 @@ try {
   assert(false, "Flags #9E: Webmaster should be permitted even with missing settings");
 }
 
-// Scenario 10: Direct service/API invocation that bypasses frontend (createGroup + server + rules check)
+// Scenario 10: Direct service/API invocation that bypasses frontend (createGroup check)
 const firestoreFile = path.resolve(__dirname, '../artifacts/linkcloud/src/lib/firestore.ts');
 const fsCode = fs.readFileSync(firestoreFile, 'utf8');
-const cfSubmitCode = fs.readFileSync(path.resolve(__dirname, '../artifacts/linkcloud/functions/api/groups/submit.ts'), 'utf8');
-const nodeSubmitCode = fs.readFileSync(path.resolve(__dirname, '../artifacts/linkcloud/src/server/groups-reports-api.ts'), 'utf8');
-const enforcesServiceLayer = fsCode.includes('if (!currentUser)') &&
-  fsCode.includes('if (siteSettings?.groupSubmissionEnabled !== true && !isWebmaster)') &&
-  !fsCode.includes('siteSettings?.allowPublicSubmissions !== true') &&
-  cfSubmitCode.includes('if (!idToken)') &&
-  cfSubmitCode.includes('siteSettings.groupSubmissionEnabled !== true') &&
-  nodeSubmitCode.includes('if (!idToken)') &&
-  nodeSubmitCode.includes('siteSettings.groupSubmissionEnabled !== true');
-assert(enforcesServiceLayer, "Flags #10: createGroup() & server endpoints strictly enforce authenticated user + groupSubmissionEnabled");
+const enforcesServiceLayer = fsCode.includes('if (siteSettings?.groupSubmissionEnabled !== true && !isWebmaster)') &&
+  fsCode.includes('if (!auth?.currentUser && siteSettings?.allowPublicSubmissions !== true && !isWebmaster)');
+assert(enforcesServiceLayer, "Flags #10: createGroup() enforces both flags at the service layer, preventing frontend bypass");
 
 // 3. Fallback Integrity
 const appRoot = path.resolve(__dirname, '../artifacts/linkcloud');

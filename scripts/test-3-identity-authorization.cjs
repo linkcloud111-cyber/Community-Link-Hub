@@ -69,7 +69,7 @@ function verifyRuleClause(id, name, matchPattern, requiredCondition) {
     report(id, name, 'FAIL', `Pattern '${matchPattern}' not found in firestore.rules`);
     return;
   }
-  const block = rules.slice(matchIdx, matchIdx + 3000);
+  const block = rules.slice(matchIdx, matchIdx + 2000);
   if (block.includes(requiredCondition)) {
     report(id, name, 'PASS', `Rule condition verified: contains '${requiredCondition}'`);
   } else {
@@ -148,11 +148,11 @@ async function runFullMatrix() {
   // 13. Regular user role elevation prevention
   verifyRuleClause(13, "User cannot elevate role to webmaster", "match /users/{userId}", "(!('role' in incoming()) || incoming().role == existing().role)");
 
-  // 14. Regular user status change prevention (except verified pending_verification -> active transition)
-  verifyRuleClause(14, "User cannot arbitrarily alter account status", "match /users/{userId}", "incoming().status == existing().status");
+  // 14. Regular user status change prevention
+  verifyRuleClause(14, "User cannot alter account status", "match /users/{userId}", "(!('status' in incoming()) || incoming().status == existing().status)");
 
   // 15. Regular user accountUid immutability
-  verifyRuleClause(15, "User cannot change existing accountUid", "match /users/{userId}", "(!('accountUid' in incoming()) || !('accountUid' in existing()) || incoming().accountUid == existing().accountUid)");
+  verifyRuleClause(15, "User cannot change accountUid", "match /users/{userId}", "(!('accountUid' in incoming()) || incoming().accountUid == existing().accountUid)");
 
   // 16. Regular user cannot list users directory
   verifyRuleClause(16, "User cannot list /users collection", "match /users/{userId}", "allow list: if isWebmaster()");

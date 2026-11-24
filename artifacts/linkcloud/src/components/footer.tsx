@@ -139,7 +139,7 @@ export default function Footer() {
                   Browse Communities
                 </Link>
               </li>
-              {settings?.groupSubmissionEnabled === true && (
+              {settings?.groupSubmissionEnabled !== false && settings?.allowPublicSubmissions !== false && (
                 <li>
                   <Link href="/submit" className="hover:text-primary transition-colors">
                     Submit a Community

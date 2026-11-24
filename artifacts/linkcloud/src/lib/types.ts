@@ -445,10 +445,6 @@ export interface SiteSettings {
   reportSystemEnabled: boolean;
   complaintSystemEnabled: boolean;
   contactFormEnabled: boolean;
-  announcementsEnabled?: boolean;
-  searchEnabled?: boolean;
-  publicDirectoryEnabled?: boolean;
-  profileEditingEnabled?: boolean;
   notificationsEnabled?: boolean;
 
   // Cloudinary
@@ -474,11 +470,7 @@ export interface FAQItem {
   category: string;
   enabled: boolean;
   sortOrder: number;
-  status?: "draft" | "published";
-  createdAt?: any;
-  updatedAt?: any;
-  createdBy?: string;
-  updatedBy?: string;
+  createdAt?: Timestamp;
 }
 
 export interface HelpArticle {
@@ -486,16 +478,9 @@ export interface HelpArticle {
   category: string;
   title: string;
   content: string;
-  steps?: string[];
-  enabled?: boolean;
-  sortOrder?: number;
-  status?: "draft" | "published";
   views: number;
   icon?: string;
-  createdAt?: any;
-  updatedAt?: any;
-  createdBy?: string;
-  updatedBy?: string;
+  createdAt?: Timestamp;
 }
 
 export interface AuditLog {
@@ -510,192 +495,11 @@ export interface AuditLog {
     | "Location Updated"
     | "Broadcast Sent"
     | "Maintenance Toggled"
-    | "CMS Draft Saved"
-    | "CMS Page Published"
-    | "CMS Page Unpublished"
-    | "CMS Page Deleted"
-    | "CMS Version Restored"
-    | "CMS Auto Seed Preview"
-    | "CMS Auto Seed Executed"
-    | "CMS Status Refreshed"
-    | "FAQ Created"
-    | "FAQ Updated"
-    | "FAQ Deleted"
-    | "Help Article Created"
-    | "Help Article Updated"
-    | "Help Article Deleted"
     | string;
   details: string;
   adminEmail: string;
   adminUid: string;
-  actorEmail?: string;
-  actorUid?: string;
-  target?: string;
-  outcome?: "success" | "failure" | "dry_run";
-  createdAt: any;
-  timestamp?: any;
-}
-
-// ─── Production CMS Types (Gate 1) ────────────────────────────────────────────
-
-export type CmsPageSlug =
-  | "about"
-  | "faq"
-  | "help"
-  | "privacy"
-  | "terms"
-  | "dmca"
-  | "disclaimer";
-
-export type CmsPageStatus = "draft" | "published";
-
-export type CmsBlockType =
-  | "heading"
-  | "paragraph"
-  | "bullet_list"
-  | "numbered_list"
-  | "link"
-  | "notice"
-  | "faq_item"
-  | "steps"
-  | "contact_info";
-
-export type AuthorableCmsBlockType = Exclude<CmsBlockType, "faq_item">;
-
-export interface CmsStepItem {
-  title: string;
-  description: string;
-}
-
-export interface CmsSectionBlock {
-  id: string;
-  type: CmsBlockType;
-  heading?: string;
-  text?: string;
-  level?: 2 | 3;
-  items?: string[];
-  url?: string;
-  label?: string;
-  tone?: "info" | "warning" | "important" | "legal";
-  question?: string;
-  answer?: string;
-  steps?: CmsStepItem[];
-  contactEmail?: string;
-  contactNote?: string;
-}
-
-export interface CmsPageSeo {
-  seoTitle: string;
-  seoDescription: string;
-  seoKeywords: string;
-  canonicalUrl?: string;
-  ogTitle?: string;
-  ogDescription?: string;
-  ogImage?: string;
-  noIndex?: boolean;
-}
-
-export interface CmsPageDocument {
-  slug: CmsPageSlug;
-  route: string;
-  title: string;
-  subtitle?: string;
-  description: string;
-  blocks: CmsSectionBlock[];
-  seo: CmsPageSeo;
-  status: CmsPageStatus;
-  isLegalPage: boolean;
-  version: number;
-  createdAt: string;
-  updatedAt: string;
-  lastPublishedAt?: string | null;
-  lastPublishedByUid?: string | null;
-  lastPublishedByEmail?: string | null;
-  updatedByUid?: string | null;
-  updatedByEmail?: string | null;
-}
-
-export type CmsVersionAction =
-  | "draft_saved"
-  | "published"
-  | "unpublished"
-  | "seeded"
-  | "restored"
-  | "archived_legacy"
-  | "deleted";
-
-export interface CmsVersionRecord {
-  versionId: string;
-  slug: CmsPageSlug;
-  version: number;
-  statusAtSnapshot: CmsPageStatus;
-  snapshot: CmsPageDocument;
-  action: CmsVersionAction;
-  note?: string;
-  restoredFromVersion?: number | null;
-  actorUid: string;
-  actorEmail: string;
-  createdAt: string;
-}
-
-export type CmsPageHealthStatus =
-  | "published"
-  | "draft"
-  | "missing"
-  | "incomplete"
-  | "error";
-
-export interface CmsPageAdminOverview {
-  slug: CmsPageSlug;
-  route: string;
-  isLegalPage: boolean;
-  health: CmsPageHealthStatus;
-  hasDraft: boolean;
-  hasPublished: boolean;
-  isIncompletePlaceholder: boolean;
-  legacyPlaceholderFound: boolean;
-  legacyTextPreview?: string | null;
-  draft: CmsPageDocument | null;
-  published: CmsPageDocument | null;
-  versionCount: number;
-  warnings: string[];
-}
-
-export interface CmsAutoSeedPlanItem {
-  slug: CmsPageSlug;
-  route: string;
-  action: "create_draft" | "skip_existing";
-  reason: string;
-  legacyPlaceholderFound: boolean;
-  willAutoPublish: false;
-}
-
-export interface CmsAutoSeedResponse {
-  success: boolean;
-  dryRun: boolean;
-  createdCount: number;
-  skippedCount: number;
-  archivedLegacyCount: number;
-  plan: CmsAutoSeedPlanItem[];
-  timestamp: string;
-}
-
-export interface CmsRefreshResponse {
-  success: boolean;
-  pages: CmsPageAdminOverview[];
-  summary: {
-    total: number;
-    published: number;
-    draft: number;
-    missing: number;
-    incomplete: number;
-    error: number;
-    faqCount: number;
-    enabledFaqCount: number;
-    helpArticleCount: number;
-    enabledHelpArticleCount: number;
-  };
-  timestamp: string;
+  createdAt: Timestamp;
 }
 
 export interface SearchAnalytics {
