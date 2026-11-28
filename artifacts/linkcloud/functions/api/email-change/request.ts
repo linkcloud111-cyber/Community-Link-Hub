@@ -165,7 +165,19 @@ export async function onRequestPost(context: {
       message: "Verification email sent. Link is valid for 5 minutes.",
     });
   } catch (err: any) {
-    console.error("[REQUEST EMAIL CHANGE ERROR]", err);
-    return errorResponse(err.message || "Internal server error", 500);
+    const msg = String(err?.message || "");
+    const isTransient =
+      msg.includes("RESOURCE_EXHAUSTED") ||
+      msg.includes("UNAVAILABLE") ||
+      msg.includes("DEADLINE_EXCEEDED") ||
+      msg.includes("429") ||
+      msg.includes("503");
+    console.error("[REQUEST EMAIL CHANGE ERROR]", msg || err);
+    return errorResponse(
+      isTransient
+        ? "Email verification service is temporarily busy. Please try again in a moment."
+        : msg || "Internal server error",
+      isTransient ? 503 : 500
+    );
   }
 }

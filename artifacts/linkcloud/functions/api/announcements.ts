@@ -1,5 +1,6 @@
-import { jsonResponse, errorResponse, type Env } from "./email-change/_common";
+import { jsonResponse, type Env } from "./email-change/_common";
 import { firestoreListCollection } from "./email-change/_firestore";
+import { handleAdminFirestoreError } from "./admin/_admin-common";
 
 export async function onRequestOptions(): Promise<Response> {
   return new Response(null, {
@@ -50,6 +51,6 @@ export async function onRequestGet(context: {
       timestamp: new Date().toISOString(),
     });
   } catch (err: any) {
-    return errorResponse(err?.message || "Failed to load announcements", 500);
+    return handleAdminFirestoreError(err, "Failed to load announcements");
   }
 }

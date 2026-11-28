@@ -119,68 +119,118 @@ export function sanitizePublicGroup(group: Group): Group {
 
 // ─── Groups ───────────────────────────────────────────────────────────────────
 
+const APPROVED_GROUPS_CACHE_TTL_MS = 30_000;
+let approvedGroupsEpoch = 0;
+let cachedApprovedGroups: { data: Group[]; raw: Group[]; expiresAt: number; epoch: number } | null = null;
+let inFlightApprovedGroups: { promise: Promise<{ data: Group[]; raw: Group[] }>; epoch: number } | null = null;
+
+export function invalidateApprovedGroupsCache(): void {
+  approvedGroupsEpoch += 1;
+  cachedApprovedGroups = null;
+  inFlightApprovedGroups = null;
+}
+
+async function fetchApprovedGroupsBundle(forceRefresh = false): Promise<{ data: Group[]; raw: Group[] }> {
+  const now = Date.now();
+  if (
+    !forceRefresh &&
+    cachedApprovedGroups &&
+    cachedApprovedGroups.epoch === approvedGroupsEpoch &&
+    cachedApprovedGroups.expiresAt > now
+  ) {
+    return { data: cachedApprovedGroups.data, raw: cachedApprovedGroups.raw };
+  }
+  if (!forceRefresh && inFlightApprovedGroups && inFlightApprovedGroups.epoch === approvedGroupsEpoch) {
+    return inFlightApprovedGroups.promise;
+  }
+
+  const requestEpoch = approvedGroupsEpoch;
+  const run = (async (): Promise<{ data: Group[]; raw: Group[] }> => {
+    try {
+      if (!db || typeof db !== "object" || !("app" in db)) return { data: [], raw: [] };
+      const q = query(collection(db, "groups"), where("status", "==", "approved"));
+      const snap = await getDocs(q);
+      const rawDocs = snap.docs.map(groupFromDoc);
+      const docs = rawDocs.map(sanitizePublicGroup);
+
+      // Fetch disabled locations to enforce location disable logic
+      const disabledStateSet = new Set<string>();
+      const disabledDistrictSet = new Set<string>();
+      const disabledCitySet = new Set<string>();
+
+      try {
+        const [stSnap, distSnap, citySnap] = await Promise.all([
+          getDocs(collection(db, "states")),
+          getDocs(collection(db, "districts")),
+          getDocs(collection(db, "cities")),
+        ]);
+
+        stSnap.forEach((d) => {
+          const data = d.data();
+          if (data.enabled === false && data.name) {
+            disabledStateSet.add(data.name.toLowerCase());
+          }
+        });
+
+        distSnap.forEach((d) => {
+          const data = d.data();
+          if (data.enabled === false && data.name) {
+            disabledDistrictSet.add(`${data.stateName || ""}:${data.name}`.toLowerCase());
+          }
+        });
+
+        citySnap.forEach((d) => {
+          const data = d.data();
+          if (data.enabled === false && data.name) {
+            disabledCitySet.add(`${data.stateName || ""}:${data.name}`.toLowerCase());
+          }
+        });
+      } catch (e) {
+        console.warn("Error fetching disabled locations in getAllApproved:", e);
+      }
+
+      // Filter out hidden groups and groups in disabled locations
+      const publicApproved = docs.filter((g) => {
+        if (g.hidden === true) return false;
+        if (g.state && disabledStateSet.has(g.state.toLowerCase())) return false;
+        if (g.district && disabledDistrictSet.has(`${g.state || ""}:${g.district}`.toLowerCase())) return false;
+        if (g.city && disabledCitySet.has(`${g.state || ""}:${g.city}`.toLowerCase())) return false;
+        return true;
+      });
+
+      const sortedPublic = publicApproved.sort((a, b) => {
+        const aTime = a.createdAt?.toMillis?.() ?? 0;
+        const bTime = b.createdAt?.toMillis?.() ?? 0;
+        return bTime - aTime;
+      });
+
+      const result = { data: sortedPublic, raw: rawDocs };
+      if (approvedGroupsEpoch === requestEpoch) {
+        cachedApprovedGroups = {
+          ...result,
+          epoch: requestEpoch,
+          expiresAt: Date.now() + APPROVED_GROUPS_CACHE_TTL_MS,
+        };
+      }
+      return result;
+    } catch (err) {
+      console.warn("Error getting approved groups:", err);
+      return { data: [], raw: [] };
+    } finally {
+      if (inFlightApprovedGroups?.epoch === requestEpoch) {
+        inFlightApprovedGroups = null;
+      }
+    }
+  })();
+
+  inFlightApprovedGroups = { promise: run, epoch: requestEpoch };
+  return run;
+}
+
 // Fetch all approved groups (ignoring hidden groups for public directory)
 async function getAllApproved(): Promise<Group[]> {
-  try {
-    if (!db || typeof db !== "object" || !("app" in db)) return [];
-    const q = query(collection(db, "groups"), where("status", "==", "approved"));
-    const snap = await getDocs(q);
-    const docs = snap.docs.map(groupFromDoc).map(sanitizePublicGroup);
-
-    // Fetch disabled locations to enforce location disable logic
-    const disabledStateSet = new Set<string>();
-    const disabledDistrictSet = new Set<string>();
-    const disabledCitySet = new Set<string>();
-
-    try {
-      const [stSnap, distSnap, citySnap] = await Promise.all([
-        getDocs(collection(db, "states")),
-        getDocs(collection(db, "districts")),
-        getDocs(collection(db, "cities")),
-      ]);
-
-      stSnap.forEach((d) => {
-        const data = d.data();
-        if (data.enabled === false && data.name) {
-          disabledStateSet.add(data.name.toLowerCase());
-        }
-      });
-
-      distSnap.forEach((d) => {
-        const data = d.data();
-        if (data.enabled === false && data.name) {
-          disabledDistrictSet.add(`${data.stateName || ""}:${data.name}`.toLowerCase());
-        }
-      });
-
-      citySnap.forEach((d) => {
-        const data = d.data();
-        if (data.enabled === false && data.name) {
-          disabledCitySet.add(`${data.stateName || ""}:${data.name}`.toLowerCase());
-        }
-      });
-    } catch (e) {
-      console.warn("Error fetching disabled locations in getAllApproved:", e);
-    }
-
-    // Filter out hidden groups and groups in disabled locations
-    const publicApproved = docs.filter((g) => {
-      if (g.hidden === true) return false;
-      if (g.state && disabledStateSet.has(g.state.toLowerCase())) return false;
-      if (g.district && disabledDistrictSet.has(`${g.state || ""}:${g.district}`.toLowerCase())) return false;
-      if (g.city && disabledCitySet.has(`${g.state || ""}:${g.city}`.toLowerCase())) return false;
-      return true;
-    });
-
-    return publicApproved.sort((a, b) => {
-      const aTime = a.createdAt?.toMillis?.() ?? 0;
-      const bTime = b.createdAt?.toMillis?.() ?? 0;
-      return bTime - aTime;
-    });
-  } catch (err) {
-    console.warn("Error getting approved groups:", err);
-    return [];
-  }
+  const bundle = await fetchApprovedGroupsBundle();
+  return bundle.data;
 }
 
 export async function getApprovedGroups(filters?: GroupFilters): Promise<Group[]> {
@@ -421,34 +471,35 @@ export async function checkDuplicateGroup(
 
     if (!urlClean && !nameClean) return { duplicateName: false, duplicateUrl: false };
 
-    const queries = [
-      getDocs(query(collection(db, "groups"), where("status", "==", "approved"))),
-    ];
-    if (auth?.currentUser?.uid) {
-      queries.push(
-        getDocs(query(collection(db, "groups"), where("submittedBy", "==", auth.currentUser.uid)))
-      );
-    }
+    const [{ raw: approvedGroups }, userSnap] = await Promise.all([
+      fetchApprovedGroupsBundle(),
+      auth?.currentUser?.uid
+        ? getDocs(query(collection(db, "groups"), where("submittedBy", "==", auth.currentUser.uid))).catch(() => null)
+        : Promise.resolve(null),
+    ]);
 
-    const snapshots = await Promise.all(queries.map((p) => p.catch(() => null)));
     const seenIds = new Set<string>();
     let duplicateName = false;
     let duplicateUrl = false;
 
-    for (const snap of snapshots) {
-      if (!snap) continue;
-      snap.forEach((d) => {
-        if (seenIds.has(d.id)) return;
-        seenIds.add(d.id);
-        if (excludeGroupId && d.id === excludeGroupId) return;
-        const data = d.data();
-        if (nameClean && data.name && data.name.trim().toLowerCase() === nameClean) {
-          duplicateName = true;
-        }
-        if (urlClean && data.joinUrl && data.joinUrl.trim().toLowerCase() === urlClean) {
-          duplicateUrl = true;
-        }
-      });
+    const inspectRecord = (id: string, data: { name?: string; joinUrl?: string }) => {
+      if (seenIds.has(id)) return;
+      seenIds.add(id);
+      if (excludeGroupId && id === excludeGroupId) return;
+      if (nameClean && data.name && data.name.trim().toLowerCase() === nameClean) {
+        duplicateName = true;
+      }
+      if (urlClean && data.joinUrl && data.joinUrl.trim().toLowerCase() === urlClean) {
+        duplicateUrl = true;
+      }
+    };
+
+    for (const g of approvedGroups) {
+      inspectRecord(g.id, g);
+    }
+
+    if (userSnap) {
+      userSnap.forEach((d) => inspectRecord(d.id, d.data() as { name?: string; joinUrl?: string }));
     }
 
     return { duplicateName, duplicateUrl };
@@ -550,6 +601,7 @@ export async function createGroup(
   }
 
   invalidateAdminStatsCache();
+  invalidateApprovedGroupsCache();
   return createdGroupId;
 }
 
@@ -603,10 +655,13 @@ export async function updateGroup(id: string, data: Partial<Group>): Promise<voi
 
   await updateDoc(doc(db, "groups", id), { ...updates, updatedAt: serverTimestamp() });
   invalidateAdminStatsCache();
+  invalidateApprovedGroupsCache();
 }
 
 export async function deleteGroup(id: string): Promise<void> {
   await deleteDoc(doc(db, "groups", id));
+  invalidateAdminStatsCache();
+  invalidateApprovedGroupsCache();
 }
 
 export async function approveGroup(id: string): Promise<void> {
@@ -614,6 +669,8 @@ export async function approveGroup(id: string): Promise<void> {
     status: "approved",
     updatedAt: serverTimestamp(),
   });
+  invalidateAdminStatsCache();
+  invalidateApprovedGroupsCache();
 }
 
 export async function rejectGroup(id: string): Promise<void> {
@@ -621,6 +678,8 @@ export async function rejectGroup(id: string): Promise<void> {
     status: "rejected",
     updatedAt: serverTimestamp(),
   });
+  invalidateAdminStatsCache();
+  invalidateApprovedGroupsCache();
 }
 
 export async function incrementJoinCount(id: string): Promise<void> {
@@ -763,7 +822,7 @@ export async function ensureUserAccountUid(uid: string): Promise<string> {
   } catch (err) {
     console.warn("Error ensuring user account UID:", err);
   }
-  return `linkcloud${Math.floor(100000 + Math.random() * 900000)}`;
+  return "";
 }
 
 export async function getUserProfile(uid: string): Promise<UserProfile | null> {
@@ -789,8 +848,7 @@ export async function getUserProfile(uid: string): Promise<UserProfile | null> {
 
   let accountUid = data.accountUid;
   if (!accountUid || typeof accountUid !== "string" || !accountUid.startsWith("linkcloud")) {
-    ensureUserAccountUid(uid).catch(() => {});
-    accountUid = accountUid || `linkcloud${Math.floor(100000 + Math.random() * 900000)}`;
+    accountUid = (await ensureUserAccountUid(uid).catch(() => "")) || accountUid || "";
   }
 
   return {
@@ -888,7 +946,7 @@ export async function getAllUsers(): Promise<UserProfile[]> {
         id: d.id,
         ...data,
         uid: data.uid || data.userId || d.id,
-        accountUid: data.accountUid || `linkcloud${d.id.slice(0, 6)}`,
+        accountUid: data.accountUid || "",
         status,
         active: status === "active",
         suspended: status === "suspended",
@@ -1019,7 +1077,7 @@ export async function runAdminMigrationDryRun(): Promise<any> {
 export async function updateUserStatus(
   uid: string,
   status: AccountStatus,
-  adminEmail = "webmaster@linkcloud.in",
+  adminEmail = "webmaster@localhost.invalid",
   adminUid = "webmaster"
 ): Promise<void> {
   // Webmaster self-protection
@@ -1119,7 +1177,7 @@ export async function updateUserStatus(
 
 export const updateUserStatusAdmin = updateUserStatus;
 
-export async function toggleUserEmailVerified(uid: string, verified: boolean, adminEmail = "webmaster@linkcloud.in", adminUid = "webmaster"): Promise<void> {
+export async function toggleUserEmailVerified(uid: string, verified: boolean, adminEmail = "webmaster@localhost.invalid", adminUid = "webmaster"): Promise<void> {
   const userRef = await resolveUserDocRef(uid);
   const snap = await getDoc(userRef);
   if (!snap.exists()) {
@@ -1154,7 +1212,7 @@ export async function toggleUserEmailVerified(uid: string, verified: boolean, ad
   await logAuditEvent("User Email Verified Toggled", `${verified ? "Marked verified" : "Marked unverified"} for user ${uid}`, adminEmail, adminUid);
 }
 
-export async function toggleUserPhoneVerified(uid: string, verified: boolean, adminEmail = "webmaster@linkcloud.in", adminUid = "webmaster"): Promise<void> {
+export async function toggleUserPhoneVerified(uid: string, verified: boolean, adminEmail = "webmaster@localhost.invalid", adminUid = "webmaster"): Promise<void> {
   const userRef = await resolveUserDocRef(uid);
   const snap = await getDoc(userRef);
   if (!snap.exists()) {
@@ -1294,7 +1352,7 @@ export async function performPermanentUserDeletion(params: {
 }): Promise<void> {
   const {
     targetUid,
-    adminEmail = "webmaster@linkcloud.in",
+    adminEmail = "webmaster@localhost.invalid",
     adminUid = "webmaster",
     reason = "Account Permanently Deleted",
     isSelfDelete = false,
@@ -1505,7 +1563,7 @@ export async function performPermanentUserDeletion(params: {
   }
 }
 
-export async function deleteUserAccountAdmin(uid: string, adminEmail = "webmaster@linkcloud.in", adminUid = "webmaster"): Promise<void> {
+export async function deleteUserAccountAdmin(uid: string, adminEmail = "webmaster@localhost.invalid", adminUid = "webmaster"): Promise<void> {
   return performPermanentUserDeletion({
     targetUid: uid,
     adminEmail,
@@ -1774,7 +1832,7 @@ export async function getDeletionRequests(): Promise<DeletionRequest[]> {
   }
 }
 
-export async function approveDeletionRequest(requestId: string, uid: string, adminEmail = "webmaster@linkcloud.in", adminUid = "webmaster"): Promise<void> {
+export async function approveDeletionRequest(requestId: string, uid: string, adminEmail = "webmaster@localhost.invalid", adminUid = "webmaster"): Promise<void> {
   const reqDocRef = doc(db, "deletionRequests", requestId);
   const reqSnap = await getDoc(reqDocRef);
   if (!reqSnap.exists()) {
@@ -1820,7 +1878,7 @@ export async function approveDeletionRequest(requestId: string, uid: string, adm
 export async function rejectDeletionRequest(
   requestId: string,
   uid: string,
-  adminEmail = "webmaster@linkcloud.in",
+  adminEmail = "webmaster@localhost.invalid",
   adminUid = "webmaster",
   rejectionReason = "Rejected by Webmaster"
 ): Promise<void> {
@@ -2063,6 +2121,7 @@ export async function createReport(
     }
     throw err;
   }
+  invalidateAdminStatsCache();
 }
 
 export async function getReports(): Promise<Report[]> {
@@ -2073,10 +2132,12 @@ export async function getReports(): Promise<Report[]> {
 
 export async function updateReport(id: string, status: Report["status"]): Promise<void> {
   await updateDoc(doc(db, "reports", id), { status, updatedAt: serverTimestamp() });
+  invalidateAdminStatsCache();
 }
 
 export async function deleteReport(id: string): Promise<void> {
   await deleteDoc(doc(db, "reports", id));
+  invalidateAdminStatsCache();
 }
 
 // ─── Contacts ─────────────────────────────────────────────────────────────────
@@ -2084,11 +2145,16 @@ export async function deleteReport(id: string): Promise<void> {
 export async function createContactMessage(
   data: Omit<ContactMessage, "id" | "createdAt" | "status">
 ): Promise<void> {
+  const siteSettings = await getSiteSettings().catch(() => null);
+  if (siteSettings?.contactFormEnabled === false && !(await isCurrentUserWebmaster())) {
+    throw new Error("Contact support form is temporarily disabled by Webmaster.");
+  }
   await addDoc(collection(db, "contacts"), {
     ...data,
     status: "unread",
     createdAt: serverTimestamp(),
   });
+  invalidateAdminStatsCache();
 }
 
 export async function getContactMessages(): Promise<ContactMessage[]> {
@@ -2102,10 +2168,12 @@ export async function updateContactMessage(
   status: ContactMessage["status"]
 ): Promise<void> {
   await updateDoc(doc(db, "contacts", id), { status });
+  invalidateAdminStatsCache();
 }
 
 export async function deleteContactMessage(id: string): Promise<void> {
   await deleteDoc(doc(db, "contacts", id));
+  invalidateAdminStatsCache();
 }
 
 // ─── Complaints ───────────────────────────────────────────────────────────────
@@ -2113,11 +2181,16 @@ export async function deleteContactMessage(id: string): Promise<void> {
 export async function createComplaint(
   data: Omit<Complaint, "id" | "createdAt" | "status">
 ): Promise<string> {
+  const siteSettings = await getSiteSettings().catch(() => null);
+  if (siteSettings?.complaintSystemEnabled === false && !(await isCurrentUserWebmaster())) {
+    throw new Error("Grievance and complaint submissions are temporarily disabled by Webmaster.");
+  }
   const docRef = await addDoc(collection(db, "complaints"), {
     ...data,
     status: "pending",
     createdAt: serverTimestamp(),
   });
+  invalidateAdminStatsCache();
   return docRef.id;
 }
 
@@ -2138,10 +2211,12 @@ export async function updateComplaintStatus(
   status: Complaint["status"]
 ): Promise<void> {
   await updateDoc(doc(db, "complaints", id), { status });
+  invalidateAdminStatsCache();
 }
 
 export async function deleteComplaint(id: string): Promise<void> {
   await deleteDoc(doc(db, "complaints", id));
+  invalidateAdminStatsCache();
 }
 
 // ─── Favorites ────────────────────────────────────────────────────────────────
@@ -2318,6 +2393,8 @@ export async function bulkApproveGroups(ids: string[]): Promise<void> {
       })
     )
   );
+  invalidateAdminStatsCache();
+  invalidateApprovedGroupsCache();
 }
 
 export async function bulkRejectGroups(ids: string[]): Promise<void> {
@@ -2329,10 +2406,14 @@ export async function bulkRejectGroups(ids: string[]): Promise<void> {
       })
     )
   );
+  invalidateAdminStatsCache();
+  invalidateApprovedGroupsCache();
 }
 
 export async function bulkDeleteGroups(ids: string[]): Promise<void> {
   await Promise.all(ids.map((id) => deleteDoc(doc(db, "groups", id))));
+  invalidateAdminStatsCache();
+  invalidateApprovedGroupsCache();
 }
 
 export async function bulkHideGroups(ids: string[], hidden: boolean): Promise<void> {
@@ -2344,6 +2425,8 @@ export async function bulkHideGroups(ids: string[], hidden: boolean): Promise<vo
       })
     )
   );
+  invalidateAdminStatsCache();
+  invalidateApprovedGroupsCache();
 }
 
 export async function bulkFeatureGroups(ids: string[], featured: boolean): Promise<void> {
@@ -2355,6 +2438,8 @@ export async function bulkFeatureGroups(ids: string[], featured: boolean): Promi
       })
     )
   );
+  invalidateAdminStatsCache();
+  invalidateApprovedGroupsCache();
 }
 
 export async function requestGroupChanges(id: string, message: string): Promise<void> {
@@ -2365,18 +2450,25 @@ export async function requestGroupChanges(id: string, message: string): Promise<
     allowResubmit: true,
     updatedAt: serverTimestamp(),
   });
+  invalidateAdminStatsCache();
+  invalidateApprovedGroupsCache();
 }
 
 export async function toggleGroupHide(id: string, hidden: boolean): Promise<void> {
   await updateDoc(doc(db, "groups", id), { hidden, updatedAt: serverTimestamp() });
+  invalidateAdminStatsCache();
+  invalidateApprovedGroupsCache();
 }
 
 export async function toggleGroupPin(id: string, pinned: boolean): Promise<void> {
   await updateDoc(doc(db, "groups", id), { pinned, updatedAt: serverTimestamp() });
+  invalidateApprovedGroupsCache();
 }
 
 export async function toggleGroupFeature(id: string, featured: boolean): Promise<void> {
   await updateDoc(doc(db, "groups", id), { featured, updatedAt: serverTimestamp() });
+  invalidateAdminStatsCache();
+  invalidateApprovedGroupsCache();
 }
 
 export async function updateGroupInviteLink(id: string, joinUrl: string, linkStatus: "active" | "inactive"): Promise<void> {
@@ -2385,6 +2477,8 @@ export async function updateGroupInviteLink(id: string, joinUrl: string, linkSta
     linkStatus,
     updatedAt: serverTimestamp(),
   });
+  invalidateAdminStatsCache();
+  invalidateApprovedGroupsCache();
 }
 
 // ─── Admin User Actions ────────────────────────────────────────────────────────
@@ -3403,20 +3497,69 @@ export async function getAdminStats(forceRefresh = false) {
 
 // ─── Webmaster Site Settings ───────────────────────────────────────────────────
 
-export async function getSiteSettings(): Promise<SiteSettings> {
-  try {
-    const snap = await getDoc(doc(db, "settings", "site"));
-    if (!snap.exists()) return DEFAULT_SITE_SETTINGS;
-    return normalizeSiteSettings(snap.data() as Partial<SiteSettings>);
-  } catch (err) {
-    console.warn("Error reading site settings from Firestore:", err);
-    return DEFAULT_SITE_SETTINGS;
+const SITE_SETTINGS_CACHE_TTL_MS = 30_000;
+let siteSettingsEpoch = 0;
+let cachedSiteSettingsDoc: { data: SiteSettings; expiresAt: number; epoch: number } | null = null;
+let inFlightSiteSettingsDoc: { promise: Promise<SiteSettings>; epoch: number } | null = null;
+
+export function invalidateSiteSettingsDocCache(): void {
+  siteSettingsEpoch += 1;
+  cachedSiteSettingsDoc = null;
+  inFlightSiteSettingsDoc = null;
+}
+
+if (typeof window !== "undefined") {
+  window.addEventListener("lc-site-settings-updated", () => {
+    invalidateSiteSettingsDocCache();
+  });
+}
+
+export async function getSiteSettings(forceRefresh = false): Promise<SiteSettings> {
+  const now = Date.now();
+  if (
+    !forceRefresh &&
+    cachedSiteSettingsDoc &&
+    cachedSiteSettingsDoc.epoch === siteSettingsEpoch &&
+    cachedSiteSettingsDoc.expiresAt > now
+  ) {
+    return cachedSiteSettingsDoc.data;
   }
+  if (!forceRefresh && inFlightSiteSettingsDoc && inFlightSiteSettingsDoc.epoch === siteSettingsEpoch) {
+    return inFlightSiteSettingsDoc.promise;
+  }
+
+  const requestEpoch = siteSettingsEpoch;
+  const run = (async (): Promise<SiteSettings> => {
+    try {
+      const snap = await getDoc(doc(db, "settings", "site"));
+      const normalized = snap.exists()
+        ? normalizeSiteSettings(snap.data() as Partial<SiteSettings>)
+        : DEFAULT_SITE_SETTINGS;
+      if (siteSettingsEpoch === requestEpoch) {
+        cachedSiteSettingsDoc = {
+          data: normalized,
+          epoch: requestEpoch,
+          expiresAt: Date.now() + SITE_SETTINGS_CACHE_TTL_MS,
+        };
+      }
+      return normalized;
+    } catch (err) {
+      console.warn("Error reading site settings from Firestore:", err);
+      return cachedSiteSettingsDoc?.data || DEFAULT_SITE_SETTINGS;
+    } finally {
+      if (inFlightSiteSettingsDoc?.epoch === requestEpoch) {
+        inFlightSiteSettingsDoc = null;
+      }
+    }
+  })();
+
+  inFlightSiteSettingsDoc = { promise: run, epoch: requestEpoch };
+  return run;
 }
 
 // ─── Website-Wide Announcements ───────────────────────────────────────────────
 
-export async function getAnnouncements(onlyActive = false): Promise<Announcement[]> {
+export async function getAnnouncements(onlyActive = false, throwOnError = false): Promise<Announcement[]> {
   try {
     const coll = collection(db, "announcements");
     let snap;
@@ -3481,6 +3624,7 @@ export async function getAnnouncements(onlyActive = false): Promise<Announcement
     return items;
   } catch (err) {
     console.warn("[Firestore] Error fetching announcements:", err);
+    if (throwOnError) throw err;
     return [];
   }
 }
@@ -3488,6 +3632,30 @@ export async function getAnnouncements(onlyActive = false): Promise<Announcement
 export function subscribeActiveAnnouncements(
   callback: (items: Announcement[]) => void
 ): () => void {
+  let unsubscribed = false;
+  let apiFallbackAttempted = false;
+
+  const fallbackFromApi = () => {
+    if (apiFallbackAttempted || unsubscribed || typeof fetch !== "function") {
+      if (!unsubscribed) callback([]);
+      return;
+    }
+    apiFallbackAttempted = true;
+    fetch("/api/announcements")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (unsubscribed) return;
+        if (Array.isArray(data?.announcements)) {
+          callback(data.announcements as Announcement[]);
+        } else {
+          callback([]);
+        }
+      })
+      .catch(() => {
+        if (!unsubscribed) callback([]);
+      });
+  };
+
   try {
     const coll = collection(db, "announcements");
     const q = query(coll, where("enabled", "==", true));
@@ -3495,6 +3663,7 @@ export function subscribeActiveAnnouncements(
     const unsubscribe = onSnapshot(
       q,
       (snap) => {
+        if (unsubscribed) return;
         const now = Date.now();
         const items: Announcement[] = [];
 
@@ -3547,15 +3716,20 @@ export function subscribeActiveAnnouncements(
       },
       (error) => {
         console.warn("[Firestore] Realtime active announcements subscription error:", error);
-        callback([]);
+        fallbackFromApi();
       }
     );
 
-    return unsubscribe;
+    return () => {
+      unsubscribed = true;
+      unsubscribe();
+    };
   } catch (err) {
     console.warn("[Firestore] Failed to establish active announcements listener:", err);
-    callback([]);
-    return () => {};
+    fallbackFromApi();
+    return () => {
+      unsubscribed = true;
+    };
   }
 }
 
@@ -4170,6 +4344,7 @@ export async function addStateFirestore(
     updatedAt: serverTimestamp(),
   });
   await logAuditEvent("Location Updated", `Added State "${cleanName}"`, resolvedEmail, resolvedUid);
+  invalidateApprovedGroupsCache();
   return id;
 }
 
@@ -4195,6 +4370,7 @@ export async function toggleStateFirestore(
     resolvedEmail,
     resolvedUid
   );
+  invalidateApprovedGroupsCache();
 }
 
 export async function updateStateFirestore(
@@ -4244,6 +4420,7 @@ export async function updateStateFirestore(
     resolvedEmail,
     resolvedUid
   );
+  invalidateApprovedGroupsCache();
 }
 
 export async function deleteStateFirestore(
@@ -4256,6 +4433,7 @@ export async function deleteStateFirestore(
   const resolvedEmail = adminEmail || auth?.currentUser?.email || "";
   await deleteDoc(doc(db, "states", id));
   await logAuditEvent("Location Updated", `Deleted State "${name}"`, resolvedEmail, resolvedUid);
+  invalidateApprovedGroupsCache();
 }
 
 // ─── DISTRICT CRUD ───
@@ -4299,6 +4477,7 @@ export async function addDistrictFirestore(
     resolvedEmail,
     resolvedUid
   );
+  invalidateApprovedGroupsCache();
   return id;
 }
 
@@ -4325,6 +4504,7 @@ export async function toggleDistrictFirestore(
     resolvedEmail,
     resolvedUid
   );
+  invalidateApprovedGroupsCache();
 }
 
 export async function updateDistrictFirestore(
@@ -4373,6 +4553,7 @@ export async function updateDistrictFirestore(
     resolvedEmail,
     resolvedUid
   );
+  invalidateApprovedGroupsCache();
 }
 
 export async function deleteDistrictFirestore(
@@ -4391,6 +4572,7 @@ export async function deleteDistrictFirestore(
     resolvedEmail,
     resolvedUid
   );
+  invalidateApprovedGroupsCache();
 }
 
 // ─── CITY CRUD ───
@@ -4444,6 +4626,7 @@ export async function addCityFirestore(
     resolvedEmail,
     resolvedUid
   );
+  invalidateApprovedGroupsCache();
   return id;
 }
 
@@ -4469,6 +4652,7 @@ export async function toggleCityFirestore(
     resolvedEmail,
     resolvedUid
   );
+  invalidateApprovedGroupsCache();
 }
 
 export async function updateCityFirestore(
@@ -4503,6 +4687,7 @@ export async function updateCityFirestore(
     resolvedEmail,
     resolvedUid
   );
+  invalidateApprovedGroupsCache();
 }
 
 export async function deleteCityFirestore(
@@ -4515,6 +4700,7 @@ export async function deleteCityFirestore(
   const resolvedEmail = adminEmail || auth?.currentUser?.email || "";
   await deleteDoc(doc(db, "cities", id));
   await logAuditEvent("Location Updated", `Deleted City "${name}"`, resolvedEmail, resolvedUid);
+  invalidateApprovedGroupsCache();
 }
 
 

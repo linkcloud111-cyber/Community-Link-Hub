@@ -105,7 +105,7 @@ export async function onRequestPost(context: {
     const maskParams = Object.keys(fields).map((k) => `updateMask.fieldPaths=${k}`).join("&");
     const updateUrl = `https://firestore.googleapis.com/v1/${docPath}?${maskParams}`;
 
-    await fetch(updateUrl, {
+    const updateRes = await fetch(updateUrl, {
       method: "PATCH",
       headers: {
         Authorization: `Bearer ${token}`,
@@ -114,8 +114,24 @@ export async function onRequestPost(context: {
       body: JSON.stringify({ fields }),
     });
 
+    if (!updateRes.ok) {
+      const errText = await updateRes.text().catch(() => "");
+      throw new Error(`Firestore search_logs PATCH (${updateRes.status}): ${errText}`);
+    }
+
     return jsonResponse({ success: true });
   } catch (err: any) {
-    return errorResponse(err?.message || "Failed to record search telemetry", 500);
+    const msg = String(err?.message || "");
+    const isTransient =
+      msg.includes("RESOURCE_EXHAUSTED") ||
+      msg.includes("Quota exceeded") ||
+      msg.includes("UNAVAILABLE") ||
+      msg.includes("DEADLINE_EXCEEDED") ||
+      msg.includes("(429)") ||
+      msg.includes("(503)");
+    return errorResponse(
+      isTransient ? "Telemetry service temporarily busy" : err?.message || "Failed to record search telemetry",
+      isTransient ? 503 : 500
+    );
   }
 }

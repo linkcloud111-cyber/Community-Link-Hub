@@ -95,8 +95,13 @@ export default function EmailActionPage() {
     console.log("[EMAIL ACTION] operation=", rawMode);
     console.log("[EMAIL ACTION] reqId=", rawReqId, "uid=", rawUid, "email=", rawEmail);
 
-    // If verifyAndChangeEmail mode or custom token/reqId is provided, delegate immediately to dedicated verify-handler
-    if (rawMode === "verifyAndChangeEmail" || searchParams.get("token") || (searchParams.get("reqId") && !rawOobCode)) {
+    // If verifyAndChangeEmail, verifyEmail, or custom token/reqId is provided, delegate immediately to dedicated verify-handler
+    if (
+      rawMode === "verifyAndChangeEmail" ||
+      rawMode === "verifyEmail" ||
+      searchParams.get("token") ||
+      (searchParams.get("reqId") && !rawOobCode)
+    ) {
       window.location.replace('/verify-handler' + window.location.search);
       return;
     }
@@ -269,9 +274,9 @@ export default function EmailActionPage() {
           return;
         }
 
-        // 3. Authoritative Expiration Gate (15-minute TTL)
+        // 3. Authoritative Expiration Gate (5-minute TTL)
         if (activeReqDoc.status === "expired" || now > activeReqDoc.expiresAt) {
-          console.warn("[EMAIL ACTION] Request has expired (15-minute TTL elapsed). Aborting applyActionCode.");
+          console.warn("[EMAIL ACTION] Request has expired (5-minute TTL elapsed). Aborting applyActionCode.");
           if (userActiveRef) {
             await setDoc(userActiveRef, { status: "EXPIRED", updatedAt: now }, { merge: true }).catch(() => {});
           }
@@ -456,10 +461,16 @@ export default function EmailActionPage() {
             </div>
             <div className="space-y-1.5">
               <h2 className="text-2xl font-extrabold tracking-tight text-foreground">
-                Verifying Email Change
+                {mode === "resetPassword"
+                  ? "Verifying Password Reset Link"
+                  : mode === "recoverEmail"
+                  ? "Recovering Email Address"
+                  : "Verifying Email Change"}
               </h2>
               <p className="text-sm text-muted-foreground">
-                Please wait while we confirm your verification link with LinkCloud...
+                {mode === "resetPassword"
+                  ? "Please wait while we validate your password reset link..."
+                  : "Please wait while we confirm your verification link with LinkCloud..."}
               </p>
             </div>
           </div>
@@ -479,10 +490,22 @@ export default function EmailActionPage() {
             {/* Success Heading & Message */}
             <div className="space-y-2">
               <h2 id="lc_action_success_heading" className="text-2xl font-bold text-emerald-500 dark:text-emerald-400">
-                New email address verified successfully!
+                {mode === "resetPassword"
+                  ? "Password reset successfully!"
+                  : mode === "recoverEmail"
+                  ? "Email address restored successfully!"
+                  : "New email address verified successfully!"}
               </h2>
               <p className="text-sm text-muted-foreground">
-                Please return to your LinkCloud tab and click <strong>&apos;Refresh Status&apos;</strong> to complete your email change.
+                {mode === "resetPassword" ? (
+                  "Your LinkCloud password has been updated. You can now sign in with your new password."
+                ) : mode === "recoverEmail" ? (
+                  "Your previous email address has been restored. We recommend updating your password."
+                ) : (
+                  <>
+                    Please return to your LinkCloud tab and click <strong>&apos;Refresh Status&apos;</strong> to complete your email change.
+                  </>
+                )}
               </p>
             </div>
 
@@ -528,7 +551,7 @@ export default function EmailActionPage() {
           </div>
         )}
 
-        {/* 3. EXPIRED STATE (Strict 60-second TTL elapsed) */}
+        {/* 3. EXPIRED STATE (5-minute TTL elapsed) */}
         {status === "expired" && (
           <div
             id="lc_action_expired_card"
@@ -544,7 +567,7 @@ export default function EmailActionPage() {
                 Verification Link Expired
               </h2>
               <p className="text-sm text-muted-foreground max-w-md mx-auto leading-relaxed">
-                This verification link has expired. LinkCloud email verification links are valid for 15 minutes.
+                This verification link has expired. LinkCloud email verification links are valid for 5 minutes.
               </p>
             </div>
 

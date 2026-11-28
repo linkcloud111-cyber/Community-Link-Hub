@@ -1,5 +1,6 @@
 import { Layers, CheckCircle2, Clock, XCircle, Heart, Bell, ArrowRight } from "lucide-react";
 import type { DashboardTab } from "@/hooks/useDashboardTabs";
+import { useSiteSettings } from "@/contexts/SiteSettingsContext";
 
 interface StatCardsProps {
   stats: {
@@ -15,6 +16,9 @@ interface StatCardsProps {
 }
 
 export function StatCards({ stats, onNavigate }: StatCardsProps) {
+  const { settings } = useSiteSettings();
+  const favoritesEnabled = settings?.favoritesEnabled !== false;
+
   const cards = [
     {
       id: "total",
@@ -64,18 +68,22 @@ export function StatCards({ stats, onNavigate }: StatCardsProps) {
       badgeColor: "text-rose-700 dark:text-rose-300 bg-rose-100 dark:bg-rose-900/50",
       action: () => onNavigate("my-groups", "rejected"),
     },
-    {
-      id: "favorites",
-      title: "Favorites",
-      count: stats.favorites,
-      icon: Heart,
-      color: "text-pink-600 dark:text-pink-400",
-      bg: "bg-pink-50 dark:bg-pink-950/40",
-      border: "border-pink-200 dark:border-pink-800/60",
-      badge: "Saved Groups",
-      badgeColor: "text-pink-700 dark:text-pink-300 bg-pink-100 dark:bg-pink-900/50",
-      action: () => onNavigate("favorites"),
-    },
+    ...(favoritesEnabled
+      ? [
+          {
+            id: "favorites",
+            title: "Favorites",
+            count: stats.favorites,
+            icon: Heart,
+            color: "text-pink-600 dark:text-pink-400",
+            bg: "bg-pink-50 dark:bg-pink-950/40",
+            border: "border-pink-200 dark:border-pink-800/60",
+            badge: "Saved Groups",
+            badgeColor: "text-pink-700 dark:text-pink-300 bg-pink-100 dark:bg-pink-900/50",
+            action: () => onNavigate("favorites"),
+          },
+        ]
+      : []),
     {
       id: "notifications",
       title: "Notifications",
@@ -94,7 +102,7 @@ export function StatCards({ stats, onNavigate }: StatCardsProps) {
   ];
 
   return (
-    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2.5 sm:gap-3.5 w-full">
+    <div className={`grid grid-cols-2 md:grid-cols-3 ${favoritesEnabled ? "lg:grid-cols-6" : "lg:grid-cols-5"} gap-2.5 sm:gap-3.5 w-full`}>
       {cards.map((card) => {
         const Icon = card.icon;
         return (

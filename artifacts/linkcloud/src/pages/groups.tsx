@@ -81,13 +81,6 @@ export default function GroupsPage() {
   const [contentType, setContentType] = useState(queryParams.get("type") || "All");
   const [language, setLanguage] = useState(queryParams.get("lang") || "All");
   const [state, setState] = useState(queryParams.get("state") || "");
-
-  usePageSEO({
-    title: platform !== "All" ? `${platform} Communities & Groups` : "Browse Indian Communities & Groups",
-    subtitle: search ? `Search: "${search}"` : "Verified Directory",
-    description: "Explore thousands of active Indian WhatsApp groups, Telegram channels, and Discord servers. Moderated daily.",
-    canonicalPath: "/groups",
-  });
   const [district, setDistrict] = useState(queryParams.get("district") || "");
   const [city, setCity] = useState(queryParams.get("city") || "");
   const [linkStatus, setLinkStatus] = useState<"all" | "active" | "inactive">(parseLinkStatus(queryParams.get("status")));
@@ -156,6 +149,30 @@ export default function GroupsPage() {
   const isCityEnabled = filterSettings.cityFilterEnabled !== false;
   const isLinkStatusEnabled = filterSettings.linkStatusFilterEnabled !== false;
   const isFeaturedEnabled = filterSettings.featuredFilterEnabled !== false;
+  const isPopularEnabled = filterSettings.popularFilterEnabled !== false;
+  const isNewestEnabled = filterSettings.newestFilterEnabled !== false;
+
+  const availableSortOptions = useMemo(() => {
+    return SORT_OPTIONS.filter((opt) => {
+      if (opt.value === "featured" && !isFeaturedEnabled) return false;
+      if ((opt.value === "popular" || opt.value === "most_joined") && !isPopularEnabled) return false;
+      if (opt.value === "latest" && !isNewestEnabled) return false;
+      return true;
+    });
+  }, [isFeaturedEnabled, isPopularEnabled, isNewestEnabled]);
+
+  const effectiveViewTab: TabValue = useMemo(() => {
+    if (viewTab === "featured" && !isFeaturedEnabled) return "all";
+    if (viewTab === "popular" && !isPopularEnabled) return "all";
+    if (viewTab === "latest" && !isNewestEnabled) return "all";
+    return viewTab;
+  }, [viewTab, isFeaturedEnabled, isPopularEnabled, isNewestEnabled]);
+
+  const effectiveDropdownSort: SortValue = useMemo(() => {
+    const isAllowed = availableSortOptions.some((o) => o.value === sortBy);
+    if (isAllowed) return sortBy;
+    return availableSortOptions[0]?.value || "most_viewed";
+  }, [availableSortOptions, sortBy]);
 
   const effectivePlatform = isPlatformEnabled && platform !== "All" ? platform : undefined;
   const effectiveCategory = isCategoryEnabled && categoryId ? categoryId : undefined;
@@ -165,6 +182,8 @@ export default function GroupsPage() {
   const effectiveDistrict = isDistrictEnabled && district ? district : undefined;
   const effectiveCity = isCityEnabled && city ? city : undefined;
   const effectiveLinkStatus = isLinkStatusEnabled && linkStatus !== "all" ? linkStatus : undefined;
+  const isSearchEnabled = settings?.searchEnabled !== false;
+  const effectiveSearch = isSearchEnabled && search ? search : undefined;
 
   // Resolve human-readable category name for active filter chip
   const selectedCategoryName = useMemo(() => {
@@ -191,6 +210,86 @@ export default function GroupsPage() {
       .join(" ");
   }, [effectiveCategory, categories]);
 
+  const isPureCategoryPage = Boolean(
+    effectiveCategory &&
+      !effectiveSearch &&
+      !effectivePlatform &&
+      !effectiveContentType &&
+      !effectiveLanguage &&
+      !effectiveState &&
+      !effectiveDistrict &&
+      !effectiveCity &&
+      !effectiveLinkStatus &&
+      !featuredOnly &&
+      effectiveViewTab === "all"
+  );
+
+  const isPurePlatformPage = Boolean(
+    effectivePlatform &&
+      !effectiveCategory &&
+      !effectiveSearch &&
+      !effectiveContentType &&
+      !effectiveLanguage &&
+      !effectiveState &&
+      !effectiveDistrict &&
+      !effectiveCity &&
+      !effectiveLinkStatus &&
+      !featuredOnly &&
+      effectiveViewTab === "all"
+  );
+
+  const isEmptyAfterLoad = !loading && allApprovedGroups.length === 0;
+  const shouldNoIndex = Boolean(
+    settings?.publicDirectoryEnabled === false ||
+      effectiveSearch ||
+      isEmptyAfterLoad ||
+      (!isPureCategoryPage &&
+        !isPurePlatformPage &&
+        (effectiveCategory ||
+          effectivePlatform ||
+          effectiveContentType ||
+          effectiveLanguage ||
+          effectiveState ||
+          effectiveDistrict ||
+          effectiveCity ||
+          effectiveLinkStatus ||
+          featuredOnly ||
+          effectiveViewTab !== "all"))
+  );
+
+  const seoTitle = effectiveSearch
+    ? `Search "${effectiveSearch}" — Indian Communities`
+    : isPureCategoryPage
+    ? `${selectedCategoryName} Communities & Groups`
+    : isPurePlatformPage
+    ? `${effectivePlatform} Communities & Groups`
+    : effectivePlatform
+    ? `${effectivePlatform} Communities & Groups`
+    : "Browse Indian Communities & Groups";
+
+  const seoDescription = isPureCategoryPage
+    ? `Discover active Indian ${selectedCategoryName} WhatsApp groups, Telegram channels, and Discord communities moderated on LinkCloud.`
+    : isPurePlatformPage
+    ? `Browse verified Indian ${effectivePlatform} groups and active community invite links on LinkCloud.`
+    : "Explore active Indian WhatsApp groups, Telegram channels, Discord servers, and regional communities. Moderated daily.";
+
+  const seoCanonicalPath =
+    isPureCategoryPage && !isEmptyAfterLoad && effectiveCategory
+      ? `/groups?category=${encodeURIComponent(effectiveCategory)}`
+      : "/groups";
+
+  usePageSEO({
+    title: seoTitle,
+    subtitle: effectiveSearch
+      ? `Search: "${effectiveSearch}"`
+      : isPureCategoryPage
+      ? `${selectedCategoryName} Directory`
+      : "Verified Directory",
+    description: seoDescription,
+    canonicalPath: seoCanonicalPath,
+    noIndex: shouldNoIndex,
+  });
+
   // Fetch groups when main filters change
   useEffect(() => {
     let isCancelled = false;
@@ -199,16 +298,16 @@ export default function GroupsPage() {
     const timer = setTimeout(async () => {
       try {
         const effectiveSortBy =
-          viewTab === "popular"
+          effectiveViewTab === "popular"
             ? "popular"
-            : viewTab === "featured"
+            : effectiveViewTab === "featured"
             ? "featured"
-            : viewTab === "latest"
+            : effectiveViewTab === "latest"
             ? "latest"
-            : sortBy;
+            : effectiveDropdownSort;
 
         const effectiveFeatured = isFeaturedEnabled
-          ? viewTab === "featured"
+          ? effectiveViewTab === "featured"
             ? true
             : featuredOnly
             ? true
@@ -225,7 +324,7 @@ export default function GroupsPage() {
           city: effectiveCity,
           linkStatus: effectiveLinkStatus,
           featured: effectiveFeatured,
-          search: search || undefined,
+          search: effectiveSearch,
           sortBy: effectiveSortBy,
         });
 
@@ -257,15 +356,16 @@ export default function GroupsPage() {
     city,
     linkStatus,
     featuredOnly,
-    sortBy,
-    viewTab,
+    effectiveDropdownSort,
+    effectiveViewTab,
     filterSettings,
+    isSearchEnabled,
   ]);
 
   // Synchronize URL query parameters with filter state
   useEffect(() => {
     const params = new URLSearchParams();
-    if (search.trim()) params.set("q", search.trim());
+    if (isSearchEnabled && search.trim()) params.set("q", search.trim());
     if (platform && platform !== "All") params.set("platform", platform);
     if (categoryId) params.set("category", categoryId);
     if (contentType && contentType !== "All") params.set("type", contentType);
@@ -296,6 +396,7 @@ export default function GroupsPage() {
     featuredOnly,
     viewTab,
     sortBy,
+    isSearchEnabled,
   ]);
 
   // Handle browser Back / Forward navigation popstate
@@ -359,8 +460,8 @@ export default function GroupsPage() {
     !!effectiveCity,
     !!effectiveLinkStatus,
     featuredOnly && isFeaturedEnabled,
-    !!search,
-    viewTab !== "all",
+    !!effectiveSearch,
+    effectiveViewTab !== "all",
   ].filter(Boolean).length;
 
   const visibleGroups = allApprovedGroups.slice(0, visibleCount);
@@ -511,11 +612,11 @@ export default function GroupsPage() {
           <div className="flex items-center gap-2">
             <div className="relative min-w-[210px] flex-1 md:flex-none">
               <select
-                value={sortBy}
+                value={effectiveDropdownSort}
                 onChange={(e) => setSortBy(e.target.value as any)}
                 className="w-full px-4 py-3 bg-background border border-border rounded-2xl text-sm font-semibold focus:ring-2 focus:ring-primary outline-none cursor-pointer appearance-none pr-8"
               >
-                {SORT_OPTIONS.map((opt) => (
+                {availableSortOptions.map((opt) => (
                   <option key={opt.value} value={opt.value}>
                     {opt.label}
                   </option>
@@ -698,9 +799,9 @@ export default function GroupsPage() {
           <div className="flex items-center justify-between pt-2 border-t border-border/40 text-xs flex-wrap gap-2">
             <div className="flex flex-wrap items-center gap-1.5">
               <span className="text-muted-foreground font-medium">Active Filters:</span>
-              {viewTab !== "all" && (
+              {effectiveViewTab !== "all" && (
                 <span className="px-2 py-0.5 rounded-md bg-primary/10 text-primary border border-primary/20 font-semibold flex items-center gap-1 capitalize">
-                  Tab: {viewTab}
+                  Tab: {effectiveViewTab}
                   <X className="w-3 h-3 cursor-pointer" onClick={() => setViewTab("all")} />
                 </span>
               )}

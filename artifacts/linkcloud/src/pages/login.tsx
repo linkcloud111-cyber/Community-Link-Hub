@@ -138,7 +138,9 @@ export default function Login() {
 
   // Detect input type
   const cleanNumber = identifier.replace(/[\s\-\+\(\)]/g, "");
-  const isMobile = !identifier.includes("@") && (/^\d+$/.test(cleanNumber) || identifier.trim().startsWith("+91"));
+  const isMobile =
+    (!emailLoginEnabled && mobileOtpLoginEnabled) ||
+    (!identifier.includes("@") && (/^\d+$/.test(cleanNumber) || identifier.trim().startsWith("+91")));
   const isEmail = !isMobile;
 
   // Validation calculations
@@ -498,7 +500,15 @@ export default function Login() {
             </div>
             <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">Welcome Back</h1>
             <p className="text-sm text-muted-foreground mt-1">
-              Sign in with Gmail, Mobile Password, or Mobile OTP to manage communities
+              {emailLoginEnabled && mobileOtpLoginEnabled
+                ? "Sign in with Gmail, Mobile Password, or Mobile OTP to manage communities"
+                : emailLoginEnabled
+                ? "Sign in with Gmail or Mobile Password to manage communities"
+                : mobileOtpLoginEnabled
+                ? "Sign in with Mobile OTP to manage communities"
+                : googleLoginEnabled
+                ? "Sign in with Google to manage communities"
+                : "Member sign-in is temporarily paused by the webmaster"}
             </p>
           </div>
 
@@ -558,7 +568,13 @@ export default function Login() {
                         : "border-border focus:ring-2 focus:ring-primary"
                       : "border-border focus:ring-2 focus:ring-primary"
                   }`}
-                  placeholder="name@gmail.com or 9876543210"
+                  placeholder={
+                    emailLoginEnabled && mobileOtpLoginEnabled
+                      ? "name@gmail.com or 9876543210"
+                      : emailLoginEnabled
+                      ? "name@gmail.com"
+                      : "9876543210"
+                  }
                 />
 
                 {/* Right Status Icon */}
@@ -580,75 +596,88 @@ export default function Login() {
               )}
             </div>
 
-            {/* IF EMAIL MODE OR NEUTRAL DEFAULT */}
+            {/* IF EMAIL/PASSWORD OR MOBILE OTP PRE-SEND MODE */}
             {!otpSent && (
-              <form onSubmit={handleEmailLogin} className="space-y-4" noValidate>
-                <div className="space-y-1.5">
-                  <div className="flex justify-between items-center px-1">
-                    <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                      Password
-                    </label>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setForgotModalOpen(true);
-                        setForgotEmail(isEmail ? identifier : "");
-                      }}
-                      className="text-xs font-medium text-primary hover:underline"
-                    >
-                      Forgot Password?
-                    </button>
-                  </div>
-                  <div className="relative">
-                    <Lock className="absolute left-3.5 top-3.5 w-5 h-5 text-muted-foreground" />
-                    <input
-                      type={showPassword ? "text" : "password"}
-                      required={!isMobile}
-                      value={password}
-                      disabled={loading}
-                      onBlur={() => setPasswordTouched(true)}
-                      onChange={(e) => {
-                        setPassword(e.target.value);
-                        setCustomPasswordError(null);
-                        setPasswordTouched(true);
-                      }}
-                      className={`w-full pl-11 pr-16 py-3 bg-background/50 border rounded-xl text-sm outline-none transition-all placeholder:text-muted-foreground/60 ${
-                        passwordTouched || submitted
-                          ? passwordError
-                            ? "border-destructive focus:ring-2 focus:ring-destructive"
-                            : isPasswordValid
-                            ? "border-emerald-500 focus:ring-2 focus:ring-emerald-500"
-                            : "border-border focus:ring-2 focus:ring-primary"
-                          : "border-border focus:ring-2 focus:ring-primary"
-                      }`}
-                      placeholder="••••••••"
-                    />
-
-                    {/* Status icon and Toggle */}
-                    <div className="absolute right-3.5 top-3.5 flex items-center gap-2">
-                      {(passwordTouched || submitted) && passwordError && (
-                        <AlertCircle className="w-5 h-5 text-destructive" />
-                      )}
-                      {(passwordTouched || submitted) && !passwordError && isPasswordValid && (
-                        <CheckCircle2 className="w-5 h-5 text-emerald-500" />
-                      )}
+              <form
+                onSubmit={(e) => {
+                  if (!emailLoginEnabled && mobileOtpLoginEnabled) {
+                    e.preventDefault();
+                    handleSendOTP();
+                    return;
+                  }
+                  handleEmailLogin(e);
+                }}
+                className="space-y-4"
+                noValidate
+              >
+                {emailLoginEnabled && (
+                  <div className="space-y-1.5">
+                    <div className="flex justify-between items-center px-1">
+                      <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                        Password
+                      </label>
                       <button
                         type="button"
-                        onClick={() => setShowPassword(!showPassword)}
-                        className="text-muted-foreground hover:text-foreground focus:outline-none"
+                        onClick={() => {
+                          setForgotModalOpen(true);
+                          setForgotEmail(isEmail ? identifier : "");
+                        }}
+                        className="text-xs font-medium text-primary hover:underline"
                       >
-                        {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                        Forgot Password?
                       </button>
                     </div>
-                  </div>
+                    <div className="relative">
+                      <Lock className="absolute left-3.5 top-3.5 w-5 h-5 text-muted-foreground" />
+                      <input
+                        type={showPassword ? "text" : "password"}
+                        required={!isMobile}
+                        value={password}
+                        disabled={loading}
+                        onBlur={() => setPasswordTouched(true)}
+                        onChange={(e) => {
+                          setPassword(e.target.value);
+                          setCustomPasswordError(null);
+                          setPasswordTouched(true);
+                        }}
+                        className={`w-full pl-11 pr-16 py-3 bg-background/50 border rounded-xl text-sm outline-none transition-all placeholder:text-muted-foreground/60 ${
+                          passwordTouched || submitted
+                            ? passwordError
+                              ? "border-destructive focus:ring-2 focus:ring-destructive"
+                              : isPasswordValid
+                              ? "border-emerald-500 focus:ring-2 focus:ring-emerald-500"
+                              : "border-border focus:ring-2 focus:ring-primary"
+                            : "border-border focus:ring-2 focus:ring-primary"
+                        }`}
+                        placeholder="••••••••"
+                      />
 
-                  {/* Password Error Text */}
-                  {passwordError && (
-                    <p className="text-xs font-medium text-destructive px-1 flex items-center gap-1 animate-in fade-in">
-                      <AlertCircle className="w-3.5 h-3.5" /> {passwordError}
-                    </p>
-                  )}
-                </div>
+                      {/* Status icon and Toggle */}
+                      <div className="absolute right-3.5 top-3.5 flex items-center gap-2">
+                        {(passwordTouched || submitted) && passwordError && (
+                          <AlertCircle className="w-5 h-5 text-destructive" />
+                        )}
+                        {(passwordTouched || submitted) && !passwordError && isPasswordValid && (
+                          <CheckCircle2 className="w-5 h-5 text-emerald-500" />
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => setShowPassword(!showPassword)}
+                          className="text-muted-foreground hover:text-foreground focus:outline-none"
+                        >
+                          {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Password Error Text */}
+                    {passwordError && (
+                      <p className="text-xs font-medium text-destructive px-1 flex items-center gap-1 animate-in fade-in">
+                        <AlertCircle className="w-3.5 h-3.5" /> {passwordError}
+                      </p>
+                    )}
+                  </div>
+                )}
 
                 {/* Remember Me Option */}
                 <div className="flex items-center justify-between px-1 py-1">
@@ -795,16 +824,18 @@ export default function Login() {
             {/* Google Sign In */}
             {googleLoginEnabled && (
               <>
-                <div className="relative my-6">
-                  <div className="absolute inset-0 flex items-center">
-                    <div className="w-full border-t border-border"></div>
+                {(emailLoginEnabled || mobileOtpLoginEnabled) && (
+                  <div className="relative my-6">
+                    <div className="absolute inset-0 flex items-center">
+                      <div className="w-full border-t border-border"></div>
+                    </div>
+                    <div className="relative flex justify-center text-xs">
+                      <span className="px-3 bg-card text-muted-foreground font-medium uppercase tracking-wider">
+                        Or Continue With
+                      </span>
+                    </div>
                   </div>
-                  <div className="relative flex justify-center text-xs">
-                    <span className="px-3 bg-card text-muted-foreground font-medium uppercase tracking-wider">
-                      Or Continue With
-                    </span>
-                  </div>
-                </div>
+                )}
 
                 <button
                   type="button"

@@ -111,11 +111,13 @@ export const DEFAULT_SITE_SETTINGS: SiteSettings = {
       "@context": "https://schema.org",
       "@type": "WebSite",
       name: "LinkCloud",
-      url: "/",
+      url: "https://community-link-hub.pages.dev",
     },
     null,
     2
   ),
+  allowIndexing: true,
+  googleSiteVerification: "",
 
   // System Master Toggles (submission flags fail closed by default)
   allowPublicSubmissions: false,
@@ -271,6 +273,7 @@ export function normalizeSiteSettings(raw?: Partial<SiteSettings> | null): SiteS
     faviconUrl: normalizedFavicon,
     websiteTheme: normalizedTheme,
     theme: normalizedTheme,
+    allowIndexing: input.allowIndexing !== false,
     allowPublicSubmissions: false,
     groupSubmissionEnabled: input.groupSubmissionEnabled === true,
     autoApproveGroups: autoApprove,

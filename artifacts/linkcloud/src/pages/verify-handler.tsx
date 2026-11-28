@@ -326,7 +326,7 @@ export default function VerifyHandlerPage() {
           return;
         }
 
-        // 3. Expiration check (15-minute TTL)
+        // 3. Expiration check (5-minute TTL)
         if (activeReqDoc.status === "expired" || now > activeReqDoc.expiresAt) {
           console.warn("[VERIFY HANDLER] Request expired.");
           setStatus("expired");
@@ -523,10 +523,18 @@ export default function VerifyHandlerPage() {
             </div>
             <div className="space-y-1.5">
               <h2 className="text-2xl font-extrabold tracking-tight text-foreground">
-                Verifying Email Change
+                {mode === "verifyEmail"
+                  ? "Verifying Email Address"
+                  : mode === "recoverEmail"
+                  ? "Recovering Email Address"
+                  : mode === "resetPassword"
+                  ? "Verifying Password Reset Link"
+                  : "Verifying Email Change"}
               </h2>
               <p className="text-sm text-muted-foreground">
-                Confirming your verification link and updating your profile...
+                {mode === "resetPassword"
+                  ? "Validating your password reset link..."
+                  : "Confirming your verification link and updating your account..."}
               </p>
             </div>
           </div>
@@ -545,10 +553,22 @@ export default function VerifyHandlerPage() {
 
             <div className="space-y-2">
               <h2 id="lc_handler_success_heading" className="text-2xl font-bold text-emerald-500 dark:text-emerald-400">
-                Email address updated successfully!
+                {mode === "verifyEmail"
+                  ? "Email address verified successfully!"
+                  : mode === "recoverEmail"
+                  ? "Email address restored successfully!"
+                  : mode === "resetPassword"
+                  ? "Password reset successfully!"
+                  : "Email address updated successfully!"}
               </h2>
               <p className="text-sm text-muted-foreground">
-                Your LinkCloud account email has been updated. You can now use your new email to sign in.
+                {mode === "verifyEmail"
+                  ? "Your LinkCloud account email is now verified and active."
+                  : mode === "recoverEmail"
+                  ? "Your previous LinkCloud account email has been restored. We recommend updating your password."
+                  : mode === "resetPassword"
+                  ? "Your LinkCloud account password has been updated. You can now sign in with your new password."
+                  : "Your LinkCloud account email has been updated. You can now use your new email to sign in."}
               </p>
             </div>
 
@@ -589,11 +609,12 @@ export default function VerifyHandlerPage() {
                   type="button"
                   id="lc_handler_return_btn"
                   onClick={() => {
-                    setLocation(`/login?email=${encodeURIComponent(newEmailDisplay || "")}`);
+                    const emailTarget = newEmailDisplay || resetEmail || "";
+                    setLocation(emailTarget ? `/login?email=${encodeURIComponent(emailTarget)}` : "/login");
                   }}
                   className="w-full min-h-[48px] py-3.5 px-6 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm transition shadow-lg shadow-emerald-600/20 flex items-center justify-center gap-2 cursor-pointer"
                 >
-                  <span>Sign In with New Email</span>
+                  <span>{mode === "resetPassword" ? "Sign In to LinkCloud" : "Sign In with New Email"}</span>
                   <ArrowRight className="w-4 h-4" />
                 </button>
               )}
@@ -752,7 +773,7 @@ export default function VerifyHandlerPage() {
                     required
                     value={newPassword}
                     onChange={(e) => setNewPassword(e.target.value)}
-                    placeholder="Enter new password (min 6 characters)"
+                    placeholder="Min 8 chars (upper, lower, number, symbol)"
                     className="w-full px-4 py-3 rounded-xl border border-input bg-background/50 text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
                   />
                   <button

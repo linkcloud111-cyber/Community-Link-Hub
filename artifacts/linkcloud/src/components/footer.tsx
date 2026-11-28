@@ -216,9 +216,9 @@ export default function Footer() {
 
           {/* Explore */}
           <div>
-            <h4 className="font-semibold text-sm uppercase tracking-wider text-foreground mb-4">
+            <h2 className="font-semibold text-sm uppercase tracking-wider text-foreground mb-4">
               Explore
-            </h4>
+            </h2>
             <ul className="space-y-2.5 text-sm text-muted-foreground">
               <li>
                 <Link href="/groups" className="hover:text-primary transition-colors">
@@ -227,19 +227,19 @@ export default function Footer() {
               </li>
               {(settings?.groupSubmissionEnabled === true || isWebmaster) && (
                 <li>
-                  <Link href="/submit" className="hover:text-primary transition-colors">
+                  <Link href="/submit" rel="nofollow" className="hover:text-primary transition-colors">
                     Submit a Community
                   </Link>
                 </li>
               )}
               <li>
-                <Link href="/login" className="hover:text-primary transition-colors">
+                <Link href="/login" rel="nofollow" className="hover:text-primary transition-colors">
                   Sign In
                 </Link>
               </li>
               {settings?.userRegistrationEnabled !== false && (
                 <li>
-                  <Link href="/register" className="hover:text-primary transition-colors">
+                  <Link href="/register" rel="nofollow" className="hover:text-primary transition-colors">
                     Create Account
                   </Link>
                 </li>
@@ -279,9 +279,9 @@ export default function Footer() {
 
           {/* Legal & Support */}
           <div>
-            <h4 className="font-semibold text-sm uppercase tracking-wider text-foreground mb-4">
+            <h2 className="font-semibold text-sm uppercase tracking-wider text-foreground mb-4">
               Support & Legal
-            </h4>
+            </h2>
             <ul className="space-y-2.5 text-sm text-muted-foreground">
               {settings?.contactFormEnabled !== false && (
                 <li>
@@ -345,14 +345,19 @@ export default function Footer() {
 
           {/* Platforms */}
           <div>
-            <h4 className="font-semibold text-sm uppercase tracking-wider text-foreground mb-4">
+            <h2 className="font-semibold text-sm uppercase tracking-wider text-foreground mb-4">
               Platforms
-            </h4>
+            </h2>
             <ul className="space-y-2 text-sm text-muted-foreground">
-              {activePlatforms.map((p) => (
+              {activePlatforms.map((p) => {
+                const platformHref =
+                  settings?.filterSettings?.platformFilterEnabled !== false
+                    ? `/groups?platform=${encodeURIComponent(p.name)}`
+                    : "/groups";
+                return (
                 <li key={p.id || p.name}>
                   <Link
-                    href={`/groups?platform=${encodeURIComponent(p.name)}`}
+                    href={platformHref}
                     className="flex items-center gap-2 hover:text-primary transition-colors group"
                   >
                     <PlatformIcon
@@ -364,7 +369,8 @@ export default function Footer() {
                     {p.name}
                   </Link>
                 </li>
-              ))}
+                );
+              })}
             </ul>
           </div>
         </div>
@@ -373,7 +379,7 @@ export default function Footer() {
         <div className="border-t border-border mt-12 pt-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-muted-foreground">
           <p>{copyright}</p>
           <div className="flex items-center gap-3 text-xs">
-            <Link href="/webmaster/login" className="hover:text-amber-500 font-mono transition-colors flex items-center gap-1">
+            <Link href="/webmaster/login" rel="nofollow" className="hover:text-amber-500 font-mono transition-colors flex items-center gap-1">
               Webmaster Login
             </Link>
             <span>•</span>

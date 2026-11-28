@@ -16,6 +16,12 @@ export function MessagesTab({ messages, onSendMessage }: MessagesTabProps) {
   const [loading, setLoading] = useState(false);
 
   const contactEnabled = settings?.contactFormEnabled !== false;
+  const visibleContactEmail =
+    settings?.showCompleteContactSection !== false &&
+    settings?.showSupportEmail !== false &&
+    settings?.showContactEmail !== false
+      ? settings?.contactEmail
+      : "";
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -99,7 +105,7 @@ export function MessagesTab({ messages, onSendMessage }: MessagesTabProps) {
               </p>
               <p className="text-xs text-slate-600 dark:text-slate-400">
                 Direct form submissions are currently paused by the webmaster.
-                {settings?.contactEmail ? ` You may reach us at ${settings.contactEmail}.` : ""}
+                {visibleContactEmail ? ` You may reach us at ${visibleContactEmail}.` : ""}
               </p>
             </div>
           ) : (

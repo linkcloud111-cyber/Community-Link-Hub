@@ -24,7 +24,9 @@ import {
   getLiveTagStats,
   getGroupLimits,
   MAX_TAG_LENGTH,
+  MIN_GROUP_DESCRIPTION_LENGTH,
 } from "@/lib/group-validation";
+import { validateInviteLink } from "@/lib/utils";
 import type { Group, GroupStatus, UserProfile } from "@/lib/types";
 import { useSiteSettings } from "@/contexts/SiteSettingsContext";
 import { useTaxonomy } from "@/contexts/TaxonomyContext";
@@ -393,12 +395,21 @@ export default function AdminGroups() {
       toast.error(`Tagline must not exceed ${groupLimits.taglineMaxLength} characters.`);
       return;
     }
+    if (cleanDesc.length < MIN_GROUP_DESCRIPTION_LENGTH) {
+      toast.error(`Description must be at least ${MIN_GROUP_DESCRIPTION_LENGTH} characters.`);
+      return;
+    }
     if (cleanDesc.length > groupLimits.descriptionMaxLength) {
       toast.error(`Description must not exceed ${groupLimits.descriptionMaxLength} characters.`);
       return;
     }
     if (cleanRules.length > groupLimits.rulesMaxLength) {
       toast.error(`Rules must not exceed ${groupLimits.rulesMaxLength} characters.`);
+      return;
+    }
+    const linkCheck = validateInviteLink(editGroup.joinUrl.trim(), editGroup.platform);
+    if (!linkCheck.valid) {
+      toast.error(linkCheck.error || "Please enter a valid invite link for the selected platform.");
       return;
     }
     const tagCheck = parseAndValidateTags(editTagsInput, {

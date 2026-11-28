@@ -120,7 +120,7 @@ export function ProfileTab({
 
             <div className="flex items-center justify-center sm:justify-start gap-3 pt-1 text-xs text-slate-500">
               <span className="font-mono text-purple-600 dark:text-purple-400 font-semibold">
-                UID: {profile?.accountUid || "linkcloud----"}
+                UID: {profile?.accountUid || (profile?.uid ? `linkcloud${profile.uid.slice(0, 5)}` : "Pending")}
               </span>
             </div>
           </div>

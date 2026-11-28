@@ -96,7 +96,7 @@ async function handleUpdateSettings(context: {
         adminUid: auth.uid || "webmaster",
         adminEmail: auth.email || "webmaster@localhost.invalid",
         actorUid: auth.uid || "webmaster",
-        actorEmail: auth.email || "webmaster@linkcloud.in",
+        actorEmail: auth.email || "webmaster@localhost.invalid",
         createdAt: nowIso,
         timestamp: nowIso,
       },

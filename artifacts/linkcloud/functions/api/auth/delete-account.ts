@@ -173,7 +173,20 @@ export async function onRequestPost(context: {
 
     return jsonResponse({ success: true });
   } catch (err: any) {
-    console.error("[Cloudflare Auth] Account deletion error:", err?.message || "unexpected");
-    return errorResponse("Failed to delete account. Please try again.", 500);
+    const msg = String(err?.message || "");
+    const isTransient =
+      msg.includes("RESOURCE_EXHAUSTED") ||
+      msg.includes("Quota exceeded") ||
+      msg.includes("UNAVAILABLE") ||
+      msg.includes("DEADLINE_EXCEEDED") ||
+      msg.includes("429") ||
+      msg.includes("503");
+    console.error("[Cloudflare Auth] Account deletion error:", msg || "unexpected");
+    return errorResponse(
+      isTransient
+        ? "Account deletion service is temporarily busy. Please try again in a moment."
+        : "Failed to delete account. Please try again.",
+      isTransient ? 503 : 500
+    );
   }
 }

@@ -19,6 +19,8 @@ import {
   CheckCircle2,
   AlertCircle,
 } from "lucide-react";
+import { useSiteSettings } from "@/contexts/SiteSettingsContext";
+import { useAuth } from "@/contexts/AuthContext";
 import type { DashboardTab } from "@/hooks/useDashboardTabs";
 import type { UserProfile } from "@/lib/types";
 
@@ -41,9 +43,12 @@ export function MoreTab({
   onEditProfile,
   onLogout,
 }: MoreTabProps) {
+  const { settings } = useSiteSettings();
+  const { isWebmaster } = useAuth();
+  const canEditProfile = Boolean(isWebmaster || settings?.profileEditingEnabled !== false);
   const displayName = profile?.displayName || "User";
   const userEmail = profile?.email || email || "No email";
-  const accountUid = profile?.accountUid || "linkcloud----";
+  const accountUid = profile?.accountUid || (profile?.uid ? `linkcloud${profile.uid.slice(0, 5)}` : "Pending");
   const isEmailVerified = propIsEmailVerified !== undefined ? propIsEmailVerified : Boolean(profile?.emailVerified);
 
   const getInitials = (name: string) => {
@@ -193,12 +198,18 @@ export function MoreTab({
           </div>
         </div>
 
-        <button
-          onClick={onEditProfile}
-          className="px-3.5 py-2 rounded-xl text-xs font-bold text-purple-700 dark:text-purple-300 bg-purple-50 dark:bg-purple-950/60 hover:bg-purple-100 transition border border-purple-200 dark:border-purple-800 flex-shrink-0"
-        >
-          Edit
-        </button>
+        {canEditProfile ? (
+          <button
+            onClick={onEditProfile}
+            className="px-3.5 py-2 rounded-xl text-xs font-bold text-purple-700 dark:text-purple-300 bg-purple-50 dark:bg-purple-950/60 hover:bg-purple-100 transition border border-purple-200 dark:border-purple-800 flex-shrink-0"
+          >
+            Edit
+          </button>
+        ) : (
+          <span className="px-3 py-1.5 rounded-xl text-[11px] font-semibold text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/50 flex-shrink-0">
+            Editing Paused
+          </span>
+        )}
       </div>
 
       {/* Account Navigation Group */}

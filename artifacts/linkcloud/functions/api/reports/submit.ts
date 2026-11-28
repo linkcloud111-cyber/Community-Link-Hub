@@ -6,6 +6,7 @@ import {
   firestoreSetDoc,
   firestoreIncrementField,
 } from "../email-change/_firestore";
+import { handleAdminFirestoreError } from "../admin/_admin-common";
 
 export async function onRequestOptions(): Promise<Response> {
   return new Response(null, {
@@ -185,6 +186,6 @@ export async function onRequestPost(context: {
     });
   } catch (err: any) {
     console.error("[Cloudflare Reports] Submit report error:", err?.message || "unexpected");
-    return errorResponse("Failed to submit report. Please try again.", 500);
+    return handleAdminFirestoreError(err, "Failed to submit report. Please try again.");
   }
 }

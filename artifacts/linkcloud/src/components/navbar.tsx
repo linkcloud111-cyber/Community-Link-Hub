@@ -312,12 +312,14 @@ export default function Navbar() {
                               >
                                 <LayoutGrid className="w-4 h-4" /> My Submitted Groups
                               </button>
-                              <button
-                                onClick={() => navigateAndClose("/dashboard?tab=favorites")}
-                                className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm hover:bg-primary/10 hover:text-primary transition-colors text-left"
-                              >
-                                <Heart className="w-4 h-4" /> Favorites
-                              </button>
+                              {settings?.favoritesEnabled !== false && (
+                                <button
+                                  onClick={() => navigateAndClose("/dashboard?tab=favorites")}
+                                  className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm hover:bg-primary/10 hover:text-primary transition-colors text-left"
+                                >
+                                  <Heart className="w-4 h-4" /> Favorites
+                                </button>
+                              )}
                               <button
                                 onClick={() => navigateAndClose("/dashboard?tab=my-profile")}
                                 className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm hover:bg-primary/10 hover:text-primary transition-colors text-left"
@@ -557,12 +559,14 @@ export default function Navbar() {
                       >
                         My Submitted Groups
                       </button>
-                      <button
-                        onClick={() => navigateAndClose("/dashboard?tab=favorites")}
-                        className="w-full text-left block px-4 py-2.5 text-sm font-medium rounded-xl hover:bg-muted"
-                      >
-                        Favorites
-                      </button>
+                      {settings?.favoritesEnabled !== false && (
+                        <button
+                          onClick={() => navigateAndClose("/dashboard?tab=favorites")}
+                          className="w-full text-left block px-4 py-2.5 text-sm font-medium rounded-xl hover:bg-muted"
+                        >
+                          Favorites
+                        </button>
+                      )}
                       <button
                         onClick={() => navigateAndClose("/dashboard?tab=my-profile")}
                         className="w-full text-left block px-4 py-2.5 text-sm font-medium rounded-xl hover:bg-muted"

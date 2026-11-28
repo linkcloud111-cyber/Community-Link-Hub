@@ -36,6 +36,20 @@ function hashToken(rawToken: string): string {
   return crypto.createHash("sha256").update(rawToken).digest("hex");
 }
 
+function isTransientFirestoreError(err: any): boolean {
+  const code = Number(err?.code);
+  const msg = String(err?.message || "");
+  return (
+    code === 8 ||
+    code === 14 ||
+    code === 4 ||
+    msg.includes("RESOURCE_EXHAUSTED") ||
+    msg.includes("UNAVAILABLE") ||
+    msg.includes("DEADLINE_EXCEEDED") ||
+    msg.includes("Quota exceeded")
+  );
+}
+
 export async function handleDevEmailChangeRequest(
   req: IncomingMessage,
   res: ServerResponse
@@ -207,15 +221,36 @@ export async function handleDevEmailChangeRequest(
       });
 
       await batch.commit();
-    } catch (saveErr) {
+    } catch (saveErr: any) {
       console.error("[Dev Server] Failed to save emailChangeRequest to Firestore:", saveErr);
+      const transient = isTransientFirestoreError(saveErr);
+      sendJson(
+        res,
+        {
+          error: transient
+            ? "Email verification service is temporarily busy. Please try again in a moment."
+            : "Unable to create email verification request. Please try again.",
+        },
+        transient ? 503 : 500
+      );
+      return;
     }
+  } else {
+    sendJson(res, { error: "Database service unavailable." }, 503);
+    return;
   }
 
   const resendApiKey = process.env.RESEND_API_KEY;
-  const host = req.headers["host"] || "localhost:3000";
-  const protocol = host.includes("localhost") ? "http" : "https";
-  const origin = `${protocol}://${host}`;
+  const rawHost = Array.isArray(req.headers["host"]) ? req.headers["host"][0] : req.headers["host"] || "localhost:3000";
+  const forwardedProto = Array.isArray(req.headers["x-forwarded-proto"])
+    ? req.headers["x-forwarded-proto"][0]
+    : req.headers["x-forwarded-proto"];
+  const isLocalHost =
+    rawHost.includes("localhost") ||
+    rawHost.startsWith("127.0.0.1") ||
+    rawHost.startsWith("[::1]");
+  const protocol = forwardedProto?.split(",")[0]?.trim() || (isLocalHost ? "http" : "https");
+  const origin = `${protocol}://${rawHost}`;
   const verificationLink = `${origin}/verify-handler?mode=verifyAndChangeEmail&reqId=${requestId}&uid=${uid}&token=${rawToken}`;
 
   console.log(`[Dev Server] Email Change Requested for UID ${uid} -> ${newEmail}`);
@@ -291,7 +326,7 @@ export async function handleDevEmailChangeVerify(
   const now = Date.now();
 
   if (!firestore || !app) {
-    sendJson(res, { error: "Database service unavailable." }, 500);
+    sendJson(res, { error: "Database service unavailable." }, 503);
     return;
   }
 
@@ -364,7 +399,22 @@ export async function handleDevEmailChangeVerify(
       });
       customToken = await auth.createCustomToken(targetUid);
     } catch (authErr: any) {
-      console.warn("[Dev Server] Auth updateUser warning:", authErr.message);
+      console.error("[Dev Server] Auth updateUser error:", authErr);
+      if (authErr?.code === "auth/email-already-exists") {
+        sendJson(res, { error: "This Gmail address is already linked to another account." }, 409);
+        return;
+      }
+      const transient = isTransientFirestoreError(authErr);
+      sendJson(
+        res,
+        {
+          error: transient
+            ? "Authentication service is temporarily busy. Please try again in a moment."
+            : `Failed to update authentication email: ${authErr?.message || "Unknown error"}`,
+        },
+        transient ? 503 : 500
+      );
+      return;
     }
 
     // 2. Update Firestore documents atomically
@@ -443,7 +493,16 @@ export async function handleDevEmailChangeVerify(
     });
   } catch (err: any) {
     console.error("[Dev Server] Verification error:", err);
-    sendJson(res, { error: err?.message || "Failed to process verification." }, 500);
+    const transient = isTransientFirestoreError(err);
+    sendJson(
+      res,
+      {
+        error: transient
+          ? "Verification service is temporarily busy. Please try again in a moment."
+          : err?.message || "Failed to process verification.",
+      },
+      transient ? 503 : 500
+    );
   }
 }
 
@@ -473,7 +532,7 @@ export async function handleDevEmailChangeSessionRefresh(
 
   const app = getFirebaseAdminApp();
   if (!app) {
-    sendJson(res, { error: "Firebase Admin is not configured on dev server." }, 500);
+    sendJson(res, { error: "Authentication service is temporarily unavailable." }, 503);
     return;
   }
 
@@ -552,7 +611,16 @@ export async function handleDevEmailChangeSessionRefresh(
     });
   } catch (err: any) {
     console.error("[Dev Server] createCustomToken error:", err);
-    sendJson(res, { error: err.message || "Failed to create custom token" }, 500);
+    const transient = isTransientFirestoreError(err);
+    sendJson(
+      res,
+      {
+        error: transient
+          ? "Session refresh service is temporarily busy. Please try again in a moment."
+          : err?.message || "Failed to create custom token",
+      },
+      transient ? 503 : 500
+    );
   }
 }
 
@@ -639,6 +707,15 @@ export async function handleDevEmailChangeCancel(
     });
   } catch (err: any) {
     console.error("[Dev Server] Cancel email change error:", err);
-    sendJson(res, { error: err?.message || "Failed to cancel email change." }, 500);
+    const transient = isTransientFirestoreError(err);
+    sendJson(
+      res,
+      {
+        error: transient
+          ? "Service is temporarily busy. Please try again in a moment."
+          : err?.message || "Failed to cancel email change.",
+      },
+      transient ? 503 : 500
+    );
   }
 }

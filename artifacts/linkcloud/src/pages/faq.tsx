@@ -96,7 +96,7 @@ export default function FAQPage() {
     });
   }, [authoritativeFaqs, search, selectedCategory]);
 
-  const isLoading = pageLoading && faqsLoading;
+  const isLoading = pageLoading || faqsLoading;
 
   if (!pageLoading && disabled) {
     return (

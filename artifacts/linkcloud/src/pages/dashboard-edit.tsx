@@ -156,6 +156,10 @@ export default function DashboardEdit() {
     if (description.trim().length > groupLimits.descriptionMaxLength) { toast.error(`Description must not exceed ${groupLimits.descriptionMaxLength} characters.`); return; }
     if (rules.trim().length > groupLimits.rulesMaxLength) { toast.error(`Rules must not exceed ${groupLimits.rulesMaxLength} characters.`); return; }
     if (!joinUrl.trim()) { toast.error("Invite Link is required."); return; }
+    if (groupLimits.requireGroupLogo && !group.logoUrl?.trim() && !logoFile) {
+      toast.error("Group Logo is required by Webmaster settings.");
+      return;
+    }
 
     const tagCheck = parseAndValidateTags(tagsInput, { required: false, maxTags: groupLimits.maxTags });
     if (!tagCheck.valid) {
@@ -188,7 +192,8 @@ export default function DashboardEdit() {
         logoUrl = await uploadToCloudinary(
           logoFile,
           settings?.cloudinaryUploadPreset || settings?.cloudinarySettings?.uploadPreset,
-          settings?.cloudinaryCloudName || settings?.cloudinarySettings?.cloudName
+          settings?.cloudinaryCloudName || settings?.cloudinarySettings?.cloudName,
+          settings?.cloudinarySettings?.enabled !== false
         );
       }
 
@@ -218,6 +223,7 @@ export default function DashboardEdit() {
         status: nextStatus,
         changesRequested: false,
         changesRequestedMessage: "",
+        ...(isWebmasterUser ? {} : { allowResubmit: false }),
       });
 
       toast.success(

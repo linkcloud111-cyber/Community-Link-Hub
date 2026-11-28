@@ -171,7 +171,7 @@ export function DashboardSidebar({
           {(!isCollapsed || isDrawer) && (
             <div className="flex flex-col min-w-0">
               <span className="font-bold text-slate-900 dark:text-white leading-tight truncate">
-                LinkCloud
+                {settings?.headerTitle || settings?.siteName || "LinkCloud"}
               </span>
               <span className="text-[10px] text-purple-600 dark:text-purple-400 font-semibold">
                 User Dashboard

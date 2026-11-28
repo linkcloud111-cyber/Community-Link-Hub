@@ -1,9 +1,12 @@
 import { useEffect, useRef } from "react";
 import { useLocation } from "wouter";
-import { getSiteSettings } from "./firestore";
+import { getSiteSettings, invalidateSiteSettingsDocCache } from "./firestore";
 import { useSiteSettings } from "@/contexts/SiteSettingsContext";
 import {
+  isUnverifiedLegacyDomain,
   normalizeHttpBaseUrl,
+  OFFICIAL_CANONICAL_ORIGIN,
+  resolveActiveCanonicalOrigin,
   resolveCanonicalUrl,
   resolveSeoImageUrl,
 } from "./settings-validation";
@@ -49,6 +52,7 @@ export async function fetchSiteSettingsCached(): Promise<SiteSettings | null> {
 export function clearSiteSettingsCache() {
   cachedSiteSettings = null;
   settingsFetchPromise = null;
+  invalidateSiteSettingsDocCache();
   if (typeof window !== "undefined") {
     window.dispatchEvent(new CustomEvent("lc-site-settings-updated"));
   }
@@ -68,6 +72,17 @@ const PRIVATE_ROUTE_PREFIXES = [
   "/verify-handler",
   "/email-action",
   "/reset-password",
+  "/my-groups",
+  "/profile",
+  "/settings",
+  "/submitted-groups",
+  "/my-submitted-groups",
+  "/my-profile",
+  "/profile-settings",
+  "/change-password",
+  "/account-security",
+  "/favorites",
+  "/notifications",
 ];
 
 export function isPrivateRoute(path: string): boolean {
@@ -92,6 +107,7 @@ export interface ResolvedDocumentHead {
   twitterTitle: string;
   twitterDescription: string;
   twitterImage: string;
+  googleSiteVerification: string;
   globalJsonLd: Record<string, any>;
   pageJsonLd?: Record<string, any>;
 }
@@ -119,13 +135,15 @@ export function resolveDocumentHeadMetadata(params: {
     settings?.metaKeywords?.trim() ||
     "WhatsApp groups, Telegram channels, Discord servers, India group links";
 
-  const detectedOrigin =
-    runtimeOrigin ||
-    (typeof import.meta !== "undefined" ? (import.meta as any).env?.VITE_APP_URL : "") ||
-    "http://localhost:3000";
+  const envOrigin =
+    (typeof import.meta !== "undefined" ? (import.meta as any).env?.VITE_APP_URL : "") || "";
 
-  // Respect Webmaster's configured canonicalUrl unconditionally when valid
-  const canonicalBase = normalizeHttpBaseUrl(settings?.canonicalUrl, detectedOrigin);
+  // Enforce active official canonical origin; ignore unverified legacy linkcloud.in unless actively hosted there
+  const canonicalBase = resolveActiveCanonicalOrigin({
+    configuredCanonicalUrl: settings?.canonicalUrl,
+    envOrigin,
+    runtimeOrigin: runtimeOrigin || (typeof window !== "undefined" ? window.location.origin : ""),
+  }) || OFFICIAL_CANONICAL_ORIGIN;
 
   // 1. Document <title>
   const pageTitleInput = page?.title?.trim();
@@ -149,10 +167,11 @@ export function resolveDocumentHeadMetadata(params: {
   const finalDesc = page?.description?.trim() || defaultDesc;
   const finalKeywords = page?.keywords?.trim() || defaultKeywords;
 
-  // 3. Robots directive (private routes & maintenance mode always force noindex)
+  // 3. Robots directive (private routes, maintenance mode, and disabled indexing force noindex)
   const forceNoIndex =
     isPrivateRoute(cleanPath) ||
     Boolean(settings?.maintenanceMode) ||
+    settings?.allowIndexing === false ||
     page?.noIndex === true;
   const robots: "index, follow" | "noindex, nofollow" = forceNoIndex
     ? "noindex, nofollow"
@@ -199,7 +218,7 @@ export function resolveDocumentHeadMetadata(params: {
     resolveSeoImageUrl(page?.ogImage || settings?.twitterCardImage || settings?.ogImage, canonicalBase) ||
     resolvedOgImage;
 
-  // 6. Global Schema.org JSON-LD
+  // 6. Global Schema.org JSON-LD (normalize relative "/" or legacy unverified domain URLs)
   let globalJsonLd: Record<string, any> = {
     "@context": "https://schema.org",
     "@type": "WebSite",
@@ -216,7 +235,12 @@ export function resolveDocumentHeadMetadata(params: {
     try {
       const parsed = JSON.parse(settings.structuredDataJson);
       if (parsed && typeof parsed === "object") {
-        globalJsonLd = parsed;
+        const normalizedParsed = { ...parsed };
+        const rawUrl = typeof normalizedParsed.url === "string" ? normalizedParsed.url.trim() : "";
+        if (!rawUrl || rawUrl === "/" || (isUnverifiedLegacyDomain(rawUrl) && !isUnverifiedLegacyDomain(canonicalBase))) {
+          normalizedParsed.url = canonicalBase;
+        }
+        globalJsonLd = normalizedParsed;
       }
     } catch {
       // Keep generated valid WebSite schema if stored JSON is malformed
@@ -238,6 +262,7 @@ export function resolveDocumentHeadMetadata(params: {
     twitterTitle: resolvedTwitterTitle,
     twitterDescription: resolvedTwitterDesc,
     twitterImage: resolvedTwitterImage,
+    googleSiteVerification: (settings?.googleSiteVerification || "").trim(),
     globalJsonLd,
     pageJsonLd: page?.jsonLd,
   };
@@ -350,6 +375,7 @@ function applyUnifiedHead(location: string, settings?: Partial<SiteSettings> | n
   setOrCreateMeta("twitter:title", resolved.twitterTitle);
   setOrCreateMeta("twitter:description", resolved.twitterDescription);
   setOrCreateMeta("twitter:image", resolved.twitterImage);
+  setOrCreateMeta("google-site-verification", resolved.googleSiteVerification);
 
   setOrCreateJsonLd("linkcloud-global-jsonld", resolved.globalJsonLd);
   setOrCreateJsonLd("page-jsonld", resolved.pageJsonLd);

@@ -1,6 +1,6 @@
 import type { Env } from "./api/email-change/_common";
 import { firestoreGetDoc, firestoreListCollection } from "./api/email-change/_firestore";
-import { buildDynamicRobotsTxt } from "../src/server/seo-endpoints";
+import { buildDynamicRobotsTxt } from "../src/lib/seo-builder";
 
 export async function onRequestGet(context: {
   request: Request;

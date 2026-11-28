@@ -10,6 +10,7 @@ import {
   firestoreSetDoc,
   firestoreRunQueryField,
 } from "../email-change/_firestore";
+import { handleAdminFirestoreError } from "../admin/_admin-common";
 
 export async function onRequestOptions(): Promise<Response> {
   return new Response(null, {
@@ -240,6 +241,6 @@ export async function onRequestPost(context: {
     });
   } catch (err: any) {
     console.error("[Cloudflare Groups] Group submission error:", err?.message || "unexpected");
-    return errorResponse("Failed to submit group. Please try again.", 500);
+    return handleAdminFirestoreError(err, "Failed to submit group. Please try again.");
   }
 }

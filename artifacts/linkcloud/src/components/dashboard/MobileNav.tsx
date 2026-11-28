@@ -12,6 +12,8 @@ import {
 } from "lucide-react";
 import { useTheme } from "next-themes";
 import { useState, useEffect } from "react";
+import { toast } from "sonner";
+import { useSiteSettings } from "@/contexts/SiteSettingsContext";
 import type { DashboardTab } from "@/hooks/useDashboardTabs";
 import type { UserProfile } from "@/lib/types";
 
@@ -30,9 +32,14 @@ export function MobileTopNav({
   onNavigateNotifications,
   onNavigateProfile,
 }: MobileTopNavProps) {
-  const { theme, setTheme } = useTheme();
+  const { resolvedTheme } = useTheme();
+  const { settings } = useSiteSettings();
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
+
+  const configuredTheme = settings?.websiteTheme || (settings as any)?.theme || "dark";
+  const effectiveTheme = configuredTheme === "system" ? (resolvedTheme || "dark") : configuredTheme;
+  const brandTitle = settings?.headerTitle || settings?.siteName || "LinkCloud";
 
   const getInitials = (name: string) => {
     const parts = name.trim().split(" ");
@@ -58,8 +65,8 @@ export function MobileTopNav({
             <Layers className="w-4 h-4" />
           </div>
           <div className="flex flex-col min-w-0">
-            <span className="font-bold text-sm text-slate-900 dark:text-white tracking-tight leading-none">
-              LinkCloud
+            <span className="font-bold text-sm text-slate-900 dark:text-white tracking-tight leading-none truncate">
+              {brandTitle}
             </span>
             <span className="text-[10px] text-purple-600 dark:text-purple-400 font-semibold leading-tight">
               Dashboard
@@ -68,17 +75,24 @@ export function MobileTopNav({
         </Link>
       </div>
 
-      {/* Right: Theme Toggle, Notifications, Avatar */}
+      {/* Right: Theme Indicator, Notifications, Avatar */}
       <div className="flex items-center gap-1.5 flex-shrink-0">
         <button
-          onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+          onClick={() => {
+            if (configuredTheme === "system") {
+              toast.info(`Theme is set by Webmaster to follow your device System Preference (${effectiveTheme.toUpperCase()} mode is active).`);
+            } else {
+              toast.info(`Theme is centrally enforced by Webmaster: ${effectiveTheme.toUpperCase()} mode is active.`);
+            }
+          }}
           className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
-          aria-label="Toggle theme"
+          aria-label={configuredTheme === "system" ? `Theme: System Preference (${effectiveTheme} mode active)` : `Theme: ${effectiveTheme} (Enforced by Webmaster)`}
+          title={configuredTheme === "system" ? `Theme: Following System Preference (${effectiveTheme} mode active)` : `Theme: ${effectiveTheme} (Enforced by Webmaster)`}
         >
-          {mounted && theme === "dark" ? (
-            <Sun className="w-4 h-4 text-amber-400" />
+          {mounted && effectiveTheme === "dark" ? (
+            <Moon className="w-4 h-4 text-purple-400" />
           ) : (
-            <Moon className="w-4 h-4 text-slate-600" />
+            <Sun className="w-4 h-4 text-amber-500" />
           )}
         </button>
 
@@ -126,9 +140,11 @@ export function MobileBottomNav({
   onOpenMenu,
   unreadCount = 0,
 }: MobileBottomNavProps) {
+  const { settings } = useSiteSettings();
+  const favoritesEnabled = settings?.favoritesEnabled !== false;
   const isOverview = activeTab === "overview";
   const isMyGroups = activeTab === "my-groups" || activeTab === "groups" || activeTab === "submitted";
-  const isFavorites = activeTab === "favorites";
+  const isFavorites = favoritesEnabled && activeTab === "favorites";
   const isMore = !isOverview && !isMyGroups && !isFavorites;
 
   return (
@@ -171,21 +187,23 @@ export function MobileBottomNav({
       </button>
 
       {/* 3. Favorites */}
-      <button
-        id="mobile-nav-favorites"
-        onClick={() => onTabChange("favorites")}
-        className={`min-w-[48px] min-h-[48px] flex-1 flex flex-col items-center justify-center gap-1 rounded-xl text-[11px] font-bold transition-all relative ${
-          isFavorites
-            ? "text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-950/60"
-            : "text-slate-500 dark:text-slate-400 hover:text-purple-600 dark:hover:text-purple-300 active:scale-95"
-        }`}
-      >
-        <Heart className={`w-5 h-5 ${isFavorites ? "stroke-[2.5] text-purple-600 dark:text-purple-400" : "stroke-2"}`} />
-        <span className="leading-none">Favorites</span>
-        {isFavorites && (
-          <span className="w-1 h-1 rounded-full bg-purple-600 dark:bg-purple-400" />
-        )}
-      </button>
+      {favoritesEnabled && (
+        <button
+          id="mobile-nav-favorites"
+          onClick={() => onTabChange("favorites")}
+          className={`min-w-[48px] min-h-[48px] flex-1 flex flex-col items-center justify-center gap-1 rounded-xl text-[11px] font-bold transition-all relative ${
+            isFavorites
+              ? "text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-950/60"
+              : "text-slate-500 dark:text-slate-400 hover:text-purple-600 dark:hover:text-purple-300 active:scale-95"
+          }`}
+        >
+          <Heart className={`w-5 h-5 ${isFavorites ? "stroke-[2.5] text-purple-600 dark:text-purple-400" : "stroke-2"}`} />
+          <span className="leading-none">Favorites</span>
+          {isFavorites && (
+            <span className="w-1 h-1 rounded-full bg-purple-600 dark:bg-purple-400" />
+          )}
+        </button>
+      )}
 
       {/* 4. More */}
       <button

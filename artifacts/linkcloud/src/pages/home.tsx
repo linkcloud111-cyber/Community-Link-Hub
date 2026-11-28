@@ -82,7 +82,7 @@ export default function Home() {
           getTrendingGroups(),
           getLatestGroups(),
           getApprovedGroups(),
-          fetchPublicFaqs().catch(() => []),
+          fetchPublicFaqs().catch((): FAQItem[] => []),
         ]);
         setFeatured(feat);
         setPopular(trend);
@@ -101,9 +101,12 @@ export default function Home() {
     loadInitial();
   }, []);
 
+  const isSearchEnabled = settings?.searchEnabled !== false;
+  const isPublicDirectoryVisible = settings?.publicDirectoryEnabled !== false || isWebmaster;
+
   // Handle instant autocomplete suggestions
   useEffect(() => {
-    if (!search.trim()) {
+    if (!search.trim() || !isSearchEnabled || !isPublicDirectoryVisible) {
       setSuggestions([]);
       setShowSuggestions(false);
       return;
@@ -120,10 +123,11 @@ export default function Home() {
     }, 200);
 
     return () => clearTimeout(timer);
-  }, [search]);
+  }, [search, isSearchEnabled, isPublicDirectoryVisible]);
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!isSearchEnabled) return;
     if (search.trim()) {
       logSearchQuery(search.trim());
       setLocation(`/groups?q=${encodeURIComponent(search.trim())}`);
@@ -258,12 +262,36 @@ export default function Home() {
               </AnimatePresence>
             </div>
             )}
+
+            {settings?.searchEnabled === false && isPublicDirectoryVisible && (
+              <div className="pt-2">
+                <Link
+                  href={settings?.heroButtonLink?.trim() || "/groups"}
+                  className="inline-flex items-center gap-2 px-7 py-3.5 bg-primary text-primary-foreground font-bold rounded-2xl text-sm shadow-lg shadow-primary/25 hover:bg-primary/90 transition"
+                >
+                  <span>{settings?.heroButtonText || "Explore Groups"}</span>
+                  <ChevronRight className="w-4 h-4" />
+                </Link>
+              </div>
+            )}
           </motion.div>
         </section>
       )}
 
+      {!isPublicDirectoryVisible && (
+        <section className="max-w-2xl mx-auto p-8 rounded-3xl bg-card border border-amber-500/30 text-center space-y-3 shadow-sm">
+          <div className="w-12 h-12 rounded-2xl bg-amber-500/10 text-amber-500 flex items-center justify-center mx-auto border border-amber-500/20">
+            <Compass className="w-6 h-6" />
+          </div>
+          <h2 className="text-xl font-bold text-foreground">Public Directory Temporarily Paused</h2>
+          <p className="text-sm text-muted-foreground">
+            Community browsing is currently paused by the webmaster. Please check back later.
+          </p>
+        </section>
+      )}
+
       {/* Featured Groups Carousel Section */}
-      {settings?.featuredGroupsEnabled !== false && (loadingInitial || featured.length > 0) && (
+      {isPublicDirectoryVisible && settings?.featuredGroupsEnabled !== false && (loadingInitial || featured.length > 0) && (
         <section className="space-y-4">
           <div className="flex items-center justify-between border-b border-border/80 pb-3">
             <div className="flex items-center gap-2">
@@ -275,7 +303,10 @@ export default function Home() {
                 <p className="text-xs text-muted-foreground">Handpicked high-engagement verified groups</p>
               </div>
             </div>
-            <Link href="/groups?featured=true" className="text-xs font-bold text-primary hover:underline flex items-center gap-1">
+            <Link
+              href={settings?.filterSettings?.featuredFilterEnabled !== false ? "/groups?featured=true" : "/groups"}
+              className="text-xs font-bold text-primary hover:underline flex items-center gap-1"
+            >
               View All Featured <ChevronRight className="w-3.5 h-3.5" />
             </Link>
           </div>
@@ -289,7 +320,7 @@ export default function Home() {
       )}
 
       {/* Popular Platforms Grid */}
-      {settings?.popularPlatformsEnabled !== false && platforms.length > 0 && (
+      {isPublicDirectoryVisible && settings?.popularPlatformsEnabled !== false && platforms.length > 0 && (
         <section className="space-y-4">
           <div className="border-b border-border/80 pb-3">
             <h2 className="text-xl font-bold tracking-tight flex items-center gap-2">
@@ -327,7 +358,7 @@ export default function Home() {
       )}
 
       {/* Popular Categories Grid */}
-      {settings?.popularCategoriesEnabled !== false && categories.length > 0 && (
+      {isPublicDirectoryVisible && settings?.popularCategoriesEnabled !== false && categories.length > 0 && (
         <section className="space-y-4">
           <div className="flex items-center justify-between border-b border-border/80 pb-3">
             <div>
@@ -373,7 +404,7 @@ export default function Home() {
       )}
 
       {/* Popular & Trending Section */}
-      {settings?.popularGroupsEnabled !== false && (loadingInitial || popular.length > 0) && (
+      {isPublicDirectoryVisible && settings?.popularGroupsEnabled !== false && (loadingInitial || popular.length > 0) && (
         <section className="space-y-4">
           <div className="flex items-center justify-between border-b border-border/80 pb-3">
             <div className="flex items-center gap-2">
@@ -385,7 +416,10 @@ export default function Home() {
                 <p className="text-xs text-muted-foreground">Highest join activity in the last 24 hours</p>
               </div>
             </div>
-            <Link href="/groups?sort=popular" className="text-xs font-bold text-primary hover:underline flex items-center gap-1">
+            <Link
+              href={settings?.filterSettings?.popularFilterEnabled !== false ? "/groups?sort=popular" : "/groups"}
+              className="text-xs font-bold text-primary hover:underline flex items-center gap-1"
+            >
               View All Trending <ChevronRight className="w-3.5 h-3.5" />
             </Link>
           </div>
@@ -401,7 +435,7 @@ export default function Home() {
       )}
 
       {/* Latest Submissions */}
-      {settings?.latestGroupsEnabled !== false && (loadingInitial || latest.length > 0) && (
+      {isPublicDirectoryVisible && settings?.latestGroupsEnabled !== false && (loadingInitial || latest.length > 0) && (
         <section className="space-y-4">
           <div className="flex items-center justify-between border-b border-border/80 pb-3">
             <div className="flex items-center gap-2">
@@ -413,7 +447,10 @@ export default function Home() {
                 <p className="text-xs text-muted-foreground">Freshly verified links added today</p>
               </div>
             </div>
-            <Link href="/groups?sort=latest" className="text-xs font-bold text-primary hover:underline flex items-center gap-1">
+            <Link
+              href={settings?.filterSettings?.newestFilterEnabled !== false ? "/groups?sort=latest" : "/groups"}
+              className="text-xs font-bold text-primary hover:underline flex items-center gap-1"
+            >
               View All Latest <ChevronRight className="w-3.5 h-3.5" />
             </Link>
           </div>
@@ -429,7 +466,7 @@ export default function Home() {
       )}
 
       {/* Live Directory Statistics Counter */}
-      {settings?.statisticsSectionEnabled !== false && (
+      {isPublicDirectoryVisible && settings?.statisticsSectionEnabled !== false && (
         <section className="bg-card border border-border/80 rounded-3xl p-8 relative overflow-hidden shadow-xl">
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-6 text-center relative z-10">
             <div className="space-y-1">
@@ -439,11 +476,11 @@ export default function Home() {
               <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Active Groups</p>
             </div>
             <div className="space-y-1">
-              <p className="text-3xl sm:text-4xl font-extrabold text-emerald-500">{activeStates.length || 36}</p>
+              <p className="text-3xl sm:text-4xl font-extrabold text-emerald-500">{activeStates.length.toLocaleString()}</p>
               <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Indian States & UTs</p>
             </div>
             <div className="space-y-1">
-              <p className="text-3xl sm:text-4xl font-extrabold text-blue-500">{platforms.length || 9}</p>
+              <p className="text-3xl sm:text-4xl font-extrabold text-blue-500">{platforms.length.toLocaleString()}</p>
               <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Platforms</p>
             </div>
             <div className="space-y-1">

@@ -83,11 +83,12 @@ export async function onRequestPost(context: {
     return errorResponse("Password must be at least 8 characters long.", 400);
   }
 
-  // 1. Check duplicates (unified safe 409 prevents email/phone enumeration)
-  const SAFE_CONFLICT_MSG =
-    "Unable to complete registration with the provided details. If you already have an account, please sign in.";
+  try {
+    // 1. Check duplicates (unified safe 409 prevents email/phone enumeration)
+    const SAFE_CONFLICT_MSG =
+      "Unable to complete registration with the provided details. If you already have an account, please sign in.";
 
-  const existingEmail = await firestoreGetDoc(`emailIndex/${cleanEmail}`, env);
+    const existingEmail = await firestoreGetDoc(`emailIndex/${cleanEmail}`, env);
   if (existingEmail) {
     return errorResponse(SAFE_CONFLICT_MSG, 409);
   }
@@ -257,11 +258,28 @@ export async function onRequestPost(context: {
     }
   }
 
-  return jsonResponse({
-    success: true,
-    uid: candidateUid,
-    accountUid: candidateUid,
-    customToken,
-    message: "User successfully provisioned with canonical UID.",
-  });
+    return jsonResponse({
+      success: true,
+      uid: candidateUid,
+      accountUid: candidateUid,
+      customToken,
+      message: "User successfully provisioned with canonical UID.",
+    });
+  } catch (err: any) {
+    const msg = String(err?.message || "");
+    const isTransient =
+      msg.includes("RESOURCE_EXHAUSTED") ||
+      msg.includes("Quota exceeded") ||
+      msg.includes("UNAVAILABLE") ||
+      msg.includes("DEADLINE_EXCEEDED") ||
+      msg.includes("429") ||
+      msg.includes("503");
+    console.error("[Cloudflare Auth] User provision failure:", msg || "unexpected");
+    return errorResponse(
+      isTransient
+        ? "Registration service is temporarily busy. Please try again in a moment."
+        : "Unable to complete registration. Please try again later.",
+      isTransient ? 503 : 500
+    );
+  }
 }

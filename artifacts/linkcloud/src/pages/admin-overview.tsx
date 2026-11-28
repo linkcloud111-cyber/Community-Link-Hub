@@ -23,6 +23,7 @@ import {
   Link as LinkIcon,
   EyeOff,
   Flame,
+  RefreshCw,
 } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from "recharts";
 
@@ -43,12 +44,24 @@ const PLATFORM_COLORS: Record<string, string> = {
 export default function AdminOverview() {
   const [stats, setStats] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const loadStats = () => {
+    setLoading(true);
+    setError(null);
+    getAdminStats()
+      .then((data) => {
+        setStats(data);
+      })
+      .catch((err) => {
+        console.error("[Admin Overview] Failed to load stats:", err);
+        setError(err?.message || "Unable to load live metrics from Firestore right now.");
+      })
+      .finally(() => setLoading(false));
+  };
 
   useEffect(() => {
-    getAdminStats()
-      .then(setStats)
-      .catch(console.error)
-      .finally(() => setLoading(false));
+    loadStats();
   }, []);
 
   if (loading) {
@@ -62,6 +75,7 @@ export default function AdminOverview() {
   const chartData = stats?.topPlatforms
     ? stats.topPlatforms.map(([name, value]: [string, number]) => ({
         name: name.split(" ")[0],
+        fullName: name,
         value,
       }))
     : [];
@@ -88,6 +102,21 @@ export default function AdminOverview() {
 
       {/* Admin Navigation */}
       <AdminNav stats={stats} />
+
+      {error && (
+        <div className="p-4 rounded-2xl bg-destructive/10 border border-destructive/20 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5 text-sm text-destructive font-medium">
+            <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+            <span>{error}</span>
+          </div>
+          <button
+            onClick={loadStats}
+            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-card border border-border text-xs font-bold hover:bg-muted transition-colors self-start sm:self-auto"
+          >
+            <RefreshCw className="w-3.5 h-3.5" /> Retry Sync
+          </button>
+        </div>
+      )}
 
       {/* Primary Metrics Grid */}
       <div className="space-y-4">
@@ -187,6 +216,7 @@ export default function AdminOverview() {
                 <YAxis stroke="#888888" fontSize={11} tickLine={false} axisLine={false} allowDecimals={false} />
                 <Tooltip
                   cursor={{ fill: "rgba(255,255,255,0.05)" }}
+                  labelFormatter={(label, payload) => payload?.[0]?.payload?.fullName || String(label)}
                   contentStyle={{
                     backgroundColor: "hsl(var(--card))",
                     border: "1px solid hsl(var(--border))",
@@ -198,7 +228,7 @@ export default function AdminOverview() {
                   {chartData.map((entry: any, index: number) => (
                     <Cell
                       key={`cell-${index}`}
-                      fill={PLATFORM_COLORS[entry.name] ?? "hsl(var(--primary))"}
+                      fill={PLATFORM_COLORS[entry.fullName] ?? PLATFORM_COLORS[entry.name] ?? "hsl(var(--primary))"}
                     />
                   ))}
                 </Bar>

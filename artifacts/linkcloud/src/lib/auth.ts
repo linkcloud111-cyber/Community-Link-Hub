@@ -2310,7 +2310,7 @@ export async function checkAndSyncEmailChangeStatus(
 
       // 3. Check expiration (READ-ONLY)
       if (activeReq && (activeReq.status === "expired" || (activeReq.status === "pending" && now > activeReq.expiresAt))) {
-        console.warn("[EMAIL SYNC READ-ONLY] Request has expired (15-minute TTL elapsed)");
+        console.warn("[EMAIL SYNC READ-ONLY] Request has expired (5-minute TTL elapsed)");
         const msg = "Verification link expired. Please send a new verification link.";
         if (manual) toast.error(msg);
         return { status: "expired", message: msg };

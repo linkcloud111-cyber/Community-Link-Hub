@@ -128,21 +128,17 @@ export function SiteSettingsProvider({ children }: { children: React.ReactNode }
     if (db && typeof db === "object" && "app" in db) {
       unsub = onSnapshot(
         doc(db, "settings", "site"),
-        async (snap) => {
-          if (snap.exists()) {
-            const full = await getSiteSettings();
-            setSettings(full);
-            if (typeof window !== "undefined") {
-              try {
-                window.localStorage.setItem("lc_cached_site_settings", JSON.stringify(full));
-              } catch {}
-            }
-            setLoading(false);
-          } else {
-            const fallback = await getSiteSettings();
-            setSettings(fallback);
-            setLoading(false);
+        (snap) => {
+          const full = snap.exists()
+            ? normalizeSiteSettings(snap.data() as Partial<SiteSettings>)
+            : DEFAULT_SITE_SETTINGS;
+          setSettings(full);
+          if (typeof window !== "undefined") {
+            try {
+              window.localStorage.setItem("lc_cached_site_settings", JSON.stringify(full));
+            } catch {}
           }
+          setLoading(false);
         },
         async (err) => {
           console.warn("[SiteSettings] Snapshot listener fallback:", err);

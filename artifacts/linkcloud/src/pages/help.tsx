@@ -84,7 +84,7 @@ export default function HelpPage() {
   }, [articles, search, selectedCategory]);
 
   const hasCmsBlocks = Boolean(published && page && Array.isArray(page.blocks) && page.blocks.length > 0);
-  const isLoading = pageLoading && articlesLoading;
+  const isLoading = pageLoading || articlesLoading;
 
   if (!pageLoading && disabled) {
     return (

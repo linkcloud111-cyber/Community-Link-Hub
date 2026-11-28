@@ -5,7 +5,7 @@ import {
   firestoreDeleteDoc,
   firestoreListCollection,
 } from "../email-change/_firestore";
-import { requireWebmasterAuth } from "./_admin-common";
+import { handleAdminFirestoreError, requireWebmasterAuth } from "./_admin-common";
 
 export async function onRequestOptions(): Promise<Response> {
   return new Response(null, {
@@ -114,7 +114,7 @@ export async function onRequestGet(context: {
 
     return jsonResponse({ success: true, announcements: items });
   } catch (err: any) {
-    return errorResponse(err?.message || "Failed to list announcements", 500);
+    return handleAdminFirestoreError(err, "Failed to list announcements");
   }
 }
 
@@ -174,7 +174,7 @@ export async function onRequestPost(context: {
       announcement: docData,
     });
   } catch (err: any) {
-    return errorResponse(err?.message || "Failed to create announcement", 500);
+    return handleAdminFirestoreError(err, "Failed to create announcement");
   }
 }
 
@@ -221,7 +221,7 @@ export async function onRequestPut(context: {
         action: "Announcement Updated",
         details: `Updated site-wide announcement "${updateData.title}" (ID: ${id})`,
         actorUid: auth.uid || "webmaster",
-        actorEmail: auth.email || "webmaster@linkcloud.in",
+        actorEmail: auth.email || "webmaster@localhost.invalid",
         createdAt: nowIso,
         timestamp: nowIso,
       },
@@ -235,7 +235,7 @@ export async function onRequestPut(context: {
       announcement: { id, ...updateData },
     });
   } catch (err: any) {
-    return errorResponse(err?.message || "Failed to update announcement", 500);
+    return handleAdminFirestoreError(err, "Failed to update announcement");
   }
 }
 
@@ -265,7 +265,7 @@ export async function onRequestDelete(context: {
         action: "Announcement Deleted",
         details: `Deleted site-wide announcement "${existing.title || id}" (ID: ${id})`,
         actorUid: auth.uid || "webmaster",
-        actorEmail: auth.email || "webmaster@linkcloud.in",
+        actorEmail: auth.email || "webmaster@localhost.invalid",
         createdAt: new Date().toISOString(),
         timestamp: new Date().toISOString(),
       },
@@ -275,6 +275,6 @@ export async function onRequestDelete(context: {
 
     return jsonResponse({ success: true, message: "Announcement deleted successfully." });
   } catch (err: any) {
-    return errorResponse(err?.message || "Failed to delete announcement", 500);
+    return handleAdminFirestoreError(err, "Failed to delete announcement");
   }
 }

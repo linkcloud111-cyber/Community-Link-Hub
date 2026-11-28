@@ -6,11 +6,20 @@ Disallow: /admin
 Disallow: /admin/*
 Disallow: /dashboard
 Disallow: /dashboard/*
-Disallow: /submit
+Disallow: /my-groups
+Disallow: /profile
+Disallow: /settings
+Disallow: /submitted-groups
+Disallow: /my-submitted-groups
+Disallow: /my-profile
+Disallow: /profile-settings
+Disallow: /change-password
+Disallow: /account-security
+Disallow: /favorites
+Disallow: /notifications
 Disallow: /verify-email
 Disallow: /verify-handler
 Disallow: /email-action
-Disallow: /login
-Disallow: /register
 Disallow: /reset-password
 
+Sitemap: https://community-link-hub.pages.dev/sitemap.xml

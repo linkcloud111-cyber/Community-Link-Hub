@@ -177,7 +177,13 @@ export default function AdminLocations() {
       const newStatus = !st.enabled;
       await toggleStateFirestore(st.id, st.name, newStatus, actorUid, actorEmail);
       toast.success(newStatus ? `State "${st.name}" enabled` : `State "${st.name}" disabled`);
-      setStates((prev) => prev.map((item) => (item.id === st.id ? { ...item, enabled: newStatus } : item)));
+      setStates((prev) =>
+        prev.map((item) =>
+          item.id === st.id
+            ? { ...item, enabled: newStatus, status: newStatus ? "active" : "disabled" }
+            : item
+        )
+      );
     } catch {
       toast.error("Failed to update state status");
     }

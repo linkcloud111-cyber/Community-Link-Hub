@@ -10,6 +10,20 @@ import {
   validateReportPayload,
 } from "../lib/group-validation.ts";
 
+function isTransientFirestoreError(err: any): boolean {
+  const code = Number(err?.code);
+  const msg = String(err?.message || "");
+  return (
+    code === 8 ||
+    code === 14 ||
+    code === 4 ||
+    msg.includes("RESOURCE_EXHAUSTED") ||
+    msg.includes("Quota exceeded") ||
+    msg.includes("UNAVAILABLE") ||
+    msg.includes("DEADLINE_EXCEEDED")
+  );
+}
+
 function sendJson(res: ServerResponse, data: any, status = 200) {
   res.statusCode = status;
   res.setHeader("Content-Type", "application/json");
@@ -325,8 +339,18 @@ export async function handleGroupSubmitRequest(
       status: safeStatus,
     });
   } catch (err: any) {
+    const isTransient = isTransientFirestoreError(err);
     console.error("[Groups API] Submit group error:", err?.message || "unexpected");
-    sendJson(res, { success: false, error: "Failed to submit group. Please try again." }, 500);
+    sendJson(
+      res,
+      {
+        success: false,
+        error: isTransient
+          ? "Database service is temporarily busy. Please try again in a moment."
+          : "Failed to submit group. Please try again.",
+      },
+      isTransient ? 503 : 500
+    );
   }
 }
 
@@ -459,7 +483,17 @@ export async function handleReportSubmitRequest(
       id: reportId,
     });
   } catch (err: any) {
+    const isTransient = isTransientFirestoreError(err);
     console.error("[Reports API] Submit report error:", err?.message || "unexpected");
-    sendJson(res, { success: false, error: "Failed to submit report. Please try again." }, 500);
+    sendJson(
+      res,
+      {
+        success: false,
+        error: isTransient
+          ? "Database service is temporarily busy. Please try again in a moment."
+          : "Failed to submit report. Please try again.",
+      },
+      isTransient ? 503 : 500
+    );
   }
 }

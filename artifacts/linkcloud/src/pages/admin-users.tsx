@@ -194,7 +194,7 @@ export default function AdminUsers() {
   };
 
   const handleVerifyUserFully = async (uid: string) => {
-    const webmasterEmail = currentUser?.email || "webmaster@linkcloud.in";
+    const webmasterEmail = currentUser?.email || "webmaster@localhost.invalid";
     const webmasterUid = currentUser?.uid || "webmaster";
 
     setUpdating(uid);
@@ -219,7 +219,7 @@ export default function AdminUsers() {
   };
 
   const handleToggleEmailVerify = async (uid: string, current: boolean) => {
-    const webmasterEmail = currentUser?.email || "webmaster@linkcloud.in";
+    const webmasterEmail = currentUser?.email || "webmaster@localhost.invalid";
     const webmasterUid = currentUser?.uid || "webmaster";
 
     setUpdating(uid);
@@ -239,7 +239,7 @@ export default function AdminUsers() {
   };
 
   const handleTogglePhoneVerify = async (uid: string, current: boolean) => {
-    const webmasterEmail = currentUser?.email || "webmaster@linkcloud.in";
+    const webmasterEmail = currentUser?.email || "webmaster@localhost.invalid";
     const webmasterUid = currentUser?.uid || "webmaster";
 
     setUpdating(uid);
@@ -268,7 +268,7 @@ export default function AdminUsers() {
       return;
     }
 
-    const webmasterEmail = currentUser?.email || "webmaster@linkcloud.in";
+    const webmasterEmail = currentUser?.email || "webmaster@localhost.invalid";
     const webmasterUid = currentUser?.uid || "webmaster";
 
     setUpdating(uid);
@@ -298,7 +298,7 @@ export default function AdminUsers() {
       return;
     }
 
-    const webmasterEmail = currentUser?.email || "webmaster@linkcloud.in";
+    const webmasterEmail = currentUser?.email || "webmaster@localhost.invalid";
     const webmasterUid = currentUser?.uid || "webmaster";
 
     setUpdating(requestId);
@@ -327,7 +327,7 @@ export default function AdminUsers() {
     const requestId = rejectTargetRequest.id;
     const uid = rejectTargetRequest.uid;
 
-    const webmasterEmail = currentUser?.email || "webmaster@linkcloud.in";
+    const webmasterEmail = currentUser?.email || "webmaster@localhost.invalid";
     const webmasterUid = currentUser?.uid || "webmaster";
 
     setUpdating(requestId);
@@ -376,7 +376,7 @@ export default function AdminUsers() {
       console.log("[WEBMASTER USERS]", {
         Action: "EDIT_USER_PROFILE",
         UID: editUser.uid,
-        CurrentWebmaster: currentUser?.email || "webmaster@linkcloud.in",
+        CurrentWebmaster: currentUser?.email || "webmaster@localhost.invalid",
         Authorized: true,
         UpdatedFields: {
           displayName: editUser.displayName,

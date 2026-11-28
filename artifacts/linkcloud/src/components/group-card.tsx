@@ -90,12 +90,6 @@ export default function GroupCard({ group, delay = 0 }: GroupCardProps) {
     setReportOpen(true);
   };
 
-  const handleViewDetails = (e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setLocation(`/groups/${group.id}`);
-  };
-
   const locationParts = [group.city, group.district, group.state]
     .filter(Boolean)
     .join(", ");
@@ -168,7 +162,13 @@ export default function GroupCard({ group, delay = 0 }: GroupCardProps) {
             {/* Group Name, Tagline & Location */}
             <div>
               <h3 className="text-base font-bold text-foreground leading-tight line-clamp-1 group-hover:text-primary transition-colors">
-                {group.name}
+                <Link
+                  href={`/groups/${group.id}`}
+                  onClick={(e) => e.stopPropagation()}
+                  className="hover:underline focus:outline-none focus:underline"
+                >
+                  {group.name}
+                </Link>
               </h3>
               {group.tagline && (
                 <p className="text-xs font-medium text-muted-foreground mt-0.5 line-clamp-1">
@@ -262,13 +262,15 @@ export default function GroupCard({ group, delay = 0 }: GroupCardProps) {
             </button>
 
             {/* View Details */}
-            <button
-              onClick={handleViewDetails}
-              className="p-1.5 bg-card hover:bg-muted text-muted-foreground hover:text-foreground border border-border/60 rounded-xl text-xs font-medium transition-colors"
+            <Link
+              href={`/groups/${group.id}`}
+              onClick={(e) => e.stopPropagation()}
+              className="p-1.5 bg-card hover:bg-muted text-muted-foreground hover:text-foreground border border-border/60 rounded-xl text-xs font-medium transition-colors flex items-center justify-center"
               title="View Details"
+              aria-label={`View details for ${group.name}`}
             >
               <Info className="w-3.5 h-3.5" />
-            </button>
+            </Link>
 
             {/* Copy Link */}
             <button

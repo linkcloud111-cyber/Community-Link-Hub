@@ -34,7 +34,11 @@ import type {
   CmsPageAdminOverview,
 } from "@/lib/types";
 import { clearSiteSettingsCache } from "@/lib/page-meta";
-import { validateAdminSettingsPayload } from "@/lib/settings-validation";
+import {
+  isUnverifiedLegacyDomain,
+  OFFICIAL_CANONICAL_ORIGIN,
+  validateAdminSettingsPayload,
+} from "@/lib/settings-validation";
 import { getAuthEventLogs, type AuthEventLogRecord, changePassword, sendPasswordResetLink } from "@/lib/auth";
 import { validatePasswordStrength } from "@/lib/utils";
 import AdminNav from "@/components/admin-nav";
@@ -148,6 +152,7 @@ export default function AdminSettings() {
 
   // Announcements State
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
+  const [announcementsError, setAnnouncementsError] = useState<string | null>(null);
   const [announcementModalOpen, setAnnouncementModalOpen] = useState(false);
   const [editingAnnouncement, setEditingAnnouncement] = useState<Announcement | null>(null);
   const [announcementForm, setAnnouncementForm] = useState<Omit<Announcement, "id">>({
@@ -312,12 +317,22 @@ export default function AdminSettings() {
     }
   };
 
+  const loadAnnouncements = async () => {
+    setAnnouncementsError(null);
+    try {
+      const items = await getAnnouncements(false, true);
+      setAnnouncements(items);
+    } catch (err: any) {
+      setAnnouncementsError(err?.message || "Failed to load announcements from Firestore.");
+    }
+  };
+
   useEffect(() => {
     Promise.allSettled([
-      getSiteSettings(),
+      getSiteSettings(true),
       getAuditLogs(30),
       getSearchAnalytics(),
-      getAnnouncements(false),
+      getAnnouncements(false, true),
       getAuthEventLogs(40),
     ])
       .then(([siteRes, auditRes, searchRes, annRes, authLogsRes]) => {
@@ -340,6 +355,11 @@ export default function AdminSettings() {
         }
         if (annRes.status === "fulfilled" && annRes.value) {
           setAnnouncements(annRes.value);
+          setAnnouncementsError(null);
+        } else if (annRes.status === "rejected") {
+          setAnnouncementsError(
+            annRes.reason?.message || "Failed to load announcements from Firestore."
+          );
         }
         if (authLogsRes.status === "fulfilled" && authLogsRes.value) {
           setAuthEventLogs(authLogsRes.value);
@@ -422,8 +442,9 @@ export default function AdminSettings() {
 
       clearSiteSettingsCache();
       toast.success("Webmaster global settings saved successfully");
-      const updatedLogs = await getAuditLogs(30);
-      setAuditLogs(updatedLogs);
+      getAuditLogs(30)
+        .then((updatedLogs) => setAuditLogs(updatedLogs))
+        .catch(() => {});
     } catch (err: any) {
       toast.error(err?.message || "Failed to save settings via Webmaster API");
     } finally {
@@ -674,8 +695,23 @@ export default function AdminSettings() {
       toast.success(editingAnnouncement ? "Announcement updated successfully" : "Announcement created successfully");
       setAnnouncementModalOpen(false);
       setEditingAnnouncement(null);
-      const freshList = await getAnnouncements(false);
-      setAnnouncements(freshList);
+      setAnnouncementsError(null);
+      const savedItem: Announcement | undefined = result?.announcement;
+      if (savedItem && savedItem.id) {
+        setAnnouncements((prev) => {
+          const exists = prev.some((a) => a.id === savedItem.id);
+          const next = exists
+            ? prev.map((a) => (a.id === savedItem.id ? { ...a, ...savedItem } : a))
+            : [savedItem, ...prev];
+          return [...next].sort((a, b) => {
+            const pDiff = (b.priority ?? 10) - (a.priority ?? 10);
+            if (pDiff !== 0) return pDiff;
+            return String(a.id).localeCompare(String(b.id));
+          });
+        });
+      } else {
+        await loadAnnouncements();
+      }
     } catch (err: any) {
       console.error("Failed to save announcement:", err);
       toast.error(err?.message || "Failed to save announcement.");
@@ -689,6 +725,7 @@ export default function AdminSettings() {
       toast.error("Webmaster authentication session missing. Please sign in again.");
       return;
     }
+    const previousItem = item;
     const newEnabled = !item.enabled;
     setAnnouncements((prev) =>
       prev.map((a) => (a.id === item.id ? { ...a, enabled: newEnabled } : a))
@@ -707,11 +744,17 @@ export default function AdminSettings() {
       if (!res.ok) {
         throw new Error(result?.error || `Failed to update announcement status (${res.status}).`);
       }
+      if (result?.announcement?.id) {
+        setAnnouncements((prev) =>
+          prev.map((a) => (a.id === item.id ? { ...a, ...result.announcement } : a))
+        );
+      }
       toast.success(`Announcement ${newEnabled ? "enabled" : "disabled"}`);
     } catch (err: any) {
       toast.error(err?.message || "Failed to update announcement status");
-      const fresh = await getAnnouncements(false).catch(() => null);
-      if (fresh) setAnnouncements(fresh);
+      setAnnouncements((prev) =>
+        prev.map((a) => (a.id === previousItem.id ? previousItem : a))
+      );
     }
   };
 
@@ -1336,7 +1379,37 @@ export default function AdminSettings() {
                     <input
                       value={settings.canonicalUrl || ""}
                       onChange={(e) => setSettings((s) => ({ ...s, canonicalUrl: e.target.value }))}
-                      placeholder="https://yourdomain.com"
+                      placeholder={OFFICIAL_CANONICAL_ORIGIN}
+                      className={inputClass}
+                    />
+                    {isUnverifiedLegacyDomain(settings.canonicalUrl) && (
+                      <div className="mt-2 p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-[11px] text-amber-700 dark:text-amber-300 space-y-1.5">
+                        <p className="font-semibold flex items-center gap-1.5">
+                          <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                          <span>linkcloud.in DNS is inactive — active SEO canonical automatically resolves to {OFFICIAL_CANONICAL_ORIGIN}</span>
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setSettings((s) => ({ ...s, canonicalUrl: OFFICIAL_CANONICAL_ORIGIN }))
+                          }
+                          className="px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 font-bold text-[10px] transition"
+                        >
+                          Use {OFFICIAL_CANONICAL_ORIGIN} in Form
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className={labelClass}>Google Search Console Verification Token</label>
+                    <input
+                      value={settings.googleSiteVerification || ""}
+                      onChange={(e) =>
+                        setSettings((s) => ({ ...s, googleSiteVerification: e.target.value }))
+                      }
+                      placeholder="Paste verification content token or full meta tag"
+                      maxLength={200}
                       className={inputClass}
                     />
                   </div>
@@ -1418,6 +1491,18 @@ export default function AdminSettings() {
                     Global JSON-LD updates the live runtime <code className="font-mono text-foreground">&lt;head&gt;</code> structured data tag immediately. Live dynamic <code className="font-mono text-foreground">/robots.txt</code> and <code className="font-mono text-foreground">/sitemap.xml</code> routes automatically reflect your Canonical Origin, indexing switch, and published public CMS/group pages.
                   </p>
 
+                  <ToggleCard
+                    title="Allow Search Engine Indexing"
+                    description="Enable crawling & indexing across robots.txt, sitemap.xml, and meta robots tags"
+                    enabled={settings.allowIndexing !== false}
+                    onToggle={() =>
+                      setSettings((s) => ({
+                        ...s,
+                        allowIndexing: s.allowIndexing === false,
+                      }))
+                    }
+                  />
+
                   <div>
                     <label className={labelClass}>Global WebSite Structured Data (JSON-LD)</label>
                     <textarea
@@ -1479,18 +1564,15 @@ export default function AdminSettings() {
                     }))
                   }
                 />
-                <ToggleCard
-                  title="Guest & Public Submissions (Disabled)"
-                  description="Sign-in is permanently required to submit communities; anonymous guest submissions cannot be enabled."
-                  enabled={false}
-                  onToggle={() => {
-                    toast.info("Sign-in is required for all community submissions by security policy.");
-                    setSettings((s) => ({
-                      ...s,
-                      allowPublicSubmissions: false,
-                    }));
-                  }}
-                />
+                <div className="p-4 rounded-2xl border border-border bg-muted/30 flex items-start gap-3">
+                  <Lock className="w-4 h-4 text-primary shrink-0 mt-0.5" />
+                  <div className="min-w-0">
+                    <div className="text-xs font-bold text-foreground">Authenticated Submissions Policy</div>
+                    <p className="text-[11px] text-muted-foreground mt-0.5 leading-relaxed">
+                      Sign-in is permanently enforced on all community link submissions to prevent spam and verify ownership.
+                    </p>
+                  </div>
+                </div>
                 <ToggleCard
                   title="Bookmark & Favorites"
                   description="Allow users to save groups to dashboard"
@@ -1898,8 +1980,37 @@ export default function AdminSettings() {
               </div>
 
               <p className="text-xs text-muted-foreground">
-                Cloudinary handles direct image uploads for group logos and user avatars when both Cloud Name and Unsigned Upload Preset are configured. Leave blank to route uploads through Firebase Storage.
+                Cloudinary handles direct image uploads for group logos and user avatars when enabled and configured with both Cloud Name and Unsigned Upload Preset. Disable or leave blank to route uploads through Firebase Storage.
               </p>
+
+              <ToggleCard
+                title="Enable Cloudinary Media Uploads"
+                description="Route group logos and user avatars through Cloudinary CDN when credentials are set"
+                enabled={Boolean(
+                  settings.cloudinarySettings?.enabled !== false &&
+                    (settings.cloudinaryCloudName || settings.cloudinarySettings?.cloudName || "").trim() &&
+                    (settings.cloudinaryUploadPreset || settings.cloudinarySettings?.uploadPreset || "").trim()
+                )}
+                onToggle={() => {
+                  const cloud = (settings.cloudinaryCloudName || settings.cloudinarySettings?.cloudName || "").trim();
+                  const preset = (settings.cloudinaryUploadPreset || settings.cloudinarySettings?.uploadPreset || "").trim();
+                  const currentlyEnabled =
+                    settings.cloudinarySettings?.enabled !== false && Boolean(cloud && preset);
+                  if (!currentlyEnabled && (!cloud || !preset)) {
+                    toast.error("Please enter both Cloudinary Cloud Name and Unsigned Upload Preset first.");
+                    return;
+                  }
+                  setSettings((s) => ({
+                    ...s,
+                    cloudinarySettings: {
+                      ...(s.cloudinarySettings || {}),
+                      cloudName: s.cloudinaryCloudName || s.cloudinarySettings?.cloudName || "",
+                      uploadPreset: s.cloudinaryUploadPreset || s.cloudinarySettings?.uploadPreset || "",
+                      enabled: !currentlyEnabled,
+                    },
+                  }));
+                }}
+              />
 
               <div>
                 <label className={labelClass}>Cloudinary Cloud Name</label>
@@ -1909,6 +2020,11 @@ export default function AdminSettings() {
                     const cloudName = e.target.value;
                     setSettings((s) => {
                       const preset = s.cloudinaryUploadPreset || s.cloudinarySettings?.uploadPreset || "";
+                      const wasConfigured = Boolean(
+                        (s.cloudinaryCloudName || s.cloudinarySettings?.cloudName || "").trim() &&
+                          preset.trim()
+                      );
+                      const keepDisabled = wasConfigured && s.cloudinarySettings?.enabled === false;
                       return {
                         ...s,
                         cloudinaryCloudName: cloudName,
@@ -1916,12 +2032,12 @@ export default function AdminSettings() {
                           ...(s.cloudinarySettings || {}),
                           cloudName,
                           uploadPreset: preset,
-                          enabled: Boolean(cloudName.trim() && preset.trim()),
+                          enabled: !keepDisabled && Boolean(cloudName.trim() && preset.trim()),
                         },
                       };
                     });
                   }}
-                  placeholder="Leave empty to disable Cloudinary (e.g. your-cloud-name)"
+                  placeholder="Leave empty to route uploads through Firebase Storage (e.g. your-cloud-name)"
                   className={inputClass}
                 />
               </div>
@@ -1934,6 +2050,11 @@ export default function AdminSettings() {
                     const uploadPreset = e.target.value;
                     setSettings((s) => {
                       const cloud = s.cloudinaryCloudName || s.cloudinarySettings?.cloudName || "";
+                      const wasConfigured = Boolean(
+                        cloud.trim() &&
+                          (s.cloudinaryUploadPreset || s.cloudinarySettings?.uploadPreset || "").trim()
+                      );
+                      const keepDisabled = wasConfigured && s.cloudinarySettings?.enabled === false;
                       return {
                         ...s,
                         cloudinaryUploadPreset: uploadPreset,
@@ -1941,12 +2062,12 @@ export default function AdminSettings() {
                           ...(s.cloudinarySettings || {}),
                           cloudName: cloud,
                           uploadPreset,
-                          enabled: Boolean(cloud.trim() && uploadPreset.trim()),
+                          enabled: !keepDisabled && Boolean(cloud.trim() && uploadPreset.trim()),
                         },
                       };
                     });
                   }}
-                  placeholder="Leave empty to disable Cloudinary (e.g. your_unsigned_preset)"
+                  placeholder="Leave empty to route uploads through Firebase Storage (e.g. your_unsigned_preset)"
                   className={inputClass}
                 />
               </div>
@@ -1989,7 +2110,22 @@ export default function AdminSettings() {
 
                     {/* Announcement Cards List */}
                     <div className="mt-6 space-y-4">
-                      {announcements.length === 0 ? (
+                      {announcementsError && announcements.length === 0 ? (
+                        <div className="text-center py-12 border border-destructive/30 rounded-2xl bg-destructive/5 px-4">
+                          <AlertTriangle className="w-10 h-10 text-destructive mx-auto mb-3" />
+                          <p className="text-sm font-semibold text-foreground">Unable to Load Announcements</p>
+                          <p className="text-xs text-muted-foreground max-w-md mx-auto mt-1 mb-4">
+                            {announcementsError}
+                          </p>
+                          <button
+                            type="button"
+                            onClick={loadAnnouncements}
+                            className="px-4 py-2 bg-primary text-primary-foreground text-xs font-bold rounded-xl shadow-sm hover:bg-primary/90 transition-all"
+                          >
+                            Retry Loading Announcements
+                          </button>
+                        </div>
+                      ) : announcements.length === 0 ? (
                         <div className="text-center py-12 border border-dashed border-border rounded-2xl bg-muted/20">
                           <Megaphone className="w-10 h-10 text-muted-foreground mx-auto mb-3 opacity-40" />
                           <p className="text-sm font-semibold text-foreground">No announcements configured yet</p>

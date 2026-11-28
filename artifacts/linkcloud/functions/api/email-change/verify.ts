@@ -138,8 +138,22 @@ async function processVerification({
       await adminUpdateUserEmail(effectiveUid, newEmail, env);
       console.log(`[VERIFY SUCCESS] Firebase Auth email updated for UID ${effectiveUid} -> ${newEmail}`);
     } catch (adminAuthErr: any) {
+      const msg = String(adminAuthErr?.message || "");
       console.error("[VERIFY ADMIN AUTH UPDATE ERROR]", adminAuthErr);
-      return errorResponse(`Failed to update authentication email: ${adminAuthErr.message}`, 500);
+      if (msg.includes("EMAIL_EXISTS") || msg.includes("email-already-exists")) {
+        return errorResponse("This Gmail address is already linked to another account.", 409);
+      }
+      const isTransient =
+        msg.includes("RESOURCE_EXHAUSTED") ||
+        msg.includes("UNAVAILABLE") ||
+        msg.includes("429") ||
+        msg.includes("503");
+      return errorResponse(
+        isTransient
+          ? "Verification service is temporarily busy. Please try again in a moment."
+          : `Failed to update authentication email: ${msg || "Unknown error"}`,
+        isTransient ? 503 : 500
+      );
     }
 
     // 7. Update Firestore Request Document to completed
@@ -227,7 +241,19 @@ async function processVerification({
       message: "New email address verified and updated successfully!",
     });
   } catch (err: any) {
-    console.error("[VERIFY EMAIL CHANGE ERROR]", err);
-    return errorResponse(err.message || "Internal server error", 500);
+    const msg = String(err?.message || "");
+    const isTransient =
+      msg.includes("RESOURCE_EXHAUSTED") ||
+      msg.includes("UNAVAILABLE") ||
+      msg.includes("DEADLINE_EXCEEDED") ||
+      msg.includes("429") ||
+      msg.includes("503");
+    console.error("[VERIFY EMAIL CHANGE ERROR]", msg || err);
+    return errorResponse(
+      isTransient
+        ? "Verification service is temporarily busy. Please try again in a moment."
+        : msg || "Internal server error",
+      isTransient ? 503 : 500
+    );
   }
 }

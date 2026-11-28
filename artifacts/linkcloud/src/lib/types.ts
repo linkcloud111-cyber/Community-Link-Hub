@@ -428,6 +428,8 @@ export interface SiteSettings {
   twitterCardTitle?: string;
   twitterCardDescription?: string;
   structuredDataJson?: string;
+  allowIndexing?: boolean;
+  googleSiteVerification?: string;
 
   // System Settings / Toggles
   allowPublicSubmissions: boolean;

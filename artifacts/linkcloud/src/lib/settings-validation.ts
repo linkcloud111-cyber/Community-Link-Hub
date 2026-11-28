@@ -115,6 +115,109 @@ export function isSafePublicUrl(rawUrl: string, allowRelative: boolean): boolean
   }
 }
 
+export const OFFICIAL_CANONICAL_ORIGIN = "https://community-link-hub.pages.dev";
+
+const UNVERIFIED_LEGACY_HOSTS = new Set(["linkcloud.in", "www.linkcloud.in"]);
+
+export function extractHostnameFromCandidate(candidate?: string | null): string {
+  if (!candidate || typeof candidate !== "string") return "";
+  const trimmed = candidate.trim();
+  if (!trimmed) return "";
+  try {
+    const withProto = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+    return new URL(withProto).hostname.toLowerCase();
+  } catch {
+    return "";
+  }
+}
+
+export function isUnverifiedLegacyDomain(candidate?: string | null): boolean {
+  const host = extractHostnameFromCandidate(candidate);
+  return Boolean(host && UNVERIFIED_LEGACY_HOSTS.has(host));
+}
+
+function isEphemeralOrLocalHost(candidate?: string | null): boolean {
+  const host = extractHostnameFromCandidate(candidate);
+  if (!host) return false;
+  if (host === "localhost" || host === "127.0.0.1" || host === "0.0.0.0") return true;
+  if (
+    host.endsWith(".run.app") ||
+    host.endsWith(".replit.dev") ||
+    host.endsWith(".repl.co") ||
+    host.endsWith(".community-link-hub.pages.dev")
+  ) {
+    return true;
+  }
+  return false;
+}
+
+function normalizeAbsoluteHttpOrigin(candidate?: string | null): string | null {
+  if (!candidate || typeof candidate !== "string") return null;
+  const trimmed = candidate.trim();
+  if (!trimmed || hasDisallowedUrlScheme(trimmed)) return null;
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
+    return parsed.origin.replace(/\/+$/, "");
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Resolves the active canonical origin consistently across Browser, Vite dev, and Cloudflare Functions.
+ * Ensures unverified legacy linkcloud.in settings and ephemeral preview/sandbox hosts are not emitted
+ * while live production traffic runs on community-link-hub.pages.dev, unless actively served on linkcloud.in.
+ */
+export function resolveActiveCanonicalOrigin(options: {
+  configuredCanonicalUrl?: string | null;
+  envOrigin?: string | null;
+  runtimeOrigin?: string | null;
+  requestUrl?: string | null;
+  hostHeader?: string | null;
+  forwardedProto?: string | null;
+}): string {
+  const fromRuntime = normalizeAbsoluteHttpOrigin(options.runtimeOrigin);
+  const fromRequestUrl = normalizeAbsoluteHttpOrigin(options.requestUrl);
+  let fromHostHeader: string | null = null;
+  const rawHost = (options.hostHeader || "").trim();
+  if (rawHost) {
+    const proto =
+      options.forwardedProto?.split(",")[0]?.trim() ||
+      (rawHost.includes("localhost") || rawHost.startsWith("127.0.0.1") ? "http" : "https");
+    fromHostHeader = normalizeAbsoluteHttpOrigin(`${proto}://${rawHost}`);
+  }
+
+  const activeHostOrigin = fromRuntime || fromRequestUrl || fromHostHeader;
+  const activeHostIsLegacy = isUnverifiedLegacyDomain(activeHostOrigin);
+
+  const fromConfigured = normalizeAbsoluteHttpOrigin(options.configuredCanonicalUrl);
+  if (fromConfigured && !isEphemeralOrLocalHost(fromConfigured)) {
+    if (!isUnverifiedLegacyDomain(fromConfigured) || activeHostIsLegacy) {
+      return fromConfigured;
+    }
+  }
+
+  const fromEnv = normalizeAbsoluteHttpOrigin(options.envOrigin);
+  if (
+    fromEnv &&
+    !isEphemeralOrLocalHost(fromEnv) &&
+    (!isUnverifiedLegacyDomain(fromEnv) || activeHostIsLegacy)
+  ) {
+    return fromEnv;
+  }
+
+  if (
+    activeHostOrigin &&
+    !isEphemeralOrLocalHost(activeHostOrigin) &&
+    (!isUnverifiedLegacyDomain(activeHostOrigin) || activeHostIsLegacy)
+  ) {
+    return activeHostOrigin;
+  }
+
+  return OFFICIAL_CANONICAL_ORIGIN;
+}
+
 export function normalizeHttpBaseUrl(rawUrl?: string, fallback = ""): string {
   const trimmed = (rawUrl || "").trim();
   if (trimmed && isSafePublicUrl(trimmed, false)) {
@@ -130,14 +233,15 @@ export function normalizeHttpBaseUrl(rawUrl?: string, fallback = ""): string {
 }
 
 /**
- * Resolves a canonical URL safely supporting both full http(s) URLs and same-site relative paths.
+ * Resolves a canonical URL safely supporting both full http(s) URLs and same-site relative paths
+ * (including intentional allowlisted query strings such as /groups?category=other when explicitly passed).
  */
 export function resolveCanonicalUrl(
   pageCanonical: string | undefined,
   canonicalBase: string,
   fallbackPath: string
 ): string {
-  const cleanBase = normalizeHttpBaseUrl(canonicalBase);
+  const cleanBase = normalizeHttpBaseUrl(canonicalBase, OFFICIAL_CANONICAL_ORIGIN);
   const cleanFallbackPath =
     fallbackPath && fallbackPath.startsWith("/") && !fallbackPath.startsWith("//")
       ? fallbackPath.split("?")[0].split("#")[0] || "/"
@@ -149,13 +253,18 @@ export function resolveCanonicalUrl(
       try {
         const parsed = new URL(rawPage);
         if (parsed.protocol === "http:" || parsed.protocol === "https:") {
+          if (isUnverifiedLegacyDomain(parsed.hostname) && !isUnverifiedLegacyDomain(cleanBase)) {
+            const pathWithSearch = `${parsed.pathname === "/" ? "" : parsed.pathname}${parsed.search}`;
+            return `${cleanBase}${pathWithSearch || ""}`;
+          }
           return parsed.toString();
         }
       } catch {
         // fallback below
       }
     } else if (rawPage.startsWith("/") && !rawPage.startsWith("//")) {
-      return `${cleanBase}${rawPage === "/" ? "" : rawPage}`;
+      const cleanRel = rawPage.split("#")[0] || "/";
+      return `${cleanBase}${cleanRel === "/" ? "" : cleanRel}`;
     }
   }
 
@@ -165,11 +274,16 @@ export function resolveCanonicalUrl(
 export function resolveSeoImageUrl(rawImage: string | undefined, canonicalBase: string): string {
   const trimmed = (rawImage || "").trim();
   if (!trimmed || hasDisallowedUrlScheme(trimmed)) return "";
+  const safeBase = normalizeHttpBaseUrl(canonicalBase, OFFICIAL_CANONICAL_ORIGIN);
   if (/^https?:\/\//i.test(trimmed)) {
-    return isSafePublicUrl(trimmed, false) ? trimmed : "";
+    if (!isSafePublicUrl(trimmed, false)) return "";
+    if (isUnverifiedLegacyDomain(trimmed) && !isUnverifiedLegacyDomain(safeBase)) {
+      return "";
+    }
+    return trimmed;
   }
   if (trimmed.startsWith("/") && !trimmed.startsWith("//")) {
-    return `${normalizeHttpBaseUrl(canonicalBase)}${trimmed}`;
+    return `${safeBase}${trimmed}`;
   }
   return "";
 }
@@ -202,6 +316,7 @@ const STRING_LENGTH_LIMITS: Array<{ field: string; label: string; max: number }>
   { field: "pinCode", label: "PIN Code", max: 12 },
   { field: "country", label: "Country", max: 80 },
   { field: "officeHours", label: "Office Working Hours", max: 120 },
+  { field: "googleSiteVerification", label: "Google Site Verification Token", max: 200 },
   { field: "structuredDataJson", label: "Structured Data (JSON-LD)", max: 50000 },
 ];
 
@@ -278,6 +393,21 @@ export function validateAdminSettingsPayload(rawBody: any): SettingsValidationRe
     }
   }
 
+  if (typeof sanitized.googleSiteVerification === "string") {
+    let rawToken = sanitized.googleSiteVerification.trim();
+    const contentMatch = rawToken.match(/content=["']([^"']+)["']/i);
+    if (contentMatch && contentMatch[1]) {
+      rawToken = contentMatch[1].trim();
+    }
+    if (rawToken && !/^[A-Za-z0-9_-]{8,160}$/.test(rawToken)) {
+      return {
+        valid: false,
+        error: "Google Site Verification token must contain only valid verification characters or be left blank.",
+      };
+    }
+    sanitized.googleSiteVerification = rawToken;
+  }
+
   if (typeof sanitized.pinCode === "string" && sanitized.pinCode.length > 0) {
     if (!/^[A-Za-z0-9\s-]{4,12}$/.test(sanitized.pinCode)) {
       return { valid: false, error: "PIN / Postal Code must be 4 to 12 alphanumeric characters." };
@@ -310,7 +440,7 @@ export function validateAdminSettingsPayload(rawBody: any): SettingsValidationRe
     sanitized.cloudinaryUploadPreset = uploadPreset;
     sanitized.cloudinarySettings = {
       ...sanitized.cloudinarySettings,
-      enabled: Boolean(cloudName && uploadPreset),
+      enabled: sanitized.cloudinarySettings.enabled !== false && Boolean(cloudName && uploadPreset),
       cloudName,
       uploadPreset,
     };

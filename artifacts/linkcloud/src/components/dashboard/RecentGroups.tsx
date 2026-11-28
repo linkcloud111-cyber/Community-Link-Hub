@@ -1,6 +1,8 @@
 import { Link } from "wouter";
 import { Layers, Plus, ExternalLink, Edit, Clock, CheckCircle2, XCircle, ArrowRight } from "lucide-react";
 import { PlatformIcon } from "@/components/platform-icon";
+import { useSiteSettings } from "@/contexts/SiteSettingsContext";
+import { useAuth } from "@/contexts/AuthContext";
 import type { Group } from "@/lib/types";
 
 interface RecentGroupsProps {
@@ -9,6 +11,9 @@ interface RecentGroupsProps {
 }
 
 export function RecentGroups({ groups, onViewAll }: RecentGroupsProps) {
+  const { settings } = useSiteSettings();
+  const { isWebmaster } = useAuth();
+  const canSubmit = Boolean(isWebmaster || settings?.groupSubmissionEnabled === true);
   const recentList = groups.slice(0, 5);
 
   const getStatusBadge = (status: string) => {
@@ -92,13 +97,19 @@ export function RecentGroups({ groups, onViewAll }: RecentGroupsProps) {
               Share your Telegram channels, WhatsApp groups, or Discord servers with thousands of verified community seekers.
             </p>
           </div>
-          <Link
-            href="/submit"
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold text-white bg-purple-600 hover:bg-purple-700 transition shadow-sm"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Submit your first group</span>
-          </Link>
+          {canSubmit ? (
+            <Link
+              href="/submit"
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold text-white bg-purple-600 hover:bg-purple-700 transition shadow-sm"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Submit your first group</span>
+            </Link>
+          ) : (
+            <p className="inline-block px-3.5 py-2 rounded-xl text-xs font-semibold text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/50">
+              Group submissions are currently paused by the webmaster.
+            </p>
+          )}
         </div>
       ) : (
         <div className="divide-y divide-slate-100 dark:divide-slate-800">

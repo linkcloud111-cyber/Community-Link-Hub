@@ -188,7 +188,7 @@ export async function firestoreDeleteDoc(path: string, env: Env): Promise<void> 
 export async function firestoreListCollection(
   collectionPath: string,
   env: Env,
-  pageSize = 100
+  maxDocs = 500
 ): Promise<Array<{ id: string; [key: string]: any }>> {
   const projectId = getProjectId(env);
   const serviceAccount = getServiceAccount(env);
@@ -199,27 +199,44 @@ export async function firestoreListCollection(
     headers["Authorization"] = `Bearer ${token}`;
   }
 
-  const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/${collectionPath}?pageSize=${pageSize}`;
-  const res = await fetch(url, { headers });
-  if (res.status === 404) return [];
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Firestore LIST ${collectionPath} failed: ${res.status} ${text}`);
+  const collected: Array<{ id: string; [key: string]: any }> = [];
+  let pageToken = "";
+
+  while (collected.length < maxDocs) {
+    const batchSize = Math.min(300, maxDocs - collected.length);
+    const qs = new URLSearchParams({ pageSize: String(batchSize) });
+    if (pageToken) qs.set("pageToken", pageToken);
+
+    const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/${collectionPath}?${qs.toString()}`;
+    const res = await fetch(url, { headers });
+    if (res.status === 404) return collected;
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`Firestore LIST ${collectionPath} failed: ${res.status} ${text}`);
+    }
+
+    const data: any = await res.json();
+    if (Array.isArray(data.documents) && data.documents.length > 0) {
+      for (const docData of data.documents) {
+        const id = docData.name ? String(docData.name).split("/").pop() || "" : "";
+        collected.push({ id, ...fromFirestoreFields(docData.fields) });
+      }
+    }
+
+    if (!data.nextPageToken || !Array.isArray(data.documents) || data.documents.length === 0) {
+      break;
+    }
+    pageToken = data.nextPageToken;
   }
 
-  const data: any = await res.json();
-  if (!data.documents || !Array.isArray(data.documents)) return [];
-  return data.documents.map((docData: any) => {
-    const id = docData.name ? docData.name.split("/").pop() : "";
-    return { id, ...fromFirestoreFields(docData.fields) };
-  });
+  return collected;
 }
 
 export async function firestoreRunQueryField(
   collectionId: string,
   fieldPath: string,
   op: "EQUAL" | "IN",
-  value: string | string[],
+  value: string | boolean | string[],
   env: Env,
   limit = 10
 ): Promise<Array<{ id: string; [key: string]: any }>> {
@@ -243,6 +260,8 @@ export async function firestoreRunQueryField(
             })),
           },
         }
+      : typeof value === "boolean"
+      ? { booleanValue: value }
       : { stringValue: String(value) };
 
   const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents:runQuery`;

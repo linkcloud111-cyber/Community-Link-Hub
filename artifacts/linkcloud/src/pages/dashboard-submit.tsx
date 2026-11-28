@@ -348,7 +348,8 @@ export default function DashboardSubmit() {
         logoUrl = await uploadToCloudinary(
           logoFile,
           settings?.cloudinaryUploadPreset || settings?.cloudinarySettings?.uploadPreset,
-          settings?.cloudinaryCloudName || settings?.cloudinarySettings?.cloudName
+          settings?.cloudinaryCloudName || settings?.cloudinarySettings?.cloudName,
+          settings?.cloudinarySettings?.enabled !== false
         );
       }
 

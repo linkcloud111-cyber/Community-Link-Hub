@@ -52,7 +52,7 @@ export function AccountSecuritySection({
     return () => clearInterval(timer);
   }, []);
 
-  const accountUid = profile?.accountUid || "linkcloud" + (profile?.uid ? profile.uid.substring(0, 5) : "----");
+  const accountUid = profile?.accountUid || (profile?.uid ? `linkcloud${profile.uid.substring(0, 5)}` : "Pending");
 
   const handleCopyUid = () => {
     if (!accountUid) return;

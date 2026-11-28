@@ -17,6 +17,12 @@ export function ComplaintTab({ complaints, onSubmitComplaint }: ComplaintTabProp
   const [loading, setLoading] = useState(false);
 
   const complaintEnabled = settings?.complaintSystemEnabled !== false;
+  const visibleContactEmail =
+    settings?.showCompleteContactSection !== false &&
+    settings?.showSupportEmail !== false &&
+    settings?.showContactEmail !== false
+      ? settings?.contactEmail
+      : "";
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -100,7 +106,7 @@ export function ComplaintTab({ complaints, onSubmitComplaint }: ComplaintTabProp
               </p>
               <p className="text-xs text-slate-600 dark:text-slate-400">
                 Formal complaint submissions are currently paused by the webmaster.
-                {settings?.contactEmail ? ` For urgent legal notices, email ${settings.contactEmail}.` : ""}
+                {visibleContactEmail ? ` For urgent legal notices, email ${visibleContactEmail}.` : ""}
               </p>
             </div>
           ) : (

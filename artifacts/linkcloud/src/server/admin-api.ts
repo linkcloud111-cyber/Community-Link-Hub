@@ -439,7 +439,7 @@ export async function handleAdminUserDeleteRequest(
   }
 
   const callerUid = authResult.uid!;
-  const callerEmail = authResult.email || "webmaster@linkcloud.in";
+  const callerEmail = authResult.email || "webmaster@localhost.invalid";
 
   const data = await parseBody(req);
   const { uid: targetUid, reason } = data;
@@ -1098,9 +1098,9 @@ export async function handleAdminSettingsUpdateRequest(
       action: "Settings Changed",
       details: "Updated platform settings & global SEO configuration via Webmaster API",
       adminUid: authResult.uid || "webmaster",
-      adminEmail: authResult.email || "webmaster@linkcloud.in",
+      adminEmail: authResult.email || "webmaster@localhost.invalid",
       actorUid: authResult.uid || "webmaster",
-      actorEmail: authResult.email || "webmaster@linkcloud.in",
+      actorEmail: authResult.email || "webmaster@localhost.invalid",
       createdAt: nowIso,
       timestamp: nowIso,
     });
@@ -1411,7 +1411,7 @@ export async function handleAdminAnnouncementCreateRequest(
       action: "Announcement Created",
       details: `Created site-wide announcement: "${cleaned.title}" [${cleaned.type}, ${cleaned.displayMode}, priority ${cleaned.priority}]`,
       actorUid: auth.uid || "webmaster",
-      actorEmail: auth.email || "webmaster@linkcloud.in",
+      actorEmail: auth.email || "webmaster@localhost.invalid",
       createdAt: nowIso,
       timestamp: nowIso,
     });
@@ -1491,7 +1491,7 @@ export async function handleAdminAnnouncementUpdateRequest(
       action: "Announcement Updated",
       details: `Updated site-wide announcement "${cleaned.title}" (ID: ${id})`,
       actorUid: auth.uid || "webmaster",
-      actorEmail: auth.email || "webmaster@linkcloud.in",
+      actorEmail: auth.email || "webmaster@localhost.invalid",
       createdAt: nowIso,
       timestamp: nowIso,
     });
@@ -1557,7 +1557,7 @@ export async function handleAdminAnnouncementDeleteRequest(
       action: "Announcement Deleted",
       details: `Deleted site-wide announcement "${title}" (ID: ${id})`,
       actorUid: auth.uid || "webmaster",
-      actorEmail: auth.email || "webmaster@linkcloud.in",
+      actorEmail: auth.email || "webmaster@localhost.invalid",
       createdAt: deletedAtIso,
       timestamp: deletedAtIso,
     });

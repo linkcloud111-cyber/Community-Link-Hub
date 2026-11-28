@@ -98,6 +98,10 @@ export default function ContactPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (settings?.contactFormEnabled === false) {
+      toast.error("Contact form is currently paused by the webmaster.");
+      return;
+    }
     if (!name.trim() || !email.trim() || !subject.trim() || !message.trim()) {
       toast.error("Please fill in all required fields.");
       return;
@@ -316,6 +320,7 @@ export default function ContactPage() {
                   <input
                     type="text"
                     required
+                    maxLength={100}
                     value={name}
                     onChange={(e) => setName(e.target.value)}
                     placeholder="Your Full Name"
@@ -331,6 +336,7 @@ export default function ContactPage() {
                   <input
                     type="email"
                     required
+                    maxLength={150}
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     placeholder="name@example.com"

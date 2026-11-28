@@ -12,6 +12,7 @@ import {
 import type { Group } from "@/lib/types";
 import { useAuth } from "@/contexts/AuthContext";
 import { useSiteSettings } from "@/contexts/SiteSettingsContext";
+import { resolveActiveCanonicalOrigin } from "@/lib/settings-validation";
 import {
   Loader2,
   ShieldAlert,
@@ -57,36 +58,58 @@ export default function GroupDetail() {
   const [favLoading, setFavLoading] = useState(false);
   const [accessDenied, setAccessDenied] = useState(false);
 
-  const canonicalBase = (
-    settings?.canonicalUrl ||
-    (typeof window !== "undefined" ? window.location.origin : "")
-  ).replace(/\/$/, "");
+  const canonicalBase = resolveActiveCanonicalOrigin({
+    configuredCanonicalUrl: settings?.canonicalUrl,
+    envOrigin: (typeof import.meta !== "undefined" ? (import.meta as any).env?.VITE_APP_URL : "") || "",
+    runtimeOrigin: typeof window !== "undefined" ? window.location.origin : "",
+  });
+
+  const isMissingOrRestrictedGroup = accessDenied || (!loading && !group);
+  const isUnindexableGroup =
+    isMissingOrRestrictedGroup ||
+    (group ? group.status !== "approved" || Boolean(group.hidden) : false);
+
+  const groupUrl = group ? `${canonicalBase}/groups/${group.id}` : `${canonicalBase}/groups`;
 
   usePageSEO({
-    title: group ? `${group.name} - Join ${group.platform}` : "Community Group Details",
+    title: group ? `${group.name} - Join ${group.platform}` : isMissingOrRestrictedGroup ? "Community Not Found" : "Community Group Details",
     subtitle: group ? `${group.categoryName || "Community"} in ${group.state || "India"}` : undefined,
     description: group?.description ? group.description.slice(0, 160) : "Join verified Indian communities and groups on LinkCloud.",
-    canonicalPath: id ? `/groups/${id}` : "/groups",
+    canonicalPath: group ? `/groups/${group.id}` : id ? `/groups/${id}` : "/groups",
     ogImage: group?.logoUrl || undefined,
     ogType: "article",
-    noIndex: accessDenied || (group ? (group.status !== "approved" || Boolean(group.hidden)) : false),
-    jsonLd: group ? {
+    noIndex: isUnindexableGroup,
+    jsonLd: group && !isUnindexableGroup ? {
       "@context": "https://schema.org",
-      "@type": "SocialMediaPosting",
-      headline: group.name,
-      description: group.description,
-      url: `${canonicalBase}/groups/${group.id}`,
-      dateCreated: group.createdAt?.toDate ? group.createdAt.toDate().toISOString() : undefined,
-      interactionStatistic: {
-        "@type": "InteractionCounter",
-        interactionType: "https://schema.org/FollowAction",
-        userInteractionCount: group.joinCount ?? 0,
-      },
-      publisher: {
-        "@type": "Organization",
-        name: settings?.siteName || "LinkCloud",
-        url: canonicalBase,
-      },
+      "@graph": [
+        {
+          "@type": "SocialMediaPosting",
+          headline: group.name,
+          description: group.description,
+          url: groupUrl,
+          mainEntityOfPage: groupUrl,
+          image: group.logoUrl || undefined,
+          dateCreated: group.createdAt?.toDate ? group.createdAt.toDate().toISOString() : undefined,
+          interactionStatistic: {
+            "@type": "InteractionCounter",
+            interactionType: "https://schema.org/FollowAction",
+            userInteractionCount: group.joinCount ?? 0,
+          },
+          publisher: {
+            "@type": "Organization",
+            name: settings?.siteName || "LinkCloud",
+            url: canonicalBase,
+          },
+        },
+        {
+          "@type": "BreadcrumbList",
+          itemListElement: [
+            { "@type": "ListItem", position: 1, name: "Home", item: `${canonicalBase}/` },
+            { "@type": "ListItem", position: 2, name: "Communities", item: `${canonicalBase}/groups` },
+            { "@type": "ListItem", position: 3, name: group.name, item: groupUrl },
+          ],
+        },
+      ],
     } : undefined,
   });
 
@@ -134,7 +157,7 @@ export default function GroupDetail() {
       }
     }
     loadData();
-  }, [id, user, profile]);
+  }, [id, user, profile, settings?.publicDirectoryEnabled, isWebmaster]);
 
   const isLinkActive = group?.linkStatus?.toLowerCase() !== "inactive";
 
@@ -160,6 +183,10 @@ export default function GroupDetail() {
   };
 
   const handleFavorite = async () => {
+    if (settings?.favoritesEnabled === false) {
+      toast.error("Favorites are currently disabled by the webmaster.");
+      return;
+    }
     if (!user) {
       toast.error("Sign in to save favorites");
       return;
@@ -375,7 +402,7 @@ export default function GroupDetail() {
 
           {/* Description */}
           <div className="bg-card border border-border/80 rounded-3xl p-6 sm:p-8 shadow-sm space-y-3">
-            <h3 className="text-lg font-bold">Community Description</h3>
+            <h2 className="text-lg font-bold">Community Description</h2>
             <p className="text-muted-foreground whitespace-pre-wrap leading-relaxed text-sm sm:text-base">
               {group.description}
             </p>
@@ -384,9 +411,9 @@ export default function GroupDetail() {
           {/* Rules */}
           {group.rules && (
             <div className="bg-card border border-border/80 rounded-3xl p-6 sm:p-8 shadow-sm space-y-3">
-              <h3 className="text-lg font-bold flex items-center gap-2 text-destructive">
+              <h2 className="text-lg font-bold flex items-center gap-2 text-destructive">
                 <ShieldCheck className="w-5 h-5" /> Rules & Guidelines
-              </h3>
+              </h2>
               <p className="text-muted-foreground whitespace-pre-wrap text-sm leading-relaxed">
                 {group.rules}
               </p>
@@ -396,12 +423,12 @@ export default function GroupDetail() {
           {/* Private Owner & Webmaster Details */}
           {canSeePrivateDetails && (
             <div className="bg-card border border-primary/20 bg-primary/5 rounded-3xl p-6 sm:p-8 shadow-sm space-y-4">
-              <h3 className="text-base font-bold text-foreground flex items-center justify-between">
+              <h2 className="text-base font-bold text-foreground flex items-center justify-between">
                 <span>Submission & Ownership Details</span>
                 <span className="text-xs px-2.5 py-1 rounded-full font-bold bg-primary/10 text-primary uppercase tracking-wide">
                   {isWebmasterUser ? "Webmaster Access" : "Owner Access"}
                 </span>
-              </h3>
+              </h2>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
                 {group.submittedByName && (
                   <div className="p-3 bg-background/80 rounded-2xl space-y-1 border border-border/50">
@@ -434,9 +461,9 @@ export default function GroupDetail() {
           {/* Tags */}
           {group.tags?.length > 0 && (
             <div className="space-y-3">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1">
+              <h2 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1">
                 <Hash className="w-4 h-4" /> Community Tags
-              </h3>
+              </h2>
               <div className="flex flex-wrap gap-2">
                 {group.tags.map((tag, i) => (
                   <span
@@ -549,12 +576,14 @@ export default function GroupDetail() {
       )}
 
       {/* Report Modal */}
-      <ReportModal
-        isOpen={reportOpen}
-        onClose={() => setReportOpen(false)}
-        groupId={group.id}
-        groupName={group.name}
-      />
+      {settings?.reportSystemEnabled !== false && (
+        <ReportModal
+          isOpen={reportOpen}
+          onClose={() => setReportOpen(false)}
+          groupId={group.id}
+          groupName={group.name}
+        />
+      )}
     </div>
   );
 }

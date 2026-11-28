@@ -57,7 +57,7 @@ async function handlePutPatch(context: { request: Request; env: Env }): Promise<
     return cfResultResponse(
       await handleAdminUpdateHelpArticle(
         createCloudflareCmsStorage(context.env),
-        { uid: auth.uid || "webmaster", email: auth.email || "webmaster@linkcloud.in" },
+        { uid: auth.uid || "webmaster", email: auth.email || "webmaster@localhost.invalid" },
         body
       )
     );
@@ -81,7 +81,7 @@ export async function onRequestDelete(context: { request: Request; env: Env }): 
     return cfResultResponse(
       await handleAdminDeleteHelpArticle(
         createCloudflareCmsStorage(context.env),
-        { uid: auth.uid || "webmaster", email: auth.email || "webmaster@linkcloud.in" },
+        { uid: auth.uid || "webmaster", email: auth.email || "webmaster@localhost.invalid" },
         url.searchParams.get("id") || body.id
       )
     );

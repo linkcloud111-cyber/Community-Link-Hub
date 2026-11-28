@@ -46,7 +46,8 @@ export function getOptimizedCloudinaryUrl(url: string, width = 800, quality = "a
 export async function uploadToCloudinary(
   file: File,
   customPreset?: string,
-  customCloudName?: string
+  customCloudName?: string,
+  enabled = true
 ): Promise<string> {
   const validation = validateImageFile(file);
   if (!validation.valid) {
@@ -56,7 +57,7 @@ export async function uploadToCloudinary(
   const cloudName = (customCloudName || import.meta.env.VITE_CLOUDINARY_CLOUD_NAME || "").trim();
   const uploadPreset = (customPreset || import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET || "").trim();
 
-  if (cloudName && uploadPreset) {
+  if (enabled && cloudName && uploadPreset) {
     try {
       const formData = new FormData();
       formData.append("file", file);

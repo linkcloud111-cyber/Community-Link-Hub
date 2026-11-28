@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from "react";
 import { Link, useLocation } from "wouter";
 import { useDashboardTabs, type DashboardTab } from "@/hooks/useDashboardTabs";
 import { useAuth } from "@/contexts/AuthContext";
+import { useSiteSettings } from "@/contexts/SiteSettingsContext";
 import { auth, db } from "@/lib/firebase";
 import { doc, updateDoc } from "firebase/firestore";
 import {
@@ -66,7 +67,10 @@ import { MoreTab } from "@/components/dashboard/tabs/MoreTab";
 
 export default function Dashboard() {
   const { user, profile, isWebmaster, pendingEmail, refreshProfile, checkAndSyncEmailChangeStatus } = useAuth();
+  const { settings } = useSiteSettings();
   const [, setLocation] = useLocation();
+  const canEditProfile = Boolean(isWebmaster || settings?.profileEditingEnabled !== false);
+  const favoritesEnabled = settings?.favoritesEnabled !== false;
 
   // Tab State
   const [activeTab, handleTabChange] = useDashboardTabs("overview");
@@ -234,9 +238,20 @@ export default function Dashboard() {
     toast.success("Account deletion request has been withdrawn.");
   };
 
+  const openEditProfile = () => {
+    if (!canEditProfile) {
+      toast.error("Profile editing is currently paused by the webmaster.");
+      return;
+    }
+    setEditProfileOpen(true);
+  };
+
   // Save Profile Details
   const handleSaveProfile = async (data: Partial<UserProfile>) => {
     if (!user) return;
+    if (!canEditProfile) {
+      throw new Error("Profile editing is currently paused by the webmaster.");
+    }
     await updateUserProfile(user.uid, data);
     await refreshProfile();
   };
@@ -250,6 +265,12 @@ export default function Dashboard() {
   // Send Message
   const handleSendMessage = async (subject: string, message: string) => {
     if (!user) return;
+    if (settings?.contactFormEnabled === false) {
+      throw new Error("Contact support form is currently paused by the webmaster.");
+    }
+    if (message.trim().length < 20) {
+      throw new Error("Message must be at least 20 characters long.");
+    }
     await createContactMessage({
       name: profile?.displayName || user?.displayName || "User",
       email: profile?.email || user?.email || "",
@@ -267,6 +288,12 @@ export default function Dashboard() {
   // Submit Grievance
   const handleSubmitComplaint = async (type: string, subject: string, description: string) => {
     if (!user) return;
+    if (settings?.complaintSystemEnabled === false) {
+      throw new Error("The grievance & complaint portal is currently paused by the webmaster.");
+    }
+    if (description.trim().length < 20) {
+      throw new Error("Detailed description must be at least 20 characters long.");
+    }
     await createComplaint({
       name: profile?.displayName || user?.displayName || "User",
       email: profile?.email || user?.email || "",
@@ -366,7 +393,7 @@ export default function Dashboard() {
             email={user?.email || null}
             isEmailVerified={isEmailVerified}
             isWebmaster={isWebmaster}
-            onEditProfile={() => setEditProfileOpen(true)}
+            onEditProfile={openEditProfile}
             onLogout={handleLogout}
           />
 
@@ -385,7 +412,7 @@ export default function Dashboard() {
               {/* 2. QUICK ACTIONS & IMPORTANT ALERTS */}
               <QuickActionsAndAlerts
                 onNavigate={handleTabChange}
-                onEditProfile={() => setEditProfileOpen(true)}
+                onEditProfile={openEditProfile}
                 unreadNotifications={notifications.filter((n) => !n.read)}
                 isEmailVerified={isEmailVerified}
                 hasPhone={Boolean(profile?.phone)}
@@ -421,10 +448,21 @@ export default function Dashboard() {
 
           {/* FAVORITES TAB */}
           {activeTab === "favorites" && (
-            <FavoritesTab
-              favorites={favorites}
-              onRemoveFavorite={handleRemoveFavorite}
-            />
+            favoritesEnabled ? (
+              <FavoritesTab
+                favorites={favorites}
+                onRemoveFavorite={handleRemoveFavorite}
+              />
+            ) : (
+              <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-8 text-center shadow-sm space-y-2">
+                <h2 className="text-lg font-bold text-slate-900 dark:text-white">
+                  Favorites Temporarily Paused
+                </h2>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Saved group favorites are currently disabled by the webmaster.
+                </p>
+              </div>
+            )
           )}
 
           {/* NOTIFICATIONS TAB */}
@@ -461,7 +499,7 @@ export default function Dashboard() {
               email={user?.email || null}
               isEmailVerified={isEmailVerified}
               pendingEmail={pendingEmail}
-              onEditProfile={() => setEditProfileOpen(true)}
+              onEditProfile={openEditProfile}
               onOpenEmailModal={() => setEmailModalOpen(true)}
               onOpenPhoneModal={() => setPhoneModalOpen(true)}
               onCheckEmailStatus={handleCheckEmailStatus}
@@ -527,7 +565,7 @@ export default function Dashboard() {
               isEmailVerified={isEmailVerified}
               unreadNotifsCount={unreadNotifsCount}
               onNavigate={handleTabChange}
-              onEditProfile={() => setEditProfileOpen(true)}
+              onEditProfile={openEditProfile}
               onLogout={handleLogout}
             />
           )}

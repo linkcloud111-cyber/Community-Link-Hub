@@ -6,7 +6,6 @@ import {
   Save,
   Check,
   Mail,
-  Eye,
   Send,
   Loader2,
   Clock,
@@ -26,7 +25,6 @@ import {
   EMAIL_RESEND_COOLDOWN_MS,
   EMAIL_CHANGE_TTL_MS,
 } from "@/lib/auth";
-import { EmailVerificationPreviewModal } from "@/components/dashboard/EmailVerificationPreviewModal";
 
 interface SettingsTabProps {
   profile: UserProfile | null;
@@ -55,9 +53,6 @@ export function SettingsTab({
   const [groupApprovalAlerts, setGroupApprovalAlerts] = useState(true);
   const [showPhonePublicly, setShowPhonePublicly] = useState(false);
   const [saving, setSaving] = useState(false);
-
-  // Email Preview Modal State
-  const [previewOpen, setPreviewOpen] = useState(false);
 
   // Resend State & Feedback Loop
   const [resending, setResending] = useState(false);
@@ -274,19 +269,8 @@ export function SettingsTab({
               )}
             </div>
 
-            {/* Action Buttons: Preview & Resend */}
+            {/* Action Buttons: Resend & Refresh */}
             <div className="flex flex-wrap items-center gap-2.5">
-              {/* Preview Button */}
-              <button
-                type="button"
-                id="lc_preview_verification_email_btn"
-                onClick={() => setPreviewOpen(true)}
-                className="min-h-[44px] inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold text-purple-700 dark:text-purple-300 bg-purple-50 hover:bg-purple-100 dark:bg-purple-950/60 dark:hover:bg-purple-900/60 border border-purple-200/80 dark:border-purple-800/80 transition"
-              >
-                <Eye className="w-4 h-4" />
-                <span>Preview Email</span>
-              </button>
-
               {/* Resend Button with Cooldown */}
               <button
                 type="button"
@@ -369,7 +353,7 @@ export function SettingsTab({
             <div className="flex items-start gap-2 text-xs text-slate-500 dark:text-slate-400 pt-1">
               <Info className="w-3.5 h-3.5 text-purple-500 mt-0.5 flex-shrink-0" />
               <span>
-                Clicking the link in your email immediately verifies your address. You can preview the template format using the <strong>Preview Email</strong> button above.
+                Click the verification link sent to your inbox to verify your email address, then click <strong>Refresh Status</strong> if your badge has not updated.
               </span>
             </div>
           )}
@@ -455,19 +439,6 @@ export function SettingsTab({
         </label>
       </div>
 
-      {/* EMAIL VERIFICATION PREVIEW MODAL */}
-      <EmailVerificationPreviewModal
-        isOpen={previewOpen}
-        onClose={() => setPreviewOpen(false)}
-        email={currentEmail}
-        isEmailVerified={verified}
-        pendingEmail={effectivePendingEmail}
-        displayName={profile?.displayName || currentUser?.displayName || "Member"}
-        accountUid={profile?.accountUid}
-        onResend={handleResendEmail}
-        resending={resending}
-        cooldown={cooldown}
-      />
     </div>
   );
 }

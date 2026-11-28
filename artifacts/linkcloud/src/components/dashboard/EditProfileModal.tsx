@@ -280,7 +280,8 @@ export function EditProfileModal({ isOpen, onClose, profile, onSave }: EditProfi
       const url = await uploadToCloudinary(
         file,
         settings?.cloudinaryUploadPreset || settings?.cloudinarySettings?.uploadPreset,
-        settings?.cloudinaryCloudName || settings?.cloudinarySettings?.cloudName
+        settings?.cloudinaryCloudName || settings?.cloudinarySettings?.cloudName,
+        settings?.cloudinarySettings?.enabled !== false
       );
       setPhotoURL(url);
       toast.success("Profile photo uploaded successfully!");

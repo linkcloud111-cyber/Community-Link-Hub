@@ -56,6 +56,20 @@ function getClientIp(req: IncomingMessage): string {
   return req.socket.remoteAddress || "127.0.0.1";
 }
 
+function isTransientFirestoreError(err: any): boolean {
+  const code = Number(err?.code);
+  const msg = String(err?.message || "");
+  return (
+    code === 8 ||
+    code === 14 ||
+    code === 4 ||
+    msg.includes("RESOURCE_EXHAUSTED") ||
+    msg.includes("Quota exceeded") ||
+    msg.includes("UNAVAILABLE") ||
+    msg.includes("DEADLINE_EXCEEDED")
+  );
+}
+
 function sendJson(res: ServerResponse, data: any, status = 200) {
   res.statusCode = status;
   res.setHeader("Content-Type", "application/json");
@@ -136,8 +150,13 @@ export async function handleTelemetryVisitorHit(
 
     return sendJson(res, { success: true });
   } catch (err: any) {
+    const isTransient = isTransientFirestoreError(err);
     console.error("[Telemetry] Failed to log visitor hit:", err?.message || err);
-    return sendJson(res, { error: "Failed to record telemetry" }, 500);
+    return sendJson(
+      res,
+      { error: isTransient ? "Telemetry service temporarily busy" : "Failed to record telemetry" },
+      isTransient ? 503 : 500
+    );
   }
 }
 
@@ -214,7 +233,12 @@ export async function handleTelemetrySearchQuery(
     await docRef.set(payload, { merge: true });
     return sendJson(res, { success: true });
   } catch (err: any) {
+    const isTransient = isTransientFirestoreError(err);
     console.error("[Telemetry] Failed to log search query:", err?.message || err);
-    return sendJson(res, { error: "Failed to record search telemetry" }, 500);
+    return sendJson(
+      res,
+      { error: isTransient ? "Telemetry service temporarily busy" : "Failed to record search telemetry" },
+      isTransient ? 503 : 500
+    );
   }
 }

@@ -357,14 +357,26 @@ export async function handleAuthProvisionUser(
       message: "User successfully provisioned with canonical UID.",
     });
   } catch (err: any) {
-    console.error("[Auth API] User provisioning error:", err);
+    const msg = String(err?.message ?? "");
+    const code = Number(err?.code);
+    const isTransient =
+      code === 8 ||
+      code === 14 ||
+      code === 4 ||
+      msg.includes("RESOURCE_EXHAUSTED") ||
+      msg.includes("Quota exceeded") ||
+      msg.includes("UNAVAILABLE") ||
+      msg.includes("DEADLINE_EXCEEDED");
+    console.error("[Auth API] User provisioning error:", msg || err);
     sendJson(
       res,
       {
         success: false,
-        error: "Unable to complete registration. Please try again later.",
+        error: isTransient
+          ? "Registration service is temporarily busy. Please try again in a moment."
+          : "Unable to complete registration. Please try again later.",
       },
-      500
+      isTransient ? 503 : 500
     );
   }
 }
@@ -760,8 +772,27 @@ export async function handleAuthProvisionPhoneUser(
       isNew: true,
     });
   } catch (err: any) {
-    console.error("[Auth API] Phone provision error:", err);
-    sendJson(res, { success: false, error: "Unable to complete phone authentication. Please try again." }, 500);
+    const msg = String(err?.message ?? "");
+    const code = Number(err?.code);
+    const isTransient =
+      code === 8 ||
+      code === 14 ||
+      code === 4 ||
+      msg.includes("RESOURCE_EXHAUSTED") ||
+      msg.includes("Quota exceeded") ||
+      msg.includes("UNAVAILABLE") ||
+      msg.includes("DEADLINE_EXCEEDED");
+    console.error("[Auth API] Phone provision error:", msg || err);
+    sendJson(
+      res,
+      {
+        success: false,
+        error: isTransient
+          ? "Authentication service is temporarily busy. Please try again in a moment."
+          : "Unable to complete phone authentication. Please try again.",
+      },
+      isTransient ? 503 : 500
+    );
   }
 }
 
@@ -1243,8 +1274,27 @@ export async function handleAuthDeleteAccount(
 
     sendJson(res, { success: true });
   } catch (err: any) {
-    console.error("[Auth API] Self-delete error:", err?.message ?? "unexpected");
-    sendJson(res, { success: false, error: "Failed to delete account. Please try again." }, 500);
+    const msg = String(err?.message ?? "");
+    const code = Number(err?.code);
+    const isTransient =
+      code === 8 ||
+      code === 14 ||
+      code === 4 ||
+      msg.includes("RESOURCE_EXHAUSTED") ||
+      msg.includes("Quota exceeded") ||
+      msg.includes("UNAVAILABLE") ||
+      msg.includes("DEADLINE_EXCEEDED");
+    console.error("[Auth API] Self-delete error:", msg || "unexpected");
+    sendJson(
+      res,
+      {
+        success: false,
+        error: isTransient
+          ? "Account deletion service is temporarily busy. Please try again in a moment."
+          : "Failed to delete account. Please try again.",
+      },
+      isTransient ? 503 : 500
+    );
   }
 }
 

@@ -63,6 +63,10 @@ export default function ComplaintPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (settings?.complaintSystemEnabled === false) {
+      toast.error("The grievance desk is currently paused by the webmaster.");
+      return;
+    }
     if (!name.trim() || !email.trim() || !phone.trim() || !subject.trim() || !message.trim()) {
       toast.error("Please fill in all required complaint fields.");
       return;
@@ -92,8 +96,8 @@ export default function ComplaintPage() {
       setSubmitted(true);
       setSubject("");
       setMessage("");
-    } catch {
-      toast.error("Failed to submit complaint. Please try again.");
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to submit complaint. Please try again.");
     } finally {
       setSubmitting(false);
     }
@@ -204,6 +208,7 @@ export default function ComplaintPage() {
                 <input
                   type="text"
                   required
+                  maxLength={100}
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   placeholder="Your Full Legal Name"
@@ -219,6 +224,7 @@ export default function ComplaintPage() {
                 <input
                   type="email"
                   required
+                  maxLength={150}
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="name@example.com"
